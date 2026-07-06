@@ -69,10 +69,10 @@ src/shared/components/
 | 스크림·블랙아웃 | `bg-scrim-weak` / `bg-scrim` / `bg-scrim-strong` / `bg-blackout` | 카메라 HUD 오버레이, 사망 |
 | 텍스트 | `text-content` / `-content-secondary` / `-content-tertiary` / `-content-disabled` | 위계 순 |
 | 보더 | `border-stroke` / `border-stroke-strong` | (`border` 폭과 함께 사용) |
-| 인터랙티브 fill | `bg-brand`(+`bg-brand-pressed`) / `bg-neutral`(+`-pressed`) / `bg-disabled` | 버튼 배경 |
+| 인터랙티브 fill | `bg-brand`(코발트, 주 CTA·+`-pressed`) / `bg-accent`(라임, 보조 강조·+`-pressed`) / `bg-neutral`(+`-pressed`) / `bg-disabled` | 버튼 배경 |
 | 상태 텍스트 | `text-success` / `text-warning` / `text-danger` / `text-info` | 인라인 메시지 (캔버스 위 AA 보장) |
 | 상태 solid | `bg-success-solid` / `bg-warning-solid` / `bg-danger-solid`(+`-pressed`) / `bg-info-solid` | 채운 배경 |
-| 채운 면 라벨 | `text-on-brand` / `text-on-danger` / `text-on-success` / `text-on-warning` / `text-on-info` | 위 solid/brand 배경 위 텍스트 |
+| 채운 면 라벨 | `text-on-brand` / `text-on-accent` / `text-on-danger` / `text-on-success` / `text-on-warning` / `text-on-info` | 위 solid/brand/accent 배경 위 텍스트 |
 | 팀 텍스트 | `text-team-{red,blue,green,orange}` | 인라인 팀 표기 |
 | 팀 solid | `bg-team-{red,blue,green,orange}-solid` | 뱃지·완장 표식 |
 | 팀 라벨 | `text-on-team-{red,blue,green,orange}` | 팀 solid 배경 위 텍스트 (반드시 짝 사용) |
@@ -80,6 +80,7 @@ src/shared/components/
 ### 타이포그래피 (역할 유틸리티 — 크기·행간·굵기 세트)
 | 유틸리티 | 크기/굵기 | 용도 |
 |---|---|---|
+| `text-hero` | 46px/800 | 진입 화면 워드마크(PHOTO ROYALE) 등 초대형 |
 | `text-display` | 30px/800 | 카운트다운, 라운드 타이틀 |
 | `text-title` | 26px/700 | 화면 타이틀 |
 | `text-heading` | 22px/700 | 섹션 헤딩 |
@@ -109,7 +110,8 @@ src/shared/components/
 
 ## 6. 컴포넌트 계층
 
-- 공용 원자 컴포넌트는 `src/shared/components/Base*.vue` (CLAUDE.md 네이밍 규칙). 현재: `BaseButton`, `BaseBadge`.
+- 공용 원자 컴포넌트는 `src/shared/components/Base*.vue` (CLAUDE.md 네이밍 규칙). 현재: `BaseButton`, `BaseBadge`, `BaseInput`, `BaseSegmented`.
+- **재사용 가능성이 있는 UI 요소는 생 HTML 태그로 화면에 직접 두지 않고 `Base*` 컴포넌트로 만들어 재사용한다.** (input·버튼·뱃지 등 원자 단위. 생 `<input>`/`<button>` 직접 마크업 금지 → 해당 `Base*` 사용.)
 - 성장 예정 후보(화면 18종 수요 기반, **실제 두 번째 사용처가 생길 때 추가** — shared 승격 규칙과 동일한 원칙): BottomCta(하단 고정 CTA), ListRow, Toast, BottomSheet, LifeGauge.
 - 컴포넌트 문서화 순서는 TDS 가이드 규칙을 따른다: 타입 → 영역 → 상세 스펙 → 접근성 → 큰 텍스트 → 다크모드.
 
