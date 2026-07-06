@@ -1,0 +1,34 @@
+/**
+ * Global base — Tailwind preflight(box-sizing·margin 리셋 등)이 처리하지 않는
+ * 프로젝트 고유 기본값만 둔다. (index.css에서 layer(base)로 로드됨)
+ */
+html {
+  /* 시스템 텍스트 크기 설정을 따르도록 root font-size는 건드리지 않는다 */
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--pr-font-family-base);
+  font-size: var(--pr-font-body-size);
+  font-weight: var(--pr-font-body-weight);
+  line-height: var(--pr-line-height-normal);
+  color: var(--pr-color-text-primary);
+  background-color: var(--pr-color-bg-base);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 야외에서 뛰며 터치 — 롱프레스 하이라이트 제거(모든 인터랙티브 요소 공통) */
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 야외에서 뛰며 조작 — 시스템 애니메이션 감소 설정 존중 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

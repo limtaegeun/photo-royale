@@ -1,0 +1,123 @@
+/**
+ * Design system entrypoint (Tailwind v4)
+ *
+ * 계층 순서: Tailwind → primitive 토큰 → semantic 토큰 → 전역 base → @theme 매핑
+ * - primitive/semantic(`--pr-*`)이 단일 진실원이다. Tailwind는 아래 @theme inline에서
+ *   semantic 토큰을 "참조만" 한다(inline이라 유틸리티가 var(--pr-*)를 직접 물어서
+ *   [data-theme=light] 오버라이드 시 테마가 자동 전환된다 → dark: 변형 불필요).
+ * - `--color-*: initial`로 Tailwind 기본 팔레트를 전부 끈다. 따라서 bg-red-500 같은
+ *   primitive성 유틸리티는 존재하지 않으며, 프로젝트 시맨틱 유틸리티만 쓸 수 있다.
+ * - 스페이싱은 Tailwind 기본 4px 그리드(p-4=16px)가 우리 스케일과 동일하므로 재정의하지 않는다.
+ */
+@import 'tailwindcss';
+@import './tokens.primitive.css';
+@import './tokens.semantic.css';
+@import './base.css' layer(base);
+
+/* 라이트 테마 전용 유틸리티가 필요할 때만 쓰는 탈출구. 대부분의 테마 전환은
+   [data-theme=light]의 토큰 오버라이드로 자동 처리되므로 이 변형은 거의 필요 없다. */
+@custom-variant light (&:where([data-theme='light'], [data-theme='light'] *));
+
+@theme inline {
+  /* ── 기본 팔레트 비활성화 — 프로젝트 시맨틱 색상만 존재하게 한다 ──────── */
+  --color-*: initial;
+
+  /* ── Surface (bg-*) ─────────────────────────────────────────────── */
+  --color-canvas: var(--pr-color-bg-base);
+  --color-elevated: var(--pr-color-bg-elevated);
+  --color-surface: var(--pr-color-bg-surface);
+  --color-surface-strong: var(--pr-color-bg-surface-strong);
+  --color-scrim-weak: var(--pr-color-bg-scrim-weak);
+  --color-scrim: var(--pr-color-bg-scrim);
+  --color-scrim-strong: var(--pr-color-bg-scrim-strong);
+  --color-blackout: var(--pr-color-bg-blackout);
+
+  /* ── Content text (text-*) ──────────────────────────────────────── */
+  --color-content: var(--pr-color-text-primary);
+  --color-content-secondary: var(--pr-color-text-secondary);
+  --color-content-tertiary: var(--pr-color-text-tertiary);
+  --color-content-disabled: var(--pr-color-text-disabled);
+
+  /* ── Stroke (border-*) ──────────────────────────────────────────── */
+  --color-stroke: var(--pr-color-border-default);
+  --color-stroke-strong: var(--pr-color-border-strong);
+
+  /* ── Interactive fill (bg-*) — brand/neutral은 text/fill 값이 동일 ── */
+  --color-brand: var(--pr-color-fill-brand);
+  --color-brand-pressed: var(--pr-color-fill-brand-pressed);
+  --color-neutral: var(--pr-color-fill-neutral);
+  --color-neutral-pressed: var(--pr-color-fill-neutral-pressed);
+  --color-disabled: var(--pr-color-fill-disabled);
+
+  /* ── Status — 기본값은 "읽기용 텍스트 색"(text-danger 등이 캔버스 위에서 AA 보장) ── */
+  --color-danger: var(--pr-color-text-danger);
+  --color-success: var(--pr-color-text-success);
+  --color-warning: var(--pr-color-text-warning);
+  --color-info: var(--pr-color-text-info);
+
+  /* ── Status solid fill (bg-*-solid) — 채운 배경용 ───────────────── */
+  --color-danger-solid: var(--pr-color-fill-danger);
+  --color-danger-solid-pressed: var(--pr-color-fill-danger-pressed);
+  --color-success-solid: var(--pr-color-fill-success);
+  --color-warning-solid: var(--pr-color-fill-warning);
+  --color-info-solid: var(--pr-color-fill-info);
+
+  /* ── On-fill 텍스트 (채운 면 위 라벨) ───────────────────────────── */
+  --color-on-brand: var(--pr-color-text-on-brand);
+  --color-on-danger: var(--pr-color-text-on-danger);
+  --color-on-success: var(--pr-color-text-on-success);
+  --color-on-warning: var(--pr-color-text-on-warning);
+  --color-on-info: var(--pr-color-text-on-info);
+
+  /* ── Team — 읽기용 텍스트 색(text-team-*) ───────────────────────── */
+  --color-team-red: var(--pr-color-text-team-red);
+  --color-team-blue: var(--pr-color-text-team-blue);
+  --color-team-green: var(--pr-color-text-team-green);
+  --color-team-orange: var(--pr-color-text-team-orange);
+
+  /* ── Team solid fill(bg-team-*-solid) + on-fill 라벨 ────────────── */
+  --color-team-red-solid: var(--pr-color-fill-team-red);
+  --color-team-blue-solid: var(--pr-color-fill-team-blue);
+  --color-team-green-solid: var(--pr-color-fill-team-green);
+  --color-team-orange-solid: var(--pr-color-fill-team-orange);
+  --color-on-team-red: var(--pr-color-text-on-team-red);
+  --color-on-team-blue: var(--pr-color-text-on-team-blue);
+  --color-on-team-green: var(--pr-color-text-on-team-green);
+  --color-on-team-orange: var(--pr-color-text-on-team-orange);
+
+  /* ── Typography (text-*: 크기+굵기+행간 세트) ───────────────────── */
+  --font-sans: var(--pr-font-family-base);
+  --font-mono: var(--pr-font-family-mono);
+
+  --text-display: var(--pr-font-size-30);
+  --text-display--line-height: var(--pr-line-height-tight);
+  --text-display--font-weight: var(--pr-font-weight-extrabold);
+  --text-title: var(--pr-font-size-26);
+  --text-title--line-height: var(--pr-line-height-tight);
+  --text-title--font-weight: var(--pr-font-weight-bold);
+  --text-heading: var(--pr-font-size-22);
+  --text-heading--line-height: var(--pr-line-height-tight);
+  --text-heading--font-weight: var(--pr-font-weight-bold);
+  --text-subheading: var(--pr-font-size-20);
+  --text-subheading--line-height: var(--pr-line-height-normal);
+  --text-subheading--font-weight: var(--pr-font-weight-semibold);
+  --text-body: var(--pr-font-size-17);
+  --text-body--line-height: var(--pr-line-height-normal);
+  --text-body--font-weight: var(--pr-font-weight-regular);
+  --text-label: var(--pr-font-size-15);
+  --text-label--line-height: var(--pr-line-height-normal);
+  --text-label--font-weight: var(--pr-font-weight-semibold);
+  --text-caption: var(--pr-font-size-13);
+  --text-caption--line-height: var(--pr-line-height-normal);
+  --text-caption--font-weight: var(--pr-font-weight-regular);
+
+  /* ── Radius (rounded-*) — rounded-full 은 Tailwind 기본 제공 ─────── */
+  --radius-sm: var(--pr-radius-sm);
+  --radius-md: var(--pr-radius-md);
+  --radius-lg: var(--pr-radius-lg);
+  --radius-xl: var(--pr-radius-xl);
+
+  /* ── Easing (ease-*) — duration 은 Tailwind 기본(duration-100 등) 사용 ── */
+  --ease-standard: var(--pr-easing-standard);
+  --ease-decelerate: var(--pr-easing-decelerate);
+}

@@ -1,0 +1,163 @@
+/**
+ * Design Tokens — Layer 2: Semantic (역할 기반)
+ *
+ * 네이밍: --pr-color-{target}-{role}[-{variant}]  (TDS 시맨틱 조합 규칙)
+ *   target  = bg | text | border | fill (컴포넌트가 칠하는 면)
+ *   role    = base/elevated/surface, primary/secondary/tertiary, brand, team-*, 상태(danger 등)
+ *   variant = weak | strong 등 변형
+ *
+ * 테마 전략 (다크 퍼스트):
+ * - 기본(:root) = 다크 HUD 테마. 카메라 콕핏 등 게임 코어 화면 기준.
+ * - [data-theme='light'] = 라이트 오버라이드. 대기실·결과 등 비카메라 화면용.
+ * - 이 파일의 시맨틱 계층만 오버라이드하면 컴포넌트 계층은 수정 없이 테마가 전환된다.
+ *
+ * 대비 기준 (야외 주간 고휘도 환경 — 자체 기준):
+ * - 본문/핵심 HUD 텍스트: 7:1(AAA) 목표, 최소 4.5:1(AA)
+ * - 보조 텍스트·큰 텍스트·비텍스트 UI: 최소 3:1
+ * - 다크 테마는 라이트보다 대비를 더 강하게 잡는다(TDS APCA 원칙).
+ */
+:root {
+  /* ── Background (화면·서피스 배경) ─────────────────────────────── */
+  --pr-color-bg-base: var(--pr-gray-950);
+  --pr-color-bg-elevated: var(--pr-gray-900);
+  --pr-color-bg-surface: var(--pr-gray-800);
+  --pr-color-bg-surface-strong: var(--pr-gray-700);
+
+  /* 카메라 프리뷰 위 HUD 오버레이용 반투명 스크림 */
+  --pr-color-bg-scrim-weak: rgb(14 20 35 / 0.4);
+  --pr-color-bg-scrim: rgb(14 20 35 / 0.65);
+  --pr-color-bg-scrim-strong: rgb(14 20 35 / 0.85);
+  /* 사망 시 카메라 블랙아웃 */
+  --pr-color-bg-blackout: #000000;
+
+  /* ── Text ───────────────────────────────────────────────────────── */
+  --pr-color-text-primary: var(--pr-gray-50);
+  --pr-color-text-secondary: var(--pr-gray-300);
+  --pr-color-text-tertiary: var(--pr-gray-400);
+  --pr-color-text-disabled: var(--pr-gray-600);
+  --pr-color-text-on-brand: var(--pr-gray-950);
+  --pr-color-text-on-danger: var(--pr-gray-0);
+
+  /* ── Border ─────────────────────────────────────────────────────── */
+  --pr-color-border-default: var(--pr-gray-700);
+  --pr-color-border-strong: var(--pr-gray-500);
+
+  /* ── Fill (버튼·뱃지 등 액션 요소가 칠하는 면) ──────────────────── */
+  --pr-color-fill-brand: var(--pr-lime-400);
+  --pr-color-fill-brand-pressed: var(--pr-lime-500);
+  --pr-color-fill-neutral: var(--pr-gray-700);
+  --pr-color-fill-neutral-pressed: var(--pr-gray-600);
+  --pr-color-fill-danger: var(--pr-red-500);
+  --pr-color-fill-danger-pressed: var(--pr-red-600);
+  --pr-color-fill-disabled: var(--pr-gray-800);
+
+  /* ── Status (판정·자기장 경고·성공 등 상태 표현) ────────────────── */
+  --pr-color-text-success: var(--pr-green-400);
+  --pr-color-text-warning: var(--pr-amber-400);
+  --pr-color-text-danger: var(--pr-red-400);
+  --pr-color-text-info: var(--pr-blue-400);
+  --pr-color-fill-success: var(--pr-green-500);
+  --pr-color-fill-warning: var(--pr-amber-500);
+  --pr-color-fill-info: var(--pr-blue-500);
+  /* 상태 fill(success/warning/info) 위 텍스트 — 밝은 fill(success/warning)은 네이비, 어두운 fill(info)은 흰색 */
+  --pr-color-text-on-success: var(--pr-gray-950);
+  --pr-color-text-on-warning: var(--pr-gray-950);
+  --pr-color-text-on-info: var(--pr-gray-0);
+
+  /* ── Team (4색 그룹 — fill은 뱃지/완장 표식, text는 다크 배경 위 텍스트용) ── */
+  --pr-color-fill-team-red: var(--pr-red-500);
+  --pr-color-fill-team-blue: var(--pr-blue-500);
+  --pr-color-fill-team-green: var(--pr-green-500);
+  --pr-color-fill-team-orange: var(--pr-orange-500);
+  --pr-color-text-team-red: var(--pr-red-300);
+  --pr-color-text-team-blue: var(--pr-blue-400);
+  --pr-color-text-team-green: var(--pr-green-300);
+  --pr-color-text-team-orange: var(--pr-orange-300);
+  /* 팀 fill 위 텍스트 — 어두운 fill(red/blue)은 흰색, 밝은 fill(green/orange)은 네이비 (WCAG AA 검증값) */
+  --pr-color-text-on-team-red: var(--pr-gray-0);
+  --pr-color-text-on-team-blue: var(--pr-gray-0);
+  --pr-color-text-on-team-green: var(--pr-gray-950);
+  --pr-color-text-on-team-orange: var(--pr-gray-950);
+
+  /* ── Typography 역할 (역할 기반 스케일 — M3/TDS 방법론) ─────────── */
+  --pr-font-family-base:
+    'Pretendard Variable', Pretendard, system-ui, -apple-system, 'Apple SD Gothic Neo',
+    'Noto Sans KR', sans-serif;
+  --pr-font-family-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* display: 카운트다운·라운드 타이틀 등 초대형 */
+  --pr-font-display-size: var(--pr-font-size-30);
+  --pr-font-display-weight: var(--pr-font-weight-extrabold);
+  /* title: 화면 타이틀 */
+  --pr-font-title-size: var(--pr-font-size-26);
+  --pr-font-title-weight: var(--pr-font-weight-bold);
+  /* heading: 섹션 헤딩 */
+  --pr-font-heading-size: var(--pr-font-size-22);
+  --pr-font-heading-weight: var(--pr-font-weight-bold);
+  /* subheading: 카드 타이틀·리스트 헤더 */
+  --pr-font-subheading-size: var(--pr-font-size-20);
+  --pr-font-subheading-weight: var(--pr-font-weight-semibold);
+  /* body: 표준 본문 (야외 가독 기준 17px) */
+  --pr-font-body-size: var(--pr-font-size-17);
+  --pr-font-body-weight: var(--pr-font-weight-regular);
+  /* label: 버튼·뱃지·입력 라벨 */
+  --pr-font-label-size: var(--pr-font-size-15);
+  --pr-font-label-weight: var(--pr-font-weight-semibold);
+  /* caption: 타임스탬프·보조 설명 최소 텍스트 */
+  --pr-font-caption-size: var(--pr-font-size-13);
+  --pr-font-caption-weight: var(--pr-font-weight-regular);
+
+  /* ── Size / Layout ──────────────────────────────────────────────── */
+  /* 달리면서 조작하는 게임 특성상 최소 터치 타겟을 48px로 강제 */
+  --pr-size-tap-minimum: 48px;
+  --pr-size-control-sm: 36px;
+  --pr-size-control-md: 48px;
+  --pr-size-control-lg: 56px;
+  /* 하단 중심 UI — iOS 홈 인디케이터 등 safe area */
+  --pr-inset-bottom-safe: env(safe-area-inset-bottom, 0px);
+
+  /* ── Elevation (z-index 스케일) ─────────────────────────────────── */
+  --pr-z-base: 0;
+  --pr-z-hud: 100;
+  --pr-z-sheet: 200;
+  --pr-z-modal: 300;
+  --pr-z-toast: 400;
+}
+
+/* ── Light theme — 비카메라 화면(대기실·결과·호스트 관리 등) ──────── */
+[data-theme='light'] {
+  --pr-color-bg-base: var(--pr-gray-50);
+  --pr-color-bg-elevated: var(--pr-gray-0);
+  --pr-color-bg-surface: var(--pr-gray-100);
+  --pr-color-bg-surface-strong: var(--pr-gray-200);
+
+  --pr-color-text-primary: var(--pr-gray-950);
+  --pr-color-text-secondary: var(--pr-gray-600);
+  --pr-color-text-tertiary: var(--pr-gray-500);
+  --pr-color-text-disabled: var(--pr-gray-400);
+
+  --pr-color-border-default: var(--pr-gray-200);
+  --pr-color-border-strong: var(--pr-gray-400);
+
+  /* 라이트 배경 위에서 라임은 대비 부족 → 브랜드 fill을 코발트로 전환 */
+  --pr-color-fill-brand: var(--pr-blue-600);
+  --pr-color-fill-brand-pressed: var(--pr-blue-700);
+  --pr-color-text-on-brand: var(--pr-gray-0);
+  --pr-color-fill-neutral: var(--pr-gray-200);
+  --pr-color-fill-neutral-pressed: var(--pr-gray-300);
+  --pr-color-fill-disabled: var(--pr-gray-100);
+
+  --pr-color-text-success: var(--pr-green-700);
+  --pr-color-text-warning: var(--pr-orange-700);
+  --pr-color-text-danger: var(--pr-red-600);
+  --pr-color-text-info: var(--pr-blue-600);
+  /* 상태 fill(success/warning/info) 위 텍스트 — 라이트 테마도 fill 자체는 :root 값 그대로 사용하므로 on-color는 동일 */
+  --pr-color-text-on-success: var(--pr-gray-950);
+  --pr-color-text-on-warning: var(--pr-gray-950);
+  --pr-color-text-on-info: var(--pr-gray-0);
+
+  --pr-color-text-team-red: var(--pr-red-600);
+  --pr-color-text-team-blue: var(--pr-blue-600);
+  --pr-color-text-team-green: var(--pr-green-700);
+  --pr-color-text-team-orange: var(--pr-orange-700);
+}
