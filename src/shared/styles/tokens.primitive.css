@@ -30,7 +30,7 @@
   --pr-blue-600: #2563eb;
   --pr-blue-700: #1d4fc4;
 
-  /* ── Color: Lime (액션 액센트 — 다크 HUD 위 고대비 CTA) ─────────── */
+  /* ── Color: Lime (보조 액센트 accent — 다크 HUD 위 고대비 강조) ──── */
   --pr-lime-300: #d7ff85;
   --pr-lime-400: #c4ff4d;
   --pr-lime-500: #a8e62e;
@@ -63,6 +63,7 @@
 
   /* ── Typography: 크기 스케일 (TDS Typography 1~7 수치, rem 단위) ──
      텍스트 확대(OS 큰 텍스트) 대응을 위해 px 고정값 대신 rem 사용. */
+  --pr-font-size-46: 2.875rem; /* 46px — 진입 히어로 등 초대형 워드마크 */
   --pr-font-size-30: 1.875rem; /* 30px */
   --pr-font-size-26: 1.625rem; /* 26px */
   --pr-font-size-22: 1.375rem; /* 22px */

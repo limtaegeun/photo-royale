@@ -45,6 +45,8 @@
   /* ── Interactive fill (bg-*) — brand/neutral은 text/fill 값이 동일 ── */
   --color-brand: var(--pr-color-fill-brand);
   --color-brand-pressed: var(--pr-color-fill-brand-pressed);
+  --color-accent: var(--pr-color-fill-accent);
+  --color-accent-pressed: var(--pr-color-fill-accent-pressed);
   --color-neutral: var(--pr-color-fill-neutral);
   --color-neutral-pressed: var(--pr-color-fill-neutral-pressed);
   --color-disabled: var(--pr-color-fill-disabled);
@@ -64,6 +66,7 @@
 
   /* ── On-fill 텍스트 (채운 면 위 라벨) ───────────────────────────── */
   --color-on-brand: var(--pr-color-text-on-brand);
+  --color-on-accent: var(--pr-color-text-on-accent);
   --color-on-danger: var(--pr-color-text-on-danger);
   --color-on-success: var(--pr-color-text-on-success);
   --color-on-warning: var(--pr-color-text-on-warning);
@@ -89,6 +92,9 @@
   --font-sans: var(--pr-font-family-base);
   --font-mono: var(--pr-font-family-mono);
 
+  --text-hero: var(--pr-font-size-46);
+  --text-hero--line-height: var(--pr-line-height-tight);
+  --text-hero--font-weight: var(--pr-font-weight-extrabold);
   --text-display: var(--pr-font-size-30);
   --text-display--line-height: var(--pr-line-height-tight);
   --text-display--font-weight: var(--pr-font-weight-extrabold);

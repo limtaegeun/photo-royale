@@ -35,7 +35,8 @@
   --pr-color-text-secondary: var(--pr-gray-300);
   --pr-color-text-tertiary: var(--pr-gray-400);
   --pr-color-text-disabled: var(--pr-gray-600);
-  --pr-color-text-on-brand: var(--pr-gray-950);
+  --pr-color-text-on-brand: var(--pr-gray-0);
+  --pr-color-text-on-accent: var(--pr-gray-950);
   --pr-color-text-on-danger: var(--pr-gray-0);
 
   /* ── Border ─────────────────────────────────────────────────────── */
@@ -43,8 +44,12 @@
   --pr-color-border-strong: var(--pr-gray-500);
 
   /* ── Fill (버튼·뱃지 등 액션 요소가 칠하는 면) ──────────────────── */
-  --pr-color-fill-brand: var(--pr-lime-400);
-  --pr-color-fill-brand-pressed: var(--pr-lime-500);
+  /* 기본 브랜드 = 코발트 블루(주 CTA·강조). Figma P01 기준 */
+  --pr-color-fill-brand: var(--pr-blue-600);
+  --pr-color-fill-brand-pressed: var(--pr-blue-700);
+  /* 보조 액센트 = 라임(다크 HUD 위 고대비 하이라이트·게임 액센트) */
+  --pr-color-fill-accent: var(--pr-lime-400);
+  --pr-color-fill-accent-pressed: var(--pr-lime-500);
   --pr-color-fill-neutral: var(--pr-gray-700);
   --pr-color-fill-neutral-pressed: var(--pr-gray-600);
   --pr-color-fill-danger: var(--pr-red-500);
@@ -139,10 +144,7 @@
   --pr-color-border-default: var(--pr-gray-200);
   --pr-color-border-strong: var(--pr-gray-400);
 
-  /* 라이트 배경 위에서 라임은 대비 부족 → 브랜드 fill을 코발트로 전환 */
-  --pr-color-fill-brand: var(--pr-blue-600);
-  --pr-color-fill-brand-pressed: var(--pr-blue-700);
-  --pr-color-text-on-brand: var(--pr-gray-0);
+  /* brand(코발트)·accent(라임)는 :root 값이 라이트에서도 유효 → 오버라이드 없음 */
   --pr-color-fill-neutral: var(--pr-gray-200);
   --pr-color-fill-neutral-pressed: var(--pr-gray-300);
   --pr-color-fill-disabled: var(--pr-gray-100);
