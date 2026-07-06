@@ -1,0 +1,112 @@
+/**
+ * Design Tokens — Layer 1: Primitive (raw values)
+ *
+ * 규칙 (docs/DESIGN_SYSTEM.md 참조):
+ * - 이 파일의 토큰은 "의미 없는 원시값"이다. 컴포넌트/기능 코드에서 직접 참조 금지.
+ * - 소비는 반드시 tokens.semantic.css 의 시맨틱 토큰을 통해서만 한다.
+ * - 스케일 번호는 명도 단계(50=가장 밝음 → 950=가장 어두움)이며,
+ *   모든 색상군이 동일한 명도 진행을 따르는 것을 목표로 한다(TDS 컬러 시스템 원칙).
+ */
+:root {
+  /* ── Color: Navy Gray (중립 스케일, Deep Navy 기조) ─────────────── */
+  --pr-gray-0: #ffffff;
+  --pr-gray-50: #f5f7fa;
+  --pr-gray-100: #e8ecf2;
+  --pr-gray-200: #d3dae4;
+  --pr-gray-300: #b4becd;
+  --pr-gray-400: #8d99ac;
+  --pr-gray-500: #626e80;
+  --pr-gray-600: #4e586a;
+  --pr-gray-700: #37404f;
+  --pr-gray-800: #232b38;
+  --pr-gray-900: #161d29;
+  --pr-gray-950: #0e1423;
+
+  /* ── Color: Cobalt Blue (브랜드/팀-파랑 겸용) ───────────────────── */
+  --pr-blue-100: #dbe7fe;
+  --pr-blue-300: #8fb3fb;
+  --pr-blue-400: #7fa9ff;
+  --pr-blue-500: #2f6fef;
+  --pr-blue-600: #2563eb;
+  --pr-blue-700: #1d4fc4;
+
+  /* ── Color: Lime (액션 액센트 — 다크 HUD 위 고대비 CTA) ─────────── */
+  --pr-lime-300: #d7ff85;
+  --pr-lime-400: #c4ff4d;
+  --pr-lime-500: #a8e62e;
+  --pr-lime-600: #7fb515;
+
+  /* ── Color: Red (팀-빨강 / 위험) ────────────────────────────────── */
+  --pr-red-300: #ff8a95;
+  --pr-red-400: #ff5c6b;
+  --pr-red-500: #d92c43;
+  --pr-red-600: #c21e37;
+
+  /* ── Color: Orange (팀-주황 / 경고 계열) ────────────────────────── */
+  --pr-orange-300: #ffa45c;
+  --pr-orange-400: #ff8324;
+  --pr-orange-500: #ff6a00;
+  --pr-orange-600: #d95500;
+  --pr-orange-700: #b34700;
+
+  /* ── Color: Green (팀-초록 / 성공) ──────────────────────────────── */
+  --pr-green-300: #6ee7a0;
+  --pr-green-400: #34d399;
+  --pr-green-500: #22c55e;
+  --pr-green-600: #16a34a;
+  --pr-green-700: #15803d;
+
+  /* ── Color: Amber (경고) ────────────────────────────────────────── */
+  --pr-amber-300: #ffd27a;
+  --pr-amber-400: #ffc24b;
+  --pr-amber-500: #ffb020;
+
+  /* ── Typography: 크기 스케일 (TDS Typography 1~7 수치, rem 단위) ──
+     텍스트 확대(OS 큰 텍스트) 대응을 위해 px 고정값 대신 rem 사용. */
+  --pr-font-size-30: 1.875rem; /* 30px */
+  --pr-font-size-26: 1.625rem; /* 26px */
+  --pr-font-size-22: 1.375rem; /* 22px */
+  --pr-font-size-20: 1.25rem; /* 20px */
+  --pr-font-size-17: 1.0625rem; /* 17px */
+  --pr-font-size-15: 0.9375rem; /* 15px */
+  --pr-font-size-13: 0.8125rem; /* 13px */
+
+  --pr-font-weight-regular: 400;
+  --pr-font-weight-medium: 500;
+  --pr-font-weight-semibold: 600;
+  --pr-font-weight-bold: 700;
+  --pr-font-weight-extrabold: 800;
+
+  --pr-line-height-tight: 1.2;
+  --pr-line-height-normal: 1.45;
+  --pr-line-height-relaxed: 1.5;
+
+  /* ── Spacing: 4px 배수 스케일 (Polaris 네이밍: 번호 = 4px 배수 ×100) ── */
+  --pr-space-0: 0;
+  --pr-space-050: 0.125rem; /* 2px */
+  --pr-space-100: 0.25rem; /* 4px */
+  --pr-space-150: 0.375rem; /* 6px */
+  --pr-space-200: 0.5rem; /* 8px */
+  --pr-space-300: 0.75rem; /* 12px */
+  --pr-space-400: 1rem; /* 16px */
+  --pr-space-500: 1.25rem; /* 20px */
+  --pr-space-600: 1.5rem; /* 24px */
+  --pr-space-800: 2rem; /* 32px */
+  --pr-space-1000: 2.5rem; /* 40px */
+  --pr-space-1200: 3rem; /* 48px */
+  --pr-space-1600: 4rem; /* 64px */
+
+  /* ── Radius ─────────────────────────────────────────────────────── */
+  --pr-radius-sm: 6px;
+  --pr-radius-md: 10px;
+  --pr-radius-lg: 16px;
+  --pr-radius-xl: 24px;
+  --pr-radius-full: 999px;
+
+  /* ── Motion ─────────────────────────────────────────────────────── */
+  --pr-duration-fast: 100ms;
+  --pr-duration-base: 200ms;
+  --pr-duration-slow: 300ms;
+  --pr-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+  --pr-easing-decelerate: cubic-bezier(0, 0, 0, 1);
+}
