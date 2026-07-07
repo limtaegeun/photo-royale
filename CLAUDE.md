@@ -86,7 +86,7 @@ path alias: `@` → `src/` (예: `@/features/photo-upload`)
 - 컴포넌트 안에서 직접 `fetch` 호출 금지 → 해당 기능의 `api/`에 함수로 만들고 composable에서 호출
 - default export 금지 (컴포넌트 .vue 제외) → named export
 - 재사용 가능성 있는 UI 요소를 생 HTML 태그(`<input>`·`<button>` 등)로 화면에 직접 마크업 금지 → `shared/components/Base*.vue` 컴포넌트로 만들어 재사용 (원자 단위 UI는 DS 컴포넌트가 단일 진실원. 현재: `BaseButton`/`BaseBadge`/`BaseInput`/`BaseSegmented`, docs/DESIGN_SYSTEM.md §6)
-- 라이브러리 추가 전 반드시 사용자에게 확인 → 현재 런타임 의존성은 vue/pinia/vue-router 3개뿐이며 이 상태를 유지하는 것이 기본값 (Tailwind v4는 빌드타임 devDependency라 런타임 의존성 아님)
+- 라이브러리 추가 전 반드시 사용자에게 확인 → 현재 런타임 의존성은 vue/pinia/vue-router + firebase(Auth/Firestore, 인증·세션 유지용) 4개이며 이 상태를 유지하는 것이 기본값 (Tailwind v4는 빌드타임 devDependency라 런타임 의존성 아님)
 
 ## 알아둘 것
 
