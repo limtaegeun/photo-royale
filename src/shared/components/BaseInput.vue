@@ -3,7 +3,7 @@ interface Props {
   /** 컨트롤 높이 — md/lg는 최소 터치 타겟(48px) 충족 */
   size?: 'sm' | 'md' | 'lg'
   /** 텍스트 계열 input type만 허용 */
-  type?: 'text' | 'search' | 'url' | 'tel' | 'email'
+  type?: 'text' | 'search' | 'url' | 'tel' | 'email' | 'password'
   placeholder?: string
   disabled?: boolean
 }
