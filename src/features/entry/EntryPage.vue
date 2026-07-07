@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import BaseBadge from '@/shared/components/BaseBadge.vue'
 import BaseButton from '@/shared/components/BaseButton.vue'
 import BaseInput from '@/shared/components/BaseInput.vue'
 import BaseSegmented from '@/shared/components/BaseSegmented.vue'
@@ -26,11 +27,7 @@ const genderOptions = [
       <div class="mt-8">
         <p class="text-hero text-content">PHOTO<br />ROYALE</p>
         <div class="mt-3 h-1 w-24 rounded-full bg-brand"></div>
-        <span
-          class="mt-4 inline-flex h-7 items-center rounded-full bg-brand px-3 text-caption font-bold text-on-brand"
-        >
-          어반 스포츠
-        </span>
+        <BaseBadge tone="brand" size="md" class="mt-4">어반 스포츠</BaseBadge>
       </div>
 
       <!-- 태그라인 -->

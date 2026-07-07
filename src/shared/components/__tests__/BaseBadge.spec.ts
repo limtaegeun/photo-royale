@@ -47,4 +47,23 @@ describe('BaseBadge', () => {
     expect(wrapper.classes()).toContain('text-success')
     expect(wrapper.classes()).not.toContain('bg-success-solid')
   })
+
+  it('brand 톤은 brand 배경 + on-brand 라벨을 채운다', () => {
+    const wrapper = mount(BaseBadge, {
+      props: { tone: 'brand' },
+    })
+
+    expect(wrapper.attributes('data-tone')).toBe('brand')
+    expect(wrapper.classes()).toContain('bg-brand')
+    expect(wrapper.classes()).toContain('text-on-brand')
+  })
+
+  it('size prop을 data 속성과 높이 유틸리티 클래스로 반영한다', () => {
+    const wrapper = mount(BaseBadge, {
+      props: { size: 'md' },
+    })
+
+    expect(wrapper.attributes('data-size')).toBe('md')
+    expect(wrapper.classes()).toContain('h-7')
+  })
 })
