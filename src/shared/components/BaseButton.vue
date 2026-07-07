@@ -2,8 +2,8 @@
 import { computed } from 'vue'
 
 interface Props {
-  /** 버튼 역할별 색상 톤 */
-  variant?: 'primary' | 'neutral' | 'danger' | 'ghost'
+  /** 버튼 역할별 색상 톤 (primary=브랜드 블루, accent=라임) */
+  variant?: 'primary' | 'accent' | 'neutral' | 'danger' | 'ghost'
   /** 버튼 크기 — md/lg는 최소 터치 타겟(48px) 충족 */
   size?: 'sm' | 'md' | 'lg'
   disabled?: boolean
@@ -23,6 +23,7 @@ const props = withDefaults(defineProps<Props>(), {
  */
 const VARIANT_CLASS = {
   primary: 'bg-brand text-on-brand active:bg-brand-pressed',
+  accent: 'bg-accent text-on-accent active:bg-accent-pressed',
   neutral: 'bg-neutral text-content active:bg-neutral-pressed',
   danger: 'bg-danger-solid text-on-danger active:bg-danger-solid-pressed',
   ghost: 'bg-transparent text-content border border-stroke-strong',

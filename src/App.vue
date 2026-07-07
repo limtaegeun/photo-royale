@@ -1,11 +1,10 @@
 <script setup lang="ts"></script>
 
 <template>
-  <h1>You did it!</h1>
-  <p>
-    Visit <a href="https://vuejs.org/" target="_blank" rel="noopener">vuejs.org</a> to read the
-    documentation
-  </p>
+  <!-- 앱 셸 — 모바일 뷰포트를 데스크톱에선 가운데 정렬해 폭을 제한 -->
+  <div class="flex min-h-dvh justify-center bg-canvas">
+    <main class="w-full max-w-md">
+      <RouterView />
+    </main>
+  </div>
 </template>
-
-<style scoped></style>

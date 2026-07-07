@@ -2,6 +2,8 @@
 
 Vue 3 + Vite + TypeScript + Pinia + Vue Router SPA. (서비스 상세 스펙은 확정 시 이 문단에 1줄 추가)
 
+**모바일 우선(Mobile-first)**: 이 앱은 기본적으로 모바일 환경에서 동작함을 전제로 개발한다. 레이아웃·터치 타겟·인터랙션은 모바일 세로 화면을 기본값으로 설계하고, 데스크톱은 그 위에 확장한다.
+
 ## 명령어
 
 ```bash
@@ -83,6 +85,7 @@ path alias: `@` → `src/` (예: `@/features/photo-upload`)
 - 기술 유형별 최상위 폴더(`src/components/`, `src/services/`) 생성 금지 → 기능 폴더 안에 만들 것
 - 컴포넌트 안에서 직접 `fetch` 호출 금지 → 해당 기능의 `api/`에 함수로 만들고 composable에서 호출
 - default export 금지 (컴포넌트 .vue 제외) → named export
+- 재사용 가능성 있는 UI 요소를 생 HTML 태그(`<input>`·`<button>` 등)로 화면에 직접 마크업 금지 → `shared/components/Base*.vue` 컴포넌트로 만들어 재사용 (원자 단위 UI는 DS 컴포넌트가 단일 진실원. 현재: `BaseButton`/`BaseBadge`/`BaseInput`/`BaseSegmented`, docs/DESIGN_SYSTEM.md §6)
 - 라이브러리 추가 전 반드시 사용자에게 확인 → 현재 런타임 의존성은 vue/pinia/vue-router 3개뿐이며 이 상태를 유지하는 것이 기본값 (Tailwind v4는 빌드타임 devDependency라 런타임 의존성 아님)
 
 ## 알아둘 것
