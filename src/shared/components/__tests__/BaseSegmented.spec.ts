@@ -32,11 +32,12 @@ describe('BaseSegmented', () => {
     expect(male.classes()).toContain('bg-brand')
   })
 
-  it('선택되지 않은 옵션은 outline 스타일이다', () => {
+  it('선택되지 않은 옵션은 채우지 않고 보조 텍스트 색이다', () => {
     const wrapper = mount(BaseSegmented, { props: { options, modelValue: 'male' } })
 
     const female = wrapper.get('[data-value="female"]')
     expect(female.attributes('aria-checked')).toBe('false')
-    expect(female.classes()).toContain('border-stroke-strong')
+    expect(female.classes()).toContain('text-content-secondary')
+    expect(female.classes()).not.toContain('bg-brand')
   })
 })
