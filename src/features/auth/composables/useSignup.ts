@@ -88,8 +88,8 @@ export function useSignup() {
   }
 
   async function submit(): Promise<UserProfile | null> {
-    submitError.value = ''
     if (isSubmitting.value) return null
+    submitError.value = ''
     if (!validate()) return null
 
     isSubmitting.value = true
