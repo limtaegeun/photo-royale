@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, ref, shallowRef } from 'vue'
-import { onAuthStateChanged, type User } from 'firebase/auth'
+import { onAuthStateChanged, signOut, type User } from 'firebase/auth'
 import { auth } from '../api/firebase'
 
 /**
@@ -39,5 +39,15 @@ export const useAuthStore = defineStore('auth', () => {
     return init()
   }
 
-  return { user, initialized, isAuthenticated, init, whenReady }
+  /**
+   * 로그아웃. onAuthStateChanged 콜백도 user를 null로 만들지만 microtask 순서가 보장되지
+   * 않아, 콜백만 믿으면 직후의 라우트 가드가 아직 로그인 상태로 판단할 수 있다(guestOnly가
+   * signup 진입을 되튕김). 가드가 즉시 올바른 판단을 하도록 여기서 확정적으로 비운다.
+   */
+  async function logout() {
+    await signOut(auth)
+    user.value = null
+  }
+
+  return { user, initialized, isAuthenticated, init, whenReady, logout }
 })
