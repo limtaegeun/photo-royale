@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, ref, shallowRef } from 'vue'
 import { onAuthStateChanged, type User } from 'firebase/auth'
 import { auth } from '../api/firebase'
 
@@ -8,7 +8,9 @@ import { auth } from '../api/firebase'
  * onAuthStateChanged로 새로고침·재방문 시에도 로그인 상태를 복원한다.
  */
 export const useAuthStore = defineStore('auth', () => {
-  const user = ref<User | null>(null)
+  // Firebase User는 메서드를 가진 클래스 인스턴스라 deep-reactive ref로 감싸면
+  // Proxy 래핑으로 getIdToken()/delete() 등이 깨질 수 있다. shallowRef로 원본을 보존한다.
+  const user = shallowRef<User | null>(null)
   /** 첫 onAuthStateChanged 콜백이 오기 전까지는 로그인 여부를 알 수 없다 */
   const initialized = ref(false)
 
