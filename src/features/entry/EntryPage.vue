@@ -1,16 +1,21 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed } from 'vue'
+import { useRouter } from 'vue-router'
 import BaseBadge from '@/shared/components/BaseBadge.vue'
 import BaseButton from '@/shared/components/BaseButton.vue'
-import BaseInput from '@/shared/components/BaseInput.vue'
-import BaseSegmented from '@/shared/components/BaseSegmented.vue'
+import { useAuthStore } from '@/features/auth'
 
-const nickname = ref('')
-const gender = ref('')
-const genderOptions = [
-  { label: '남', value: 'male' },
-  { label: '여', value: 'female' },
-]
+const router = useRouter()
+const authStore = useAuthStore()
+
+// 닉네임·성별은 가입 시 확정된다. displayName은 가입 시점에 닉네임으로 채워진다(auth/api/signup.ts)
+const nickname = computed(() => authStore.user?.displayName ?? '')
+
+// 임시 개발 편의(테스트 계정 전환용) — 로비/프로필 화면이 생기면 그쪽으로 옮긴다
+async function onLogout() {
+  await authStore.logout()
+  router.replace({ name: 'signup' })
+}
 </script>
 
 <template>
@@ -35,20 +40,18 @@ const genderOptions = [
         세상은 우리의 경기장.<br />카메라로 포착하고,<br />팀과 함께 생존하세요.
       </p>
 
-      <!-- 폼 -->
-      <div class="mt-8 space-y-3">
-        <BaseInput v-model="nickname" placeholder="닉네임" />
-
-        <div class="rounded-lg border border-stroke bg-surface p-4">
-          <p class="text-caption text-content-secondary">성별</p>
-          <BaseSegmented v-model="gender" :options="genderOptions" class="mt-2" />
-        </div>
-      </div>
+      <!-- 로그인 정체성 -->
+      <p v-if="nickname" class="mt-8 text-body text-content">
+        <span class="font-semibold">{{ nickname }}</span>님, 준비됐나요?
+      </p>
     </div>
 
-    <!-- 하단 고정 CTA -->
+    <!-- 하단 고정 CTA — 입장 이후 플로우(로비/매칭)가 생기면 연결한다 -->
     <div class="pt-5 pb-6">
       <BaseButton variant="primary" size="md" class="w-full">입장하기</BaseButton>
+      <BaseButton variant="ghost" size="md" class="mt-3 w-full" @click="onLogout">
+        로그아웃
+      </BaseButton>
     </div>
   </section>
 </template>
