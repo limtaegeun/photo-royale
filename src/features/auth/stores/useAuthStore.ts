@@ -16,13 +16,28 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isAuthenticated = computed(() => user.value !== null)
 
-  /** 앱 부팅 시 1회 호출 — Firebase가 복원한 세션을 스토어에 반영한다 */
+  // 첫 인증 상태가 확정될 때까지 라우트 가드 등이 기다릴 수 있도록 promise로 보관한다.
+  let readyPromise: Promise<void> | null = null
+
+  /** 앱 부팅 시 1회 호출 — Firebase가 복원한 세션을 스토어에 반영한다. 중복 호출은 무시된다. */
   function init() {
-    onAuthStateChanged(auth, (nextUser) => {
-      user.value = nextUser
-      initialized.value = true
+    if (readyPromise) return readyPromise
+    readyPromise = new Promise<void>((resolve) => {
+      onAuthStateChanged(auth, (nextUser) => {
+        user.value = nextUser
+        if (!initialized.value) {
+          initialized.value = true
+          resolve()
+        }
+      })
     })
+    return readyPromise
   }
 
-  return { user, initialized, isAuthenticated, init }
+  /** 첫 onAuthStateChanged 콜백으로 인증 상태가 확정될 때까지 기다린다(가드에서 사용) */
+  function whenReady() {
+    return init()
+  }
+
+  return { user, initialized, isAuthenticated, init, whenReady }
 })

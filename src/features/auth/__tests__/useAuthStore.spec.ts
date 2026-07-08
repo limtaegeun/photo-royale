@@ -38,4 +38,28 @@ describe('useAuthStore', () => {
     expect(store.initialized).toBe(true)
     expect(store.isAuthenticated).toBe(true)
   })
+
+  it('init()을 여러 번 호출해도 리스너는 한 번만 등록된다', () => {
+    onAuthStateChangedMock.mockImplementation(() => {})
+    const store = useAuthStore()
+
+    store.init()
+    store.init()
+
+    expect(onAuthStateChangedMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('whenReady()는 첫 콜백이 오면 resolve된다', async () => {
+    let emit!: (user: unknown) => void
+    onAuthStateChangedMock.mockImplementation((_auth, cb) => {
+      emit = cb
+    })
+    const store = useAuthStore()
+
+    const ready = store.whenReady()
+    emit(null)
+
+    await expect(ready).resolves.toBeUndefined()
+    expect(store.initialized).toBe(true)
+  })
 })

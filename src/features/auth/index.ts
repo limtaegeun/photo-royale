@@ -2,4 +2,5 @@
 // 노출하지 않는다(다른 기능이 내부 구현에 결합하는 것을 막는다).
 export { default as SignupPage } from './components/SignupPage.vue'
 export { useAuthStore } from './stores/useAuthStore'
+export { authGuard } from './composables/useAuthGuard'
 export type { Gender, SignupInput, UserProfile } from './types'
