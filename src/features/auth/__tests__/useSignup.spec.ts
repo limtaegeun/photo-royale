@@ -52,6 +52,35 @@ describe('useSignup', () => {
     expect(signupMock).not.toHaveBeenCalled()
   })
 
+  // 엄격 검증 패턴(zod 기본값 이식)이 막아야 하는 대표 케이스들
+  it.each([
+    ['TLD 뒤 숫자', 'khj981116@gmail.com1'],
+    ['1자 TLD', 'a@b.c'],
+    ['local part 선행 점', '.user@gmail.com'],
+    ['연속 점', 'user@gmail..com'],
+    ['@ 없음', 'not-an-email'],
+  ])('잘못된 이메일(%s)은 형식 오류로 잡고 signup을 호출하지 않는다', async (_label, email) => {
+    const { form, fieldErrors, submit } = useSignup()
+    fillValid(form)
+    form.email = email
+
+    const result = await submit()
+
+    expect(result).toBeNull()
+    expect(fieldErrors.email).toContain('형식')
+    expect(signupMock).not.toHaveBeenCalled()
+  })
+
+  // 실제로 쓰이는 정상 이메일은 통과해야 한다(과잉 차단 방지)
+  it.each(['a@b.com', 'user+tag@sub.domain.co.kr', 'khj981116@gmail.com'])(
+    '유효한 이메일(%s)은 validateEmail을 통과한다',
+    (email) => {
+      const { form, validateEmail } = useSignup()
+      form.email = email
+      expect(validateEmail()).toBe(true)
+    },
+  )
+
   it('validateEmail은 형식 오류를 잡고, 값을 고치면 에러를 지운다', () => {
     const { form, fieldErrors, validateEmail } = useSignup()
 

@@ -3,7 +3,15 @@ import { FirebaseError } from 'firebase/app'
 import { signup } from '../api/signup'
 import type { Gender, SignupInput, UserProfile } from '../types'
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+// 회원가입 폼용 실무 이메일 패턴. zod가 z.string().email() 기본값으로 쓰는 것과 동일한
+// 리터럴을 이식했다(런타임 zod 의존은 없음). 다음을 모두 막는다:
+//  - TLD에 숫자/기호가 붙은 값(gmail.com1) — 마지막 라벨을 [A-Za-z]{2,}로 강제
+//  - local part의 선행 점(.user@x.com) — (?!\.)
+//  - 연속 점(user@x..com) — (?!.*\.\.)
+// 출처/근거: https://colinhacks.com/essays/reasonable-email-regex,
+// https://github.com/colinhacks/zod (packages/zod/src/v4/core/regexes.ts)
+const EMAIL_PATTERN =
+  /^(?!\.)(?!.*\.\.)([A-Za-z0-9_'+\-.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9-]*\.)+[A-Za-z]{2,}$/
 const PASSWORD_MIN_LENGTH = 6 // Firebase 최소 요건
 const NICKNAME_MIN_LENGTH = 2
 const NICKNAME_MAX_LENGTH = 12
