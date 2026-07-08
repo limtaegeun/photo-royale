@@ -33,6 +33,17 @@ describe('SignupForm', () => {
     expect(wrapper.text()).toContain('이메일을 입력해주세요.')
   })
 
+  it('이메일 필드에서 벗어나면(blur) 형식 오류를 즉시 보여준다', async () => {
+    const wrapper = mount(SignupForm)
+
+    const email = wrapper.find('#signup-email')
+    await email.setValue('not-an-email')
+    await email.trigger('blur')
+
+    expect(wrapper.text()).toContain('이메일 형식이 올바르지 않아요.')
+    expect(signupMock).not.toHaveBeenCalled()
+  })
+
   it('폼을 채워 제출하면 signup 성공 시 success 이벤트를 emit한다', async () => {
     signupMock.mockResolvedValue(PROFILE)
     const wrapper = mount(SignupForm)

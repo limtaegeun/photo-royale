@@ -40,6 +40,30 @@ describe('useSignup', () => {
     expect(signupMock).not.toHaveBeenCalled()
   })
 
+  it('이메일 형식이 올바르지 않으면 에러를 내고 signup을 호출하지 않는다', async () => {
+    const { form, fieldErrors, submit } = useSignup()
+    fillValid(form)
+    form.email = 'not-an-email'
+
+    const result = await submit()
+
+    expect(result).toBeNull()
+    expect(fieldErrors.email).toContain('형식')
+    expect(signupMock).not.toHaveBeenCalled()
+  })
+
+  it('validateEmail은 형식 오류를 잡고, 값을 고치면 에러를 지운다', () => {
+    const { form, fieldErrors, validateEmail } = useSignup()
+
+    form.email = 'not-an-email'
+    expect(validateEmail()).toBe(false)
+    expect(fieldErrors.email).toContain('형식')
+
+    form.email = 'a@b.com'
+    expect(validateEmail()).toBe(true)
+    expect(fieldErrors.email).toBe('')
+  })
+
   it('짧은 비밀번호는 6자 미만 에러를 낸다', async () => {
     const { form, fieldErrors, submit } = useSignup()
     fillValid(form)

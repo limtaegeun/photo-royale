@@ -9,7 +9,7 @@ const emit = defineEmits<{
   success: [profile: UserProfile]
 }>()
 
-const { form, fieldErrors, submitError, isSubmitting, submit } = useSignup()
+const { form, fieldErrors, submitError, isSubmitting, validateEmail, submit } = useSignup()
 
 const genderOptions = [
   { label: '남', value: 'male' },
@@ -33,6 +33,7 @@ async function onSubmit() {
         inputmode="email"
         placeholder="이메일"
         :aria-invalid="!!fieldErrors.email"
+        @blur="validateEmail"
       />
       <p v-if="fieldErrors.email" class="text-caption text-danger">{{ fieldErrors.email }}</p>
     </div>

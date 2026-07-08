@@ -54,18 +54,28 @@ export function useSignup() {
   const submitError = ref('')
   const isSubmitting = ref(false)
 
-  function validate(): boolean {
-    fieldErrors.email = ''
-    fieldErrors.password = ''
-    fieldErrors.nickname = ''
-    fieldErrors.gender = ''
-
+  /**
+   * 이메일 단독 검증. 필드 이탈(blur) 시점에 형식 오류를 즉시 보여주기 위해 분리했고,
+   * validate()도 이를 재사용한다.
+   */
+  function validateEmail(): boolean {
     const email = form.email.trim()
     if (!email) {
       fieldErrors.email = '이메일을 입력해주세요.'
     } else if (!EMAIL_PATTERN.test(email)) {
       fieldErrors.email = '이메일 형식이 올바르지 않아요.'
+    } else {
+      fieldErrors.email = ''
     }
+    return !fieldErrors.email
+  }
+
+  function validate(): boolean {
+    fieldErrors.password = ''
+    fieldErrors.nickname = ''
+    fieldErrors.gender = ''
+
+    validateEmail()
 
     if (!form.password) {
       fieldErrors.password = '비밀번호를 입력해주세요.'
@@ -109,5 +119,5 @@ export function useSignup() {
     }
   }
 
-  return { form, fieldErrors, submitError, isSubmitting, submit }
+  return { form, fieldErrors, submitError, isSubmitting, validateEmail, submit }
 }
