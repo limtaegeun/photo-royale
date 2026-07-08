@@ -10,14 +10,22 @@ import type { SignupInput, UserProfile } from '../types'
 export async function signup(input: SignupInput): Promise<UserProfile> {
   const { user } = await createUserWithEmailAndPassword(auth, input.email, input.password)
 
-  await updateProfile(user, { displayName: input.nickname })
+  try {
+    await updateProfile(user, { displayName: input.nickname })
 
-  await setDoc(doc(db, 'users', user.uid), {
-    email: input.email,
-    nickname: input.nickname,
-    gender: input.gender,
-    createdAt: serverTimestamp(),
-  })
+    await setDoc(doc(db, 'users', user.uid), {
+      email: input.email,
+      nickname: input.nickname,
+      gender: input.gender,
+      createdAt: serverTimestamp(),
+    })
+  } catch (error) {
+    // 계정 생성 이후 단계가 실패하면 프로필 없는 orphan 계정이 남아, 같은 이메일 재시도가
+    // email-already-in-use로 영구 차단된다. 방금 만든 계정을 되돌려 재시도를 열어준다.
+    // (삭제 자체가 실패해도 원래 에러를 던져 호출부가 실패로 처리하게 한다.)
+    await user.delete().catch(() => {})
+    throw error
+  }
 
   return {
     uid: user.uid,
