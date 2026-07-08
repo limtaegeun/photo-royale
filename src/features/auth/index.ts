@@ -1,5 +1,5 @@
-export { default as SignupForm } from './components/SignupForm.vue'
-export { default as SignupView } from './components/SignupView.vue'
-export { useSignup } from './composables/useSignup'
+// 외부에 공개하는 것만 re-export한다. SignupForm·useSignup은 이 기능 내부 전용 구현이라
+// 노출하지 않는다(다른 기능이 내부 구현에 결합하는 것을 막는다).
+export { default as SignupPage } from './components/SignupPage.vue'
 export { useAuthStore } from './stores/useAuthStore'
 export type { Gender, SignupInput, UserProfile } from './types'
