@@ -3,16 +3,23 @@ import { mount } from '@vue/test-utils'
 import SignupForm from '../components/SignupForm.vue'
 import type { UserProfile } from '../types'
 
-vi.mock('../api/signup', () => ({ signup: vi.fn<typeof import('../api/signup').signup>() }))
-import { signup } from '../api/signup'
+vi.mock('../api/signup', () => ({
+  signup: vi.fn<typeof import('../api/signup').signup>(),
+  isNicknameTaken: vi.fn<typeof import('../api/signup').isNicknameTaken>(),
+  NicknameTakenError: class NicknameTakenError extends Error {},
+}))
+import { isNicknameTaken, signup } from '../api/signup'
 
 const signupMock = vi.mocked(signup)
+const isNicknameTakenMock = vi.mocked(isNicknameTaken)
 
 const PROFILE: UserProfile = { uid: 'u1', email: 'a@b.com', nickname: '오리', gender: 'female' }
 
 describe('SignupForm', () => {
   beforeEach(() => {
     signupMock.mockReset()
+    isNicknameTakenMock.mockReset()
+    isNicknameTakenMock.mockResolvedValue(false)
   })
 
   it('이메일/비번/닉네임 입력과 성별 선택 UI를 한 폼에 렌더한다', () => {

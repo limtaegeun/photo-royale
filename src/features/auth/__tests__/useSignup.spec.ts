@@ -3,10 +3,17 @@ import { FirebaseError } from 'firebase/app'
 import { useSignup } from '../composables/useSignup'
 import type { UserProfile } from '../types'
 
-vi.mock('../api/signup', () => ({ signup: vi.fn<typeof import('../api/signup').signup>() }))
-import { signup } from '../api/signup'
+vi.mock('../api/signup', () => ({
+  signup: vi.fn<typeof import('../api/signup').signup>(),
+  isNicknameTaken: vi.fn<typeof import('../api/signup').isNicknameTaken>(),
+  // 실제 모듈은 firebase 초기화를 끌고 오므로 클래스도 mock에서 재정의한다.
+  // useSignup의 instanceof 판별도 이 mock 클래스를 보므로 그대로 성립한다.
+  NicknameTakenError: class NicknameTakenError extends Error {},
+}))
+import { NicknameTakenError, isNicknameTaken, signup } from '../api/signup'
 
 const signupMock = vi.mocked(signup)
+const isNicknameTakenMock = vi.mocked(isNicknameTaken)
 
 const VALID_PROFILE: UserProfile = {
   uid: 'uid-1',
@@ -25,6 +32,8 @@ function fillValid(form: ReturnType<typeof useSignup>['form']) {
 describe('useSignup', () => {
   beforeEach(() => {
     signupMock.mockReset()
+    isNicknameTakenMock.mockReset()
+    isNicknameTakenMock.mockResolvedValue(false)
   })
 
   it('빈 값이면 필드 에러를 채우고 signup을 호출하지 않는다', async () => {
@@ -120,6 +129,31 @@ describe('useSignup', () => {
       nickname: '오리',
       gender: 'male',
     })
+  })
+
+  it('닉네임이 중복이면 필드 에러를 내고 signup을 호출하지 않는다', async () => {
+    isNicknameTakenMock.mockResolvedValue(true)
+    const { form, fieldErrors, submit } = useSignup()
+    fillValid(form)
+
+    const result = await submit()
+
+    expect(result).toBeNull()
+    expect(fieldErrors.nickname).toContain('이미 사용 중인')
+    expect(isNicknameTakenMock).toHaveBeenCalledWith('오리')
+    expect(signupMock).not.toHaveBeenCalled()
+  })
+
+  it('사전 검사 통과 후 레이스로 NicknameTakenError가 오면 닉네임 필드 에러로 보여준다', async () => {
+    signupMock.mockRejectedValue(new NicknameTakenError())
+    const { form, fieldErrors, submitError, submit } = useSignup()
+    fillValid(form)
+
+    const result = await submit()
+
+    expect(result).toBeNull()
+    expect(fieldErrors.nickname).toContain('이미 사용 중인')
+    expect(submitError.value).toBe('')
   })
 
   it('이미 가입된 이메일 에러를 한글 메시지로 매핑한다', async () => {

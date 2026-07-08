@@ -1,6 +1,6 @@
 import { reactive, ref } from 'vue'
 import { FirebaseError } from 'firebase/app'
-import { signup } from '../api/signup'
+import { NicknameTakenError, isNicknameTaken, signup } from '../api/signup'
 import type { Gender, SignupInput, UserProfile } from '../types'
 
 // 회원가입 폼용 실무 이메일 패턴. zod가 z.string().email() 기본값으로 쓰는 것과 동일한
@@ -28,6 +28,7 @@ const FIREBASE_ERROR_MESSAGE: Record<string, string> = {
   'auth/too-many-requests': '잠시 후 다시 시도해주세요.',
 }
 const DEFAULT_ERROR_MESSAGE = '가입에 실패했어요. 잠시 후 다시 시도해주세요.'
+const NICKNAME_TAKEN_MESSAGE = '이미 사용 중인 닉네임이에요.'
 
 function toErrorMessage(error: unknown): string {
   if (error instanceof FirebaseError) {
@@ -112,15 +113,28 @@ export function useSignup() {
 
     isSubmitting.value = true
     try {
+      const nickname = form.nickname.trim()
+      // 닉네임은 공개 식별자라 중복을 막는다. 이 사전 검사는 빠른 피드백용(UX)이고,
+      // 실제 유니크 보장은 signup()의 예약 트랜잭션 + firestore.rules가 담당한다.
+      if (await isNicknameTaken(nickname)) {
+        fieldErrors.nickname = NICKNAME_TAKEN_MESSAGE
+        return null
+      }
+
       const input: SignupInput = {
         email: form.email.trim(),
         password: form.password,
-        nickname: form.nickname.trim(),
+        nickname,
         gender: form.gender as Gender,
       }
       return await signup(input)
     } catch (error) {
-      submitError.value = toErrorMessage(error)
+      if (error instanceof NicknameTakenError) {
+        // 사전 검사 통과 후 다른 가입자가 먼저 예약한 레이스 — 필드 에러로 안내한다
+        fieldErrors.nickname = NICKNAME_TAKEN_MESSAGE
+      } else {
+        submitError.value = toErrorMessage(error)
+      }
       return null
     } finally {
       isSubmitting.value = false
