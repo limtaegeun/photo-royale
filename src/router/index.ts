@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { CameraPage } from '@/features/camera'
 import { EntryPage } from '@/features/entry'
 
 const router = createRouter({
@@ -8,6 +9,11 @@ const router = createRouter({
       path: '/',
       name: 'entry',
       component: EntryPage,
+    },
+    {
+      path: '/camera',
+      name: 'camera',
+      component: CameraPage,
     },
   ],
 })
