@@ -48,6 +48,26 @@ describe('BaseBadge', () => {
     expect(wrapper.classes()).not.toContain('bg-success-solid')
   })
 
+  it("appearance='outline'일 때 같은 색 테두리 + 읽기용 텍스트 색이 적용된다", () => {
+    const wrapper = mount(BaseBadge, {
+      props: { appearance: 'outline', tone: 'info' },
+    })
+
+    expect(wrapper.attributes('data-appearance')).toBe('outline')
+    expect(wrapper.classes()).toContain('border-info')
+    expect(wrapper.classes()).toContain('text-info')
+    expect(wrapper.classes()).not.toContain('bg-info-solid')
+  })
+
+  it("appearance='outline'에 team이 주어지면 팀 색 테두리가 적용된다", () => {
+    const wrapper = mount(BaseBadge, {
+      props: { appearance: 'outline', team: 'red' },
+    })
+
+    expect(wrapper.classes()).toContain('border-team-red')
+    expect(wrapper.classes()).toContain('text-team-red')
+  })
+
   it('brand 톤은 brand 배경 + on-brand 라벨을 채운다', () => {
     const wrapper = mount(BaseBadge, {
       props: { tone: 'brand' },
