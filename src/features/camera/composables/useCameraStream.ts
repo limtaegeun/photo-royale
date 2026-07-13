@@ -29,7 +29,13 @@ export function useCameraStream() {
     status.value = 'requesting'
     try {
       const media = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
+        video: {
+          facingMode: 'environment',
+          // 제약이 없으면 iOS Safari 등이 기본 저해상도(640×480)를 줘서 뷰파인더·킬샷이 모두 흐려진다.
+          // ideal이라 미지원 기기에서도 실패 없이 가장 가까운 해상도로 폴백된다.
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
         audio: false,
       })
 

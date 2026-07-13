@@ -48,7 +48,11 @@ describe('useCameraStream', () => {
     await camera.start()
 
     expect(getUserMedia).toHaveBeenCalledWith({
-      video: { facingMode: 'environment' },
+      video: {
+        facingMode: 'environment',
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+      },
       audio: false,
     })
     expect(camera.status.value).toBe('active')
