@@ -1,4 +1,10 @@
 <script setup lang="ts">
+import { Primitive } from 'reka-ui'
+
+/**
+ * Reka `Primitive`(as="input") 기반 텍스트 입력. Reka에는 전용 Input primitive가 없어
+ * 접근성이 이미 확보된 네이티브 <input>을 Primitive로 렌더해 Base 레이어를 일관되게 유지한다.
+ */
 interface Props {
   /** 컨트롤 높이 — md/lg는 최소 터치 타겟(48px) 충족 */
   size?: 'sm' | 'md' | 'lg'
@@ -35,11 +41,12 @@ const SIZE_CLASS = {
 </script>
 
 <template>
-  <input
-    v-model="model"
+  <Primitive
+    as="input"
     :type="type"
+    :value="model"
     :placeholder="placeholder"
-    :disabled="disabled"
+    :disabled="disabled || undefined"
     :data-size="size"
     class="w-full rounded-lg border border-stroke bg-surface px-4 text-content
            placeholder:text-content-secondary transition-colors duration-100 ease-standard
@@ -50,5 +57,6 @@ const SIZE_CLASS = {
            disabled:autofill:[-webkit-text-fill-color:var(--pr-color-text-disabled)]
            disabled:bg-disabled disabled:text-content-disabled disabled:cursor-default"
     :class="SIZE_CLASS[props.size]"
+    @input="model = ($event.target as HTMLInputElement).value"
   />
 </template>

@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { Primitive, type PrimitiveProps } from 'reka-ui'
 
-interface Props {
+/**
+ * Reka `Primitive` 기반 뱃지. 기본은 <span>이며 `as`/`as-child`로 다형 렌더 가능.
+ * 표식 전용(비인터랙티브)이라 색·크기만 담당한다.
+ */
+interface Props extends PrimitiveProps {
   /** 팀 색상 — 지정되면 tone보다 우선한다 */
   team?: 'red' | 'blue' | 'green' | 'orange'
   /** 상태·브랜드 톤 — team이 없을 때만 적용 */
@@ -13,6 +18,7 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  as: 'span',
   team: undefined,
   tone: 'neutral',
   appearance: 'fill',
@@ -70,7 +76,9 @@ const colorClass = computed(() => {
 </script>
 
 <template>
-  <span
+  <Primitive
+    :as="as"
+    :as-child="asChild"
     class="inline-flex items-center justify-center rounded-full text-caption font-semibold whitespace-nowrap"
     :class="[colorClass, SIZE_CLASS[props.size]]"
     :data-appearance="appearance"
@@ -79,5 +87,5 @@ const colorClass = computed(() => {
     :data-size="size"
   >
     <slot />
-  </span>
+  </Primitive>
 </template>
