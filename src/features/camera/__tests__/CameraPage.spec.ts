@@ -9,8 +9,16 @@ Object.defineProperty(URL, 'createObjectURL', { value: createObjectURL, configur
 Object.defineProperty(URL, 'revokeObjectURL', { value: revokeObjectURL, configurable: true })
 
 function createFakeStream() {
-  const tracks = [{ stop: vi.fn<() => void>() }]
-  return { getTracks: () => tracks } as unknown as MediaStream
+  const tracks = [
+    {
+      stop: vi.fn<() => void>(),
+      addEventListener: vi.fn<(event: string, handler: () => void) => void>(),
+    },
+  ]
+  return {
+    getTracks: () => tracks,
+    getVideoTracks: () => tracks,
+  } as unknown as MediaStream
 }
 
 function stubGetUserMedia(impl: (constraints: MediaStreamConstraints) => Promise<MediaStream>) {

@@ -39,6 +39,14 @@ export function useCameraStream() {
         return
       }
 
+      // OS 회수·다른 앱 점유 등 외부 요인으로 트랙이 끝나면 error로 되돌려
+      // 재시도 UI를 노출한다 (track.stop()으로 직접 정지한 경우엔 ended가 발생하지 않는다)
+      media.getVideoTracks()[0]?.addEventListener('ended', () => {
+        if (disposed) return
+        stop()
+        status.value = 'error'
+      })
+
       stream.value = media
       status.value = 'active'
     } catch (cause) {

@@ -3,9 +3,21 @@ import { effectScope } from 'vue'
 import { useCameraStream } from '../composables/useCameraStream'
 
 function createFakeStream() {
-  const tracks = [{ stop: vi.fn<() => void>() }, { stop: vi.fn<() => void>() }]
-  const stream = { getTracks: () => tracks } as unknown as MediaStream
-  return { stream, tracks }
+  const listeners: Record<string, () => void> = {}
+  const createFakeTrack = () => ({
+    stop: vi.fn<() => void>(),
+    addEventListener: vi.fn<(event: string, handler: () => void) => void>(
+      (event, handler) => (listeners[event] = handler),
+    ),
+  })
+  const tracks = [createFakeTrack(), createFakeTrack()]
+  const stream = {
+    getTracks: () => tracks,
+    getVideoTracks: () => tracks,
+  } as unknown as MediaStream
+  /** OS 회수 등 외부 요인으로 비디오 트랙이 끝난 상황을 시뮬레이션한다 */
+  const fireVideoTrackEnded = () => listeners.ended?.()
+  return { stream, tracks, fireVideoTrackEnded }
 }
 
 function stubGetUserMedia(impl: (constraints: MediaStreamConstraints) => Promise<MediaStream>) {
@@ -100,6 +112,19 @@ describe('useCameraStream', () => {
     await camera.start()
     scope.stop()
 
+    tracks.forEach((track) => expect(track.stop).toHaveBeenCalledOnce())
+  })
+
+  it('활성 상태에서 트랙이 외부 요인으로 끝나면(ended) error 상태가 되어 재시도를 유도한다', async () => {
+    const { stream, tracks, fireVideoTrackEnded } = createFakeStream()
+    stubGetUserMedia(() => Promise.resolve(stream))
+    const { camera } = setupInScope()
+
+    await camera.start()
+    fireVideoTrackEnded()
+
+    expect(camera.status.value).toBe('error')
+    expect(camera.stream.value).toBeNull()
     tracks.forEach((track) => expect(track.stop).toHaveBeenCalledOnce())
   })
 
