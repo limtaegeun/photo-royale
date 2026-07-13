@@ -1,17 +1,9 @@
 import { reactive, ref } from 'vue'
-import { FirebaseError } from 'firebase/app'
 import { NicknameTakenError, isNicknameTaken, signup } from '../api/signup'
+import { COMMON_AUTH_ERROR_MESSAGE, toAuthErrorMessage } from '../errorMessages'
+import { emailFieldError } from '../validation'
 import type { Gender, SignupInput, UserProfile } from '../types'
 
-// 회원가입 폼용 실무 이메일 패턴. zod가 z.string().email() 기본값으로 쓰는 것과 동일한
-// 리터럴을 이식했다(런타임 zod 의존은 없음). 다음을 모두 막는다:
-//  - TLD에 숫자/기호가 붙은 값(gmail.com1) — 마지막 라벨을 [A-Za-z]{2,}로 강제
-//  - local part의 선행 점(.user@x.com) — (?!\.)
-//  - 연속 점(user@x..com) — (?!.*\.\.)
-// 출처/근거: https://colinhacks.com/essays/reasonable-email-regex,
-// https://github.com/colinhacks/zod (packages/zod/src/v4/core/regexes.ts)
-const EMAIL_PATTERN =
-  /^(?!\.)(?!.*\.\.)([A-Za-z0-9_'+\-.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9-]*\.)+[A-Za-z]{2,}$/
 const PASSWORD_MIN_LENGTH = 6 // Firebase 최소 요건
 const NICKNAME_MIN_LENGTH = 2
 const NICKNAME_MAX_LENGTH = 12
@@ -20,22 +12,14 @@ const NICKNAME_MAX_LENGTH = 12
  * Firebase 에러 코드 → 사용자용 한글 메시지. 가입 실패 확률 최소화 목표에 따라
  * 원인별로 구체적 안내를 준다. 없는 코드는 일반 메시지로 폴백한다.
  */
-const FIREBASE_ERROR_MESSAGE: Record<string, string> = {
+const SIGNUP_ERROR_MESSAGE: Record<string, string> = {
+  ...COMMON_AUTH_ERROR_MESSAGE,
   'auth/email-already-in-use': '이미 가입된 이메일이에요. 다른 이메일을 써주세요.',
   'auth/invalid-email': '이메일 형식이 올바르지 않아요.',
   'auth/weak-password': `비밀번호는 ${PASSWORD_MIN_LENGTH}자 이상이어야 해요.`,
-  'auth/network-request-failed': '네트워크 연결을 확인하고 다시 시도해주세요.',
-  'auth/too-many-requests': '잠시 후 다시 시도해주세요.',
 }
 const DEFAULT_ERROR_MESSAGE = '가입에 실패했어요. 잠시 후 다시 시도해주세요.'
 const NICKNAME_TAKEN_MESSAGE = '이미 사용 중인 닉네임이에요.'
-
-function toErrorMessage(error: unknown): string {
-  if (error instanceof FirebaseError) {
-    return FIREBASE_ERROR_MESSAGE[error.code] ?? DEFAULT_ERROR_MESSAGE
-  }
-  return DEFAULT_ERROR_MESSAGE
-}
 
 type FormField = 'email' | 'password' | 'nickname' | 'gender'
 
@@ -68,14 +52,7 @@ export function useSignup() {
    * validate()도 이를 재사용한다.
    */
   function validateEmail(): boolean {
-    const email = form.email.trim()
-    if (!email) {
-      fieldErrors.email = '이메일을 입력해주세요.'
-    } else if (!EMAIL_PATTERN.test(email)) {
-      fieldErrors.email = '이메일 형식이 올바르지 않아요.'
-    } else {
-      fieldErrors.email = ''
-    }
+    fieldErrors.email = emailFieldError(form.email)
     return !fieldErrors.email
   }
 
@@ -133,7 +110,7 @@ export function useSignup() {
         // 사전 검사 통과 후 다른 가입자가 먼저 예약한 레이스 — 필드 에러로 안내한다
         fieldErrors.nickname = NICKNAME_TAKEN_MESSAGE
       } else {
-        submitError.value = toErrorMessage(error)
+        submitError.value = toAuthErrorMessage(error, SIGNUP_ERROR_MESSAGE, DEFAULT_ERROR_MESSAGE)
       }
       return null
     } finally {
