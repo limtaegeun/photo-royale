@@ -27,12 +27,12 @@ describe('authGuard', () => {
     onAuthStateChangedMock.mockReset()
   })
 
-  it('미인증 사용자가 requiresAuth 경로에 가면 signup으로 리다이렉트한다', async () => {
+  it('미인증 사용자가 requiresAuth 경로에 가면 login으로 리다이렉트한다', async () => {
     emitAuthState(null)
 
     const result = await authGuard(routeWithMeta({ requiresAuth: true }))
 
-    expect(result).toEqual({ name: 'signup' })
+    expect(result).toEqual({ name: 'login' })
   })
 
   it('인증 사용자는 requiresAuth 경로에 그대로 진입한다', async () => {
@@ -43,7 +43,7 @@ describe('authGuard', () => {
     expect(result).toBeUndefined()
   })
 
-  it('인증 사용자가 guestOnly(signup) 경로에 가면 entry로 차단한다', async () => {
+  it('인증 사용자가 guestOnly(login/signup) 경로에 가면 entry로 차단한다', async () => {
     emitAuthState({ uid: 'u1' })
 
     const result = await authGuard(routeWithMeta({ guestOnly: true }))
@@ -51,7 +51,7 @@ describe('authGuard', () => {
     expect(result).toEqual({ name: 'entry' })
   })
 
-  it('미인증 사용자는 guestOnly(signup) 경로에 그대로 진입한다', async () => {
+  it('미인증 사용자는 guestOnly(login/signup) 경로에 그대로 진입한다', async () => {
     emitAuthState(null)
 
     const result = await authGuard(routeWithMeta({ guestOnly: true }))

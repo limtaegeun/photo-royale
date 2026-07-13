@@ -14,7 +14,7 @@ const nickname = computed(() => authStore.user?.displayName ?? '')
 // 임시 개발 편의(테스트 계정 전환용) — 로비/프로필 화면이 생기면 그쪽으로 옮긴다
 async function onLogout() {
   await authStore.logout()
-  router.replace({ name: 'signup' })
+  router.replace({ name: 'login' })
 }
 </script>
 

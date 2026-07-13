@@ -13,8 +13,9 @@ vi.mock('../api/signup', () => ({
 }))
 
 const replaceMock = vi.fn<() => void>()
+const pushMock = vi.fn<() => void>()
 vi.mock('vue-router', () => ({
-  useRouter: () => ({ replace: replaceMock }),
+  useRouter: () => ({ replace: replaceMock, push: pushMock }),
 }))
 
 const PROFILE: UserProfile = { uid: 'u1', email: 'a@b.com', nickname: '오리', gender: 'female' }
@@ -22,6 +23,7 @@ const PROFILE: UserProfile = { uid: 'u1', email: 'a@b.com', nickname: '오리', 
 describe('SignupPage', () => {
   beforeEach(() => {
     replaceMock.mockReset()
+    pushMock.mockReset()
   })
 
   it('가입 성공 시 진입(entry) 화면으로 replace 이동한다', async () => {
@@ -32,5 +34,16 @@ describe('SignupPage', () => {
     await wrapper.findComponent(SignupForm).vm.$emit('success', PROFILE)
 
     expect(replaceMock).toHaveBeenCalledWith({ name: 'entry' })
+  })
+
+  it('로그인 버튼을 누르면 login으로 push 이동한다', async () => {
+    const wrapper = mount(SignupPage, {
+      global: { stubs: { SignupForm: true } },
+    })
+
+    const loginButton = wrapper.findAll('button').find((b) => b.text().includes('로그인'))!
+    await loginButton.trigger('click')
+
+    expect(pushMock).toHaveBeenCalledWith({ name: 'login' })
   })
 })

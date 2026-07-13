@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
+import BaseButton from '@/shared/components/BaseButton.vue'
 import SignupForm from './SignupForm.vue'
 
 const router = useRouter()
@@ -20,5 +21,13 @@ function onSuccess() {
       <p class="mt-1 text-caption text-content-secondary">한 번에 입력하면 바로 시작해요.</p>
     </header>
     <SignupForm @success="onSuccess" />
+    <BaseButton
+      variant="ghost"
+      size="md"
+      class="mt-3 w-full"
+      @click="router.push({ name: 'login' })"
+    >
+      이미 계정이 있어요? 로그인
+    </BaseButton>
   </section>
 </template>

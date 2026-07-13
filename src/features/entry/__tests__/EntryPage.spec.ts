@@ -32,7 +32,7 @@ describe('EntryPage', () => {
     expect(wrapper.findAll('[role="radio"]')).toHaveLength(0)
   })
 
-  it('로그아웃 버튼을 누르면 logout 후 signup으로 replace 이동한다', async () => {
+  it('로그아웃 버튼을 누르면 logout 후 login으로 replace 이동한다', async () => {
     const wrapper = mount(EntryPage)
 
     const logoutButton = wrapper.findAll('button').find((b) => b.text() === '로그아웃')!
@@ -40,6 +40,6 @@ describe('EntryPage', () => {
     await new Promise((r) => setTimeout(r))
 
     expect(logoutMock).toHaveBeenCalledOnce()
-    expect(replaceMock).toHaveBeenCalledWith({ name: 'signup' })
+    expect(replaceMock).toHaveBeenCalledWith({ name: 'login' })
   })
 })
