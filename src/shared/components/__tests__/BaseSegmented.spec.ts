@@ -8,10 +8,11 @@ const options = [
 ]
 
 describe('BaseSegmented', () => {
-  it('모든 옵션 라벨을 렌더한다', () => {
+  it('radiogroup으로 모든 옵션 라벨을 렌더한다', () => {
     const wrapper = mount(BaseSegmented, { props: { options } })
 
-    expect(wrapper.findAll('button')).toHaveLength(2)
+    expect(wrapper.get('[role="radiogroup"]')).toBeTruthy()
+    expect(wrapper.findAll('[role="radio"]')).toHaveLength(2)
     expect(wrapper.get('[data-value="male"]').text()).toBe('남')
     expect(wrapper.get('[data-value="female"]').text()).toBe('여')
   })
@@ -24,20 +25,10 @@ describe('BaseSegmented', () => {
     expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['female'])
   })
 
-  it('선택된 옵션은 aria-checked=true와 fill 클래스를 갖는다', () => {
+  it('선택된 옵션만 data-state=checked를 갖는다', () => {
     const wrapper = mount(BaseSegmented, { props: { options, modelValue: 'male' } })
 
-    const male = wrapper.get('[data-value="male"]')
-    expect(male.attributes('aria-checked')).toBe('true')
-    expect(male.classes()).toContain('bg-brand')
-  })
-
-  it('선택되지 않은 옵션은 채우지 않고 보조 텍스트 색이다', () => {
-    const wrapper = mount(BaseSegmented, { props: { options, modelValue: 'male' } })
-
-    const female = wrapper.get('[data-value="female"]')
-    expect(female.attributes('aria-checked')).toBe('false')
-    expect(female.classes()).toContain('text-content-secondary')
-    expect(female.classes()).not.toContain('bg-brand')
+    expect(wrapper.get('[data-value="male"]').attributes('data-state')).toBe('checked')
+    expect(wrapper.get('[data-value="female"]').attributes('data-state')).toBe('unchecked')
   })
 })
