@@ -38,22 +38,26 @@ onMounted(start)
       playsinline
     ></video>
 
-    <!-- 하단 셔터 (스트림 활성 + 미리보기 없음일 때) -->
+    <!-- 하단 셔터 (스트림 활성 + 미리보기 없음일 때) — 영상 위 HUD라 스크림 필수 -->
     <div
       v-if="status === 'active' && !photo"
-      class="absolute inset-x-0 bottom-0 px-6 pt-4 pb-8"
+      class="absolute inset-x-0 bottom-0 bg-scrim pb-(--pr-inset-bottom-safe)"
     >
-      <p v-if="failed" class="mb-2 text-center text-caption text-danger">
-        촬영에 실패했습니다. 다시 시도해주세요
-      </p>
-      <BaseButton variant="primary" size="lg" class="w-full" @click="shoot">촬영</BaseButton>
+      <div class="px-6 pt-4 pb-8">
+        <p v-if="failed" class="mb-2 text-center text-caption text-danger">
+          촬영에 실패했습니다. 다시 시도해주세요
+        </p>
+        <BaseButton variant="primary" size="lg" class="w-full" @click="shoot">촬영</BaseButton>
+      </div>
     </div>
 
     <!-- 촬영 결과 미리보기 — 카메라 스트림은 아래에서 계속 유지된다 -->
     <div v-if="photo" class="absolute inset-0 flex flex-col bg-canvas">
       <img :src="photo.url" alt="촬영된 사진" class="min-h-0 flex-1 object-contain" />
-      <div class="px-6 pt-4 pb-8">
-        <BaseButton variant="ghost" size="lg" class="w-full" @click="clear">다시 찍기</BaseButton>
+      <div class="pb-(--pr-inset-bottom-safe)">
+        <div class="px-6 pt-4 pb-8">
+          <BaseButton variant="ghost" size="lg" class="w-full" @click="clear">다시 찍기</BaseButton>
+        </div>
       </div>
     </div>
 
