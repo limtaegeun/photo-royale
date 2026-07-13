@@ -9,6 +9,12 @@ export interface SignupInput {
   gender: Gender
 }
 
+/** 로그인 폼이 제출하는 입력값 */
+export interface LoginInput {
+  email: string
+  password: string
+}
+
 /** 가입 성공 후 앱이 쓰는 프로필 (Firestore users 문서 + Auth 조합) */
 export interface UserProfile {
   uid: string

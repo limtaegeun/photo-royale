@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { EntryPage } from '@/features/entry'
-import { SignupPage, authGuard } from '@/features/auth'
+import { LoginPage, SignupPage, authGuard } from '@/features/auth'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -10,6 +10,12 @@ const router = createRouter({
       name: 'entry',
       component: EntryPage,
       meta: { requiresAuth: true },
+    },
+    {
+      path: '/login',
+      name: 'login',
+      component: LoginPage,
+      meta: { guestOnly: true },
     },
     {
       path: '/signup',
