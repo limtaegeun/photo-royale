@@ -17,6 +17,10 @@
  * - 다크 테마는 라이트보다 대비를 더 강하게 잡는다(TDS APCA 원칙).
  */
 :root {
+  /* 브라우저(UA)에 테마를 알린다 — autofill 미리보기 글자색(FieldText)·스크롤바·네이티브
+     폼 컨트롤이 이 값을 따른다. author CSS로 못 이기는 UA 색은 이것이 유일한 레버다. */
+  color-scheme: dark;
+
   /* ── Background (화면·서피스 배경) ─────────────────────────────── */
   --pr-color-bg-base: var(--pr-gray-950);
   --pr-color-bg-elevated: var(--pr-gray-900);
@@ -131,6 +135,8 @@
 
 /* ── Light theme — 비카메라 화면(대기실·결과·호스트 관리 등) ──────── */
 [data-theme='light'] {
+  color-scheme: light;
+
   --pr-color-bg-base: var(--pr-gray-50);
   --pr-color-bg-elevated: var(--pr-gray-0);
   --pr-color-bg-surface: var(--pr-gray-100);
