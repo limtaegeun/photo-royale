@@ -7,6 +7,10 @@ import type { Gender, SignupInput, UserProfile } from '../types'
 const PASSWORD_MIN_LENGTH = 6 // Firebase 최소 요건
 const NICKNAME_MIN_LENGTH = 2
 const NICKNAME_MAX_LENGTH = 12
+// 닉네임 키가 Firestore 문서 ID로 쓰이므로(toNicknameKey) `/`·`..`·`__x__` 같은 예약
+// 문자·패턴이 들어가면 경로가 깨져 가입이 영구 실패한다. 한글(자모 포함)·영문·숫자
+// 화이트리스트로 원천 차단한다(공백·zero-width 등 보이지 않는 문자도 함께 막힌다).
+const NICKNAME_PATTERN = /^[가-힣ㄱ-ㅎㅏ-ㅣA-Za-z0-9]+$/
 
 /**
  * Firebase 에러 코드 → 사용자용 한글 메시지. 가입 실패 확률 최소화 목표에 따라
@@ -20,6 +24,7 @@ const SIGNUP_ERROR_MESSAGE: Record<string, string> = {
 }
 const DEFAULT_ERROR_MESSAGE = '가입에 실패했어요. 잠시 후 다시 시도해주세요.'
 const NICKNAME_TAKEN_MESSAGE = '이미 사용 중인 닉네임이에요.'
+const NICKNAME_PATTERN_MESSAGE = '닉네임은 한글·영문·숫자만 쓸 수 있어요.'
 
 type FormField = 'email' | 'password' | 'nickname' | 'gender'
 
@@ -48,6 +53,14 @@ export function useSignup() {
   const isSubmitting = ref(false)
 
   /**
+   * 검증·저장에 쓰는 닉네임. toNicknameKey와 같은 NFC 정규화를 거쳐(macOS 한글 NFD
+   * 입력 대응) 화면에 보이는 글자 수와 길이 검증·유니크 키가 어긋나지 않게 한다.
+   */
+  function normalizedNickname(): string {
+    return form.nickname.trim().normalize('NFC')
+  }
+
+  /**
    * 이메일 단독 검증. 필드 이탈(blur) 시점에 형식 오류를 즉시 보여주기 위해 분리했고,
    * validate()도 이를 재사용한다.
    */
@@ -69,11 +82,13 @@ export function useSignup() {
       fieldErrors.password = `비밀번호는 ${PASSWORD_MIN_LENGTH}자 이상이어야 해요.`
     }
 
-    const nickname = form.nickname.trim()
+    const nickname = normalizedNickname()
     if (!nickname) {
       fieldErrors.nickname = '닉네임을 입력해주세요.'
     } else if (nickname.length < NICKNAME_MIN_LENGTH || nickname.length > NICKNAME_MAX_LENGTH) {
       fieldErrors.nickname = `닉네임은 ${NICKNAME_MIN_LENGTH}~${NICKNAME_MAX_LENGTH}자로 입력해주세요.`
+    } else if (!NICKNAME_PATTERN.test(nickname)) {
+      fieldErrors.nickname = NICKNAME_PATTERN_MESSAGE
     }
 
     if (!form.gender) {
@@ -90,7 +105,7 @@ export function useSignup() {
 
     isSubmitting.value = true
     try {
-      const nickname = form.nickname.trim()
+      const nickname = normalizedNickname()
       // 닉네임은 공개 식별자라 중복을 막는다. 이 사전 검사는 빠른 피드백용(UX)이고,
       // 실제 유니크 보장은 signup()의 예약 트랜잭션 + firestore.rules가 담당한다.
       if (await isNicknameTaken(nickname)) {

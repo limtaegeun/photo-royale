@@ -113,6 +113,49 @@ describe('useSignup', () => {
     expect(signupMock).not.toHaveBeenCalled()
   })
 
+  // 닉네임 키가 Firestore 문서 ID로 쓰이므로 경로를 깨뜨리는 값을 화이트리스트로 막는다
+  it.each([
+    ['경로 구분자', '포토/로얄'],
+    ['예약 ID(연속 점)', '..'],
+    ['예약 패턴(__x__)', '__test__'],
+    ['내부 공백', '오리 백조'],
+    ['특수문자', '오리!'],
+  ])('허용 외 문자 닉네임(%s)은 필드 에러를 내고 signup을 호출하지 않는다', async (_label, nickname) => {
+    const { form, fieldErrors, submit } = useSignup()
+    fillValid(form)
+    form.nickname = nickname
+
+    const result = await submit()
+
+    expect(result).toBeNull()
+    expect(fieldErrors.nickname).toContain('한글·영문·숫자')
+    expect(signupMock).not.toHaveBeenCalled()
+  })
+
+  it.each(['오리', 'Duck123', 'ㅋㅋ'])('한글·영문·숫자 닉네임(%s)은 통과한다', async (nickname) => {
+    signupMock.mockResolvedValue(VALID_PROFILE)
+    const { form, fieldErrors, submit } = useSignup()
+    fillValid(form)
+    form.nickname = nickname
+
+    await submit()
+
+    expect(fieldErrors.nickname).toBe('')
+    expect(signupMock).toHaveBeenCalledWith(expect.objectContaining({ nickname }))
+  })
+
+  it('NFD로 입력된 한글 닉네임은 NFC로 정규화해 검증·제출한다', async () => {
+    signupMock.mockResolvedValue(VALID_PROFILE)
+    const { form, fieldErrors, submit } = useSignup()
+    fillValid(form)
+    form.nickname = '오리'.normalize('NFD')
+
+    await submit()
+
+    expect(fieldErrors.nickname).toBe('')
+    expect(signupMock).toHaveBeenCalledWith(expect.objectContaining({ nickname: '오리' }))
+  })
+
   it('유효하면 trim된 값으로 signup을 호출하고 프로필을 반환한다', async () => {
     signupMock.mockResolvedValue(VALID_PROFILE)
     const { form, submit } = useSignup()
