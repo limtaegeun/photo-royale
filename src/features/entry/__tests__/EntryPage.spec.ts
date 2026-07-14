@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
-import EntryPage from '../EntryPage.vue'
+import EntryPage from '../components/EntryPage.vue'
 
 // 테스트마다 로그인/비로그인 상태를 바꿀 수 있도록 getter로 참조한다
 const authState = { user: null as { displayName: string } | null }
