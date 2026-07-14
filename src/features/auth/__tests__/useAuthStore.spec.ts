@@ -24,7 +24,7 @@ describe('useAuthStore', () => {
     const store = useAuthStore()
     expect(store.user).toBeNull()
     expect(store.initialized).toBe(false)
-    expect(store.isAuthenticated).toBe(false)
+    expect(store.isLoggedIn).toBe(false)
   })
 
   it('init() 후 로그인 콜백이 오면 user와 상태를 반영한다', () => {
@@ -39,7 +39,7 @@ describe('useAuthStore', () => {
 
     expect(store.user).toEqual({ uid: 'u1' })
     expect(store.initialized).toBe(true)
-    expect(store.isAuthenticated).toBe(true)
+    expect(store.isLoggedIn).toBe(true)
   })
 
   it('init()을 여러 번 호출해도 리스너는 한 번만 등록된다', () => {
@@ -66,7 +66,7 @@ describe('useAuthStore', () => {
 
     expect(signOutMock).toHaveBeenCalledOnce()
     expect(store.user).toBeNull()
-    expect(store.isAuthenticated).toBe(false)
+    expect(store.isLoggedIn).toBe(false)
   })
 
   it('whenReady()는 첫 콜백이 오면 resolve된다', async () => {

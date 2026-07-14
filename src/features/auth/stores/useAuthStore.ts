@@ -14,7 +14,7 @@ export const useAuthStore = defineStore('auth', () => {
   /** 첫 onAuthStateChanged 콜백이 오기 전까지는 로그인 여부를 알 수 없다 */
   const initialized = ref(false)
 
-  const isAuthenticated = computed(() => user.value !== null)
+  const isLoggedIn = computed(() => user.value !== null)
 
   // 첫 인증 상태가 확정될 때까지 라우트 가드 등이 기다릴 수 있도록 promise로 보관한다.
   let readyPromise: Promise<void> | null = null
@@ -49,5 +49,5 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null
   }
 
-  return { user, initialized, isAuthenticated, init, whenReady, logout }
+  return { user, initialized, isLoggedIn, init, whenReady, logout }
 })

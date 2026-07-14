@@ -19,11 +19,11 @@ export async function authGuard(to: RouteLocationNormalized) {
   const authStore = useAuthStore()
   await authStore.whenReady()
 
-  if (to.meta.requiresAuth && !authStore.isAuthenticated) {
+  if (to.meta.requiresAuth && !authStore.isLoggedIn) {
     return { name: 'login' }
   }
 
-  if (to.meta.guestOnly && authStore.isAuthenticated) {
+  if (to.meta.guestOnly && authStore.isLoggedIn) {
     return { name: 'entry' }
   }
 }
