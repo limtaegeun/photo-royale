@@ -24,7 +24,7 @@ async function onSubmit() {
 
 <template>
   <form class="flex flex-col gap-4" novalidate @submit.prevent="onSubmit">
-    <div class="space-y-1.5">
+    <div class="space-y-2">
       <BaseInput
         id="signup-email"
         v-model="form.email"
@@ -38,7 +38,7 @@ async function onSubmit() {
       <p v-if="fieldErrors.email" class="text-caption text-danger">{{ fieldErrors.email }}</p>
     </div>
 
-    <div class="space-y-1.5">
+    <div class="space-y-2">
       <BaseInput
         id="signup-password"
         v-model="form.password"
@@ -50,7 +50,7 @@ async function onSubmit() {
       <p v-if="fieldErrors.password" class="text-caption text-danger">{{ fieldErrors.password }}</p>
     </div>
 
-    <div class="space-y-1.5">
+    <div class="space-y-2">
       <BaseInput
         id="signup-nickname"
         v-model="form.nickname"
