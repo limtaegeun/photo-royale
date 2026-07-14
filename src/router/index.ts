@@ -14,10 +14,10 @@ const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
+      // 공개 랜딩 — 비로그인도 열람 가능. 인증이 필요한 건 게임 입장 이후 플로우(로비 등)다.
       path: '/',
       name: 'entry',
       component: EntryPage,
-      meta: { requiresAuth: true },
     },
     {
       path: '/login',
