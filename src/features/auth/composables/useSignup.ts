@@ -1,6 +1,6 @@
 import { reactive, ref } from 'vue'
 import { NicknameTakenError, isNicknameTaken, signup } from '../api/signup'
-import { COMMON_AUTH_ERROR_MESSAGE, toAuthErrorMessage } from '../errorMessages'
+import { COMMON_AUTH_ERROR_MESSAGE, NETWORK_ERROR_MESSAGE, toAuthErrorMessage } from '../errorMessages'
 import { emailFieldError } from '../validation'
 import type { Gender, SignupInput, UserProfile } from '../types'
 
@@ -21,6 +21,8 @@ const SIGNUP_ERROR_MESSAGE: Record<string, string> = {
   'auth/email-already-in-use': '이미 가입된 이메일이에요. 다른 이메일을 써주세요.',
   'auth/invalid-email': '이메일 형식이 올바르지 않아요.',
   'auth/weak-password': `비밀번호는 ${PASSWORD_MIN_LENGTH}자 이상이어야 해요.`,
+  // 닉네임 사전검사·가입 트랜잭션(Firestore)이 오프라인일 때의 코드 — auth/* 접두사가 없다
+  unavailable: NETWORK_ERROR_MESSAGE,
 }
 const DEFAULT_ERROR_MESSAGE = '가입에 실패했어요. 잠시 후 다시 시도해주세요.'
 const NICKNAME_TAKEN_MESSAGE = '이미 사용 중인 닉네임이에요.'

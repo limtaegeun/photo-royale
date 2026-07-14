@@ -199,6 +199,17 @@ describe('useSignup', () => {
     expect(submitError.value).toBe('')
   })
 
+  it('Firestore 오프라인 에러(unavailable)를 네트워크 안내 메시지로 매핑한다', async () => {
+    isNicknameTakenMock.mockRejectedValue(new FirebaseError('unavailable', 'offline'))
+    const { form, submit, submitError } = useSignup()
+    fillValid(form)
+
+    const result = await submit()
+
+    expect(result).toBeNull()
+    expect(submitError.value).toContain('네트워크')
+  })
+
   it('이미 가입된 이메일 에러를 한글 메시지로 매핑한다', async () => {
     signupMock.mockRejectedValue(new FirebaseError('auth/email-already-in-use', 'x'))
     const { form, submit, submitError } = useSignup()
