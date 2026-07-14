@@ -4,6 +4,26 @@ rules_version = '2';
 // 배포한다(firebase.json에 연결됨). 콘솔에서 직접 수정하면 이 파일과 어긋나므로 금지.
 service cloud.firestore {
   match /databases/{database}/documents {
+    // 신규 users 문서 스키마 검증 — 필드 화이트리스트 + 타입/값/길이 제약.
+    // 정상 클라이언트(useSignup)와 같은 규칙(닉네임 2~12자, 한글·영문·숫자)을 서버에서도
+    // 강제해, SDK 직접 호출로 예약 키와 다른 표시 닉네임·임의 필드·비정상 gender를
+    // 쓰는 것을 막는다. 한계: rules는 NFC 정규화를 못 하므로 유니코드 정규화 자체는
+    // 클라이언트(toNicknameKey) 책임으로 남는다.
+    function isValidNewUser(data) {
+      return data.keys().hasAll(['email', 'nickname', 'nicknameKey', 'gender', 'createdAt'])
+        && data.keys().hasOnly(['email', 'nickname', 'nicknameKey', 'gender', 'createdAt'])
+        && data.email is string
+        && data.email.size() >= 3
+        && data.email.size() <= 320
+        && data.nickname is string
+        && data.nickname.size() >= 2
+        && data.nickname.size() <= 12
+        && data.nickname.matches('^[가-힣ㄱ-ㅎㅏ-ㅣA-Za-z0-9]+$')
+        && data.nicknameKey == data.nickname.lower()
+        && data.gender in ['male', 'female']
+        && data.createdAt == request.time; // serverTimestamp()는 rules에서 request.time과 같다
+    }
+
     // 닉네임 유니크 인덱스. 문서 ID = 정규화 키(trim → NFC → lowercase,
     // src/features/auth/api/signup.ts toNicknameKey와 동일 규칙), 내용은 소유자 uid뿐.
     match /nicknames/{nickname} {
@@ -29,10 +49,11 @@ service cloud.firestore {
       allow get: if request.auth != null && request.auth.uid == uid;
       allow list: if false;
 
-      // 본인 문서이면서, 같은 트랜잭션에 닉네임 예약이 함께 있어야 생성된다(상호 참조).
+      // 본인 문서이면서 스키마 검증(isValidNewUser)을 통과하고, 같은 트랜잭션에
+      // 닉네임 예약이 함께 있어야 생성된다(상호 참조).
       allow create: if request.auth != null
         && request.auth.uid == uid
-        && request.resource.data.nicknameKey is string
+        && isValidNewUser(request.resource.data)
         && getAfter(/databases/$(database)/documents/nicknames/$(request.resource.data.nicknameKey)).data.uid == uid;
 
       // 프로필 수정 플로우 도입 시 닉네임 재예약 규칙과 함께 재설계한다.
