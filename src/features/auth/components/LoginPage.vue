@@ -26,7 +26,7 @@ function onSuccess() {
       class="mt-3 w-full"
       @click="router.push({ name: 'signup' })"
     >
-      처음이에요? 회원가입
+      계정 만들기
     </BaseButton>
   </section>
 </template>

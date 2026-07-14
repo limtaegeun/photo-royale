@@ -34,7 +34,7 @@ describe('LoginPage', () => {
       global: { stubs: { LoginForm: true } },
     })
 
-    const signupButton = wrapper.findAll('button').find((b) => b.text().includes('회원가입'))!
+    const signupButton = wrapper.findAll('button').find((b) => b.text().includes('계정 만들기'))!
     await signupButton.trigger('click')
 
     expect(pushMock).toHaveBeenCalledWith({ name: 'signup' })
