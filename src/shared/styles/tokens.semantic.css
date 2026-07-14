@@ -124,6 +124,7 @@
   --pr-size-control-lg: 56px;
   /* 하단 중심 UI — iOS 홈 인디케이터 등 safe area */
   --pr-inset-bottom-safe: env(safe-area-inset-bottom, 0px);
+  --pr-inset-top-safe: env(safe-area-inset-top, 0px);
 
   /* ── Elevation (z-index 스케일) ─────────────────────────────────── */
   --pr-z-base: 0;

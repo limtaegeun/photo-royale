@@ -15,7 +15,7 @@ function onSuccess() {
 
 <template>
   <!-- 회원가입 — 앱 셸(App.vue)이 max-w-md 가운데 정렬을 제공하므로 여기선 세로 레이아웃만 -->
-  <section class="flex min-h-dvh flex-col bg-canvas px-6 pt-8 pb-(--pr-inset-bottom-safe)">
+  <section class="flex flex-1 flex-col bg-canvas px-6 pt-8 pb-(--pr-inset-bottom-safe)">
     <header class="mb-8">
       <h1 class="text-heading text-content">회원가입</h1>
       <p class="mt-1 text-caption text-content-secondary">한 번에 입력하면 바로 시작해요.</p>
