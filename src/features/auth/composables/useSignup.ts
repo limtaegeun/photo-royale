@@ -30,6 +30,11 @@ const NICKNAME_PATTERN_MESSAGE = '닉네임은 한글·영문·숫자만 쓸 수
 
 type FormField = 'email' | 'password' | 'nickname' | 'gender'
 
+/** BaseSegmented가 string으로 보관한 값을 Gender로 좁힌다 — 옵션 추가 시 컴파일러가 지켜준다 */
+function isGender(value: string): value is Gender {
+  return value === 'male' || value === 'female'
+}
+
 /**
  * 회원가입 폼 로직. 제출 전 클라이언트 검증으로 예방 가능한 실패를 걸러내고(실패율 최소화),
  * 중복 제출을 막고, Firebase 에러를 한글 메시지로 매핑한다.
@@ -93,7 +98,7 @@ export function useSignup() {
       fieldErrors.nickname = NICKNAME_PATTERN_MESSAGE
     }
 
-    if (!form.gender) {
+    if (!isGender(form.gender)) {
       fieldErrors.gender = '성별을 선택해주세요.'
     }
 
@@ -115,11 +120,16 @@ export function useSignup() {
         return null
       }
 
+      // validate()가 이미 걸렀지만, reactive 프로퍼티는 함수 경계를 넘어 좁혀지지 않아
+      // 지역 변수로 받아 한 번 더 좁힌다(단언 없이 타입 안전).
+      const gender = form.gender
+      if (!isGender(gender)) return null
+
       const input: SignupInput = {
         email: form.email.trim(),
         password: form.password,
         nickname,
-        gender: form.gender as Gender,
+        gender,
       }
       return await signup(input)
     } catch (error) {

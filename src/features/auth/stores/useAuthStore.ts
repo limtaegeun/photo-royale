@@ -10,6 +10,9 @@ import { auth } from '../api/firebase'
 export const useAuthStore = defineStore('auth', () => {
   // Firebase User는 메서드를 가진 클래스 인스턴스라 deep-reactive ref로 감싸면
   // Proxy 래핑으로 getIdToken()/delete() 등이 깨질 수 있다. shallowRef로 원본을 보존한다.
+  // 트레이드오프: updateProfile()처럼 같은 인스턴스를 in-place로 바꾸는 변경은 반응성을
+  // 트리거하지 않는다. 현재 소비처(EntryPage/ProfilePage)는 변경 완료 후 마운트라 안전하지만,
+  // 상시 마운트 화면에 displayName 등을 노출하려면 변경 후 triggerRef(user)를 호출해야 한다.
   const user = shallowRef<User | null>(null)
   /** 첫 onAuthStateChanged 콜백이 오기 전까지는 로그인 여부를 알 수 없다 */
   const initialized = ref(false)
