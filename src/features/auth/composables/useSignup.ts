@@ -18,7 +18,7 @@ const NICKNAME_PATTERN = /^[가-힣ㄱ-ㅎㅏ-ㅣA-Za-z0-9]+$/
  */
 const SIGNUP_ERROR_MESSAGE: Record<string, string> = {
   ...COMMON_AUTH_ERROR_MESSAGE,
-  'auth/email-already-in-use': '이미 가입된 이메일이에요. 다른 이메일을 써주세요.',
+  'auth/email-already-in-use': '이미 가입된 이메일이에요.',
   'auth/invalid-email': '이메일 형식이 올바르지 않아요.',
   'auth/weak-password': `비밀번호는 ${PASSWORD_MIN_LENGTH}자 이상이어야 해요.`,
   // 닉네임 사전검사·가입 트랜잭션(Firestore)이 오프라인일 때의 코드 — auth/* 접두사가 없다
