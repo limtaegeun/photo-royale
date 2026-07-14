@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { CameraPage } from '@/features/camera'
 import { EntryPage } from '@/features/entry'
 import { LoginPage, SignupPage, authGuard } from '@/features/auth'
 import { ProfilePage } from '@/features/profile'
@@ -18,6 +19,13 @@ const router = createRouter({
       path: '/',
       name: 'entry',
       component: EntryPage,
+    },
+    {
+      // 풀스크린 카메라 콕핏 — 앱 셸 공용 헤더를 숨긴다
+      path: '/camera',
+      name: 'camera',
+      component: CameraPage,
+      meta: { hideAppHeader: true },
     },
     {
       path: '/login',
