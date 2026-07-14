@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import SignupForm from '../components/SignupForm.vue'
 import type { UserProfile } from '../types'
 
@@ -60,7 +60,7 @@ describe('SignupForm', () => {
     await wrapper.find('#signup-nickname').setValue('오리')
     await wrapper.findAll('[role="radio"]')[1]!.trigger('click') // 여성
     await wrapper.find('form').trigger('submit')
-    await new Promise((r) => setTimeout(r))
+    await flushPromises()
 
     expect(signupMock).toHaveBeenCalledOnce()
     expect(wrapper.emitted('success')?.[0]).toEqual([PROFILE])

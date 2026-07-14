@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import ProfilePage from '../components/ProfilePage.vue'
 
 const logoutMock = vi.fn<() => Promise<void>>()
@@ -34,7 +34,7 @@ describe('ProfilePage', () => {
 
     const logoutButton = wrapper.findAll('button').find((b) => b.text() === '로그아웃')!
     await logoutButton.trigger('click')
-    await new Promise((r) => setTimeout(r))
+    await flushPromises()
 
     expect(logoutMock).toHaveBeenCalledOnce()
     expect(replaceMock).toHaveBeenCalledWith({ name: 'entry' })
