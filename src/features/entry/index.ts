@@ -1,1 +1,1 @@
-export { default as EntryPage } from './EntryPage.vue'
+export { default as EntryPage } from './components/EntryPage.vue'

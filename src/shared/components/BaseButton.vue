@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { Primitive, type PrimitiveProps } from 'reka-ui'
 
-interface Props {
+/**
+ * Reka `Primitive` 기반 버튼. 기본은 <button>이지만 `as`/`as-child`로 다형 렌더가 가능하다.
+ * (예: `<BaseButton as-child><RouterLink .../></BaseButton>` 또는 오버레이 트리거와 합성)
+ */
+interface Props extends PrimitiveProps {
   /** 버튼 역할별 색상 톤 (primary=브랜드 블루, accent=라임) */
   variant?: 'primary' | 'accent' | 'neutral' | 'danger' | 'ghost'
   /** 버튼 크기 — md/lg는 최소 터치 타겟(48px) 충족 */
@@ -11,6 +16,7 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  as: 'button',
   variant: 'primary',
   size: 'md',
   disabled: false,
@@ -36,19 +42,24 @@ const SIZE_CLASS = {
 } as const
 
 const buttonClass = computed(() => [VARIANT_CLASS[props.variant], SIZE_CLASS[props.size]])
+
+/** as-child거나 <button>이 아닐 때 type/disabled 네이티브 속성은 의미 없으므로 생략한다. */
+const isNativeButton = computed(() => !props.asChild && props.as === 'button')
 </script>
 
 <template>
-  <button
+  <Primitive
+    :as="as"
+    :as-child="asChild"
+    :type="isNativeButton ? type : undefined"
+    :disabled="disabled || undefined"
+    :data-variant="variant"
+    :data-size="size"
     class="inline-flex items-center justify-center gap-2 rounded-md px-5 font-semibold whitespace-nowrap
            transition-colors duration-100 ease-standard select-none touch-manipulation
            disabled:bg-disabled disabled:text-content-disabled disabled:border-transparent disabled:cursor-default"
     :class="buttonClass"
-    :type="type"
-    :disabled="disabled"
-    :data-variant="variant"
-    :data-size="size"
   >
     <slot />
-  </button>
+  </Primitive>
 </template>
