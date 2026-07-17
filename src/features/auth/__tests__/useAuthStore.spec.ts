@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
-vi.mock('../api/firebase', () => ({ auth: {} }))
+vi.mock('@/shared/api/firebase', () => ({ auth: {} }))
 
 const onAuthStateChangedMock = vi.fn<(auth: unknown, cb: (user: unknown) => void) => void>()
 const signOutMock = vi.fn<(auth: unknown) => Promise<void>>()
