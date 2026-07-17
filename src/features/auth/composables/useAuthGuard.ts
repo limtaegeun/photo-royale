@@ -24,6 +24,7 @@ export async function authGuard(to: RouteLocationNormalized) {
   }
 
   if (to.meta.guestOnly && authStore.isLoggedIn) {
-    return { name: 'entry' }
+    // 공유 초대 코드(?code=) 등 쿼리를 보존해, 진입 화면이 자동 입장 판단을 이어가게 한다
+    return { name: 'entry', query: to.query }
   }
 }

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
-import LoginPage from '../components/LoginPage.vue'
+import LoginPage from '../LoginPage.vue'
 import LoginForm from '../components/LoginForm.vue'
 
 // LoginForm은 stub으로 대체하므로 실제 useLogin/firebase가 실행되지 않지만,
@@ -9,7 +9,13 @@ vi.mock('../api/login', () => ({ login: vi.fn<typeof import('../api/login').logi
 
 const replaceMock = vi.fn<() => void>()
 const pushMock = vi.fn<() => void>()
+const routeState = { query: {} as Record<string, string> }
 vi.mock('vue-router', () => ({
+  useRoute: () => ({
+    get query() {
+      return routeState.query
+    },
+  }),
   useRouter: () => ({ replace: replaceMock, push: pushMock }),
 }))
 
@@ -17,6 +23,7 @@ describe('LoginPage', () => {
   beforeEach(() => {
     replaceMock.mockReset()
     pushMock.mockReset()
+    routeState.query = {}
   })
 
   it('로그인 성공 시 진입(entry) 화면으로 replace 이동한다', async () => {
@@ -26,7 +33,7 @@ describe('LoginPage', () => {
 
     await wrapper.findComponent(LoginForm).vm.$emit('success')
 
-    expect(replaceMock).toHaveBeenCalledWith({ name: 'entry' })
+    expect(replaceMock).toHaveBeenCalledWith({ name: 'entry', query: undefined })
   })
 
   it('회원가입 버튼을 누르면 signup으로 push 이동한다', async () => {
@@ -37,6 +44,20 @@ describe('LoginPage', () => {
     const signupButton = wrapper.findAll('button').find((b) => b.text().includes('계정 만들기'))!
     await signupButton.trigger('click')
 
-    expect(pushMock).toHaveBeenCalledWith({ name: 'signup' })
+    expect(pushMock).toHaveBeenCalledWith({ name: 'signup', query: undefined })
+  })
+
+  it('공유 초대 코드(?code=)가 있으면 성공 리다이렉트와 회원가입 이동에 코드를 유지한다', async () => {
+    routeState.query = { code: 'AB2C' }
+    const wrapper = mount(LoginPage, {
+      global: { stubs: { LoginForm: true } },
+    })
+
+    await wrapper.findComponent(LoginForm).vm.$emit('success')
+    expect(replaceMock).toHaveBeenCalledWith({ name: 'entry', query: { code: 'AB2C' } })
+
+    const signupButton = wrapper.findAll('button').find((b) => b.text().includes('계정 만들기'))!
+    await signupButton.trigger('click')
+    expect(pushMock).toHaveBeenCalledWith({ name: 'signup', query: { code: 'AB2C' } })
   })
 })

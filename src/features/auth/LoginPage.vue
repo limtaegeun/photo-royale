@@ -1,14 +1,22 @@
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
+import { computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import BaseButton from '@/shared/components/BaseButton.vue'
-import LoginForm from './LoginForm.vue'
+import LoginForm from './components/LoginForm.vue'
 
+const route = useRoute()
 const router = useRouter()
+
+// 공유 초대 코드(?code=)를 인증 플로우 내내 유지한다 — 완료 후 진입 화면이 자동 입장시킨다
+const codeQuery = computed(() => {
+  const raw = route.query.code
+  return typeof raw === 'string' && raw !== '' ? { code: raw } : undefined
+})
 
 // 로그인 성공 시점엔 onAuthStateChanged가 useAuthStore를 갱신한다. 진입 화면으로 넘기되,
 // 뒤로가기로 로그인 화면에 돌아오지 않도록 push가 아닌 replace를 쓴다.
 function onSuccess() {
-  router.replace({ name: 'entry' })
+  router.replace({ name: 'entry', query: codeQuery.value })
 }
 </script>
 
@@ -24,7 +32,7 @@ function onSuccess() {
       variant="ghost"
       size="md"
       class="mt-3 w-full"
-      @click="router.push({ name: 'signup' })"
+      @click="router.push({ name: 'signup', query: codeQuery })"
     >
       계정 만들기
     </BaseButton>

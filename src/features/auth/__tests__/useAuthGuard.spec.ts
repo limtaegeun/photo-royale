@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import type { RouteLocationNormalized } from 'vue-router'
 
-vi.mock('../api/firebase', () => ({ auth: {} }))
+vi.mock('@/shared/api/firebase', () => ({ auth: {} }))
 
 const onAuthStateChangedMock = vi.fn<(auth: unknown, cb: (user: unknown) => void) => void>()
 vi.mock('firebase/auth', () => ({
@@ -17,8 +17,11 @@ function emitAuthState(user: unknown) {
   onAuthStateChangedMock.mockImplementation((_auth, cb) => cb(user))
 }
 
-function routeWithMeta(meta: RouteLocationNormalized['meta']) {
-  return { meta } as RouteLocationNormalized
+function routeWithMeta(
+  meta: RouteLocationNormalized['meta'],
+  query: RouteLocationNormalized['query'] = {},
+) {
+  return { meta, query } as RouteLocationNormalized
 }
 
 describe('authGuard', () => {
@@ -48,7 +51,15 @@ describe('authGuard', () => {
 
     const result = await authGuard(routeWithMeta({ guestOnly: true }))
 
-    expect(result).toEqual({ name: 'entry' })
+    expect(result).toEqual({ name: 'entry', query: {} })
+  })
+
+  it('guestOnly 차단 시 공유 초대 코드(?code=) 쿼리를 entry로 보존한다', async () => {
+    emitAuthState({ uid: 'u1' })
+
+    const result = await authGuard(routeWithMeta({ guestOnly: true }, { code: 'AB2C' }))
+
+    expect(result).toEqual({ name: 'entry', query: { code: 'AB2C' } })
   })
 
   it('미인증 사용자는 guestOnly(login/signup) 경로에 그대로 진입한다', async () => {
