@@ -88,6 +88,11 @@
   --pr-color-text-on-team-green: var(--pr-gray-950);
   --pr-color-text-on-team-orange: var(--pr-gray-950);
 
+  /* ── Gender (참가자 성별 표기 — 남 파랑·여 빨강. 팀 텍스트와 같은 대비 검증값을 쓰되,
+        의미가 다르므로 별도 시맨틱으로 둔다) ─────────────────────────── */
+  --pr-color-text-gender-male: var(--pr-blue-400);
+  --pr-color-text-gender-female: var(--pr-red-300);
+
   /* ── Typography 역할 (역할 기반 스케일 — M3/TDS 방법론) ─────────── */
   --pr-font-family-base:
     'Pretendard Variable', Pretendard, system-ui, -apple-system, 'Apple SD Gothic Neo',
@@ -169,4 +174,7 @@
   --pr-color-text-team-blue: var(--pr-blue-600);
   --pr-color-text-team-green: var(--pr-green-700);
   --pr-color-text-team-orange: var(--pr-orange-700);
+
+  --pr-color-text-gender-male: var(--pr-blue-600);
+  --pr-color-text-gender-female: var(--pr-red-600);
 }

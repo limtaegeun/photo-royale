@@ -78,6 +78,10 @@
   --color-team-green: var(--pr-color-text-team-green);
   --color-team-orange: var(--pr-color-text-team-orange);
 
+  /* ── Gender — 읽기용 텍스트 색(text-gender-*) ───────────────────── */
+  --color-gender-male: var(--pr-color-text-gender-male);
+  --color-gender-female: var(--pr-color-text-gender-female);
+
   /* ── Team solid fill(bg-team-*-solid) + on-fill 라벨 ────────────── */
   --color-team-red-solid: var(--pr-color-fill-team-red);
   --color-team-blue-solid: var(--pr-color-fill-team-blue);
