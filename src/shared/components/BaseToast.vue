@@ -47,7 +47,15 @@ function onOpenChange(value: boolean) {
              transition-colors duration-100 ease-standard hover:bg-scrim-weak
              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
     >
-      <span aria-hidden="true" class="text-body leading-none">×</span>
+      <!-- 텍스트 글리프(×)는 폰트 베이스라인 탓에 원형 배경과 시각 중앙이 어긋난다 — 기하학적 SVG 사용 -->
+      <svg aria-hidden="true" class="size-3" viewBox="0 0 16 16" fill="none">
+        <path
+          d="M4 4l8 8m0-8-8 8"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+        />
+      </svg>
     </ToastClose>
   </ToastRoot>
 </template>
