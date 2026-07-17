@@ -67,4 +67,32 @@ describe('SignupPage', () => {
     await loginButton.trigger('click')
     expect(pushMock).toHaveBeenCalledWith({ name: 'login', query: { code: 'AB2C' } })
   })
+
+  it('보존된 목적지(?redirect=)가 있으면 성공 시 그리로 복귀하고 로그인 이동에도 유지한다', async () => {
+    routeState.query = { redirect: '/waiting-room/AB2C' }
+    const wrapper = mount(SignupPage, {
+      global: { stubs: { SignupForm: true } },
+    })
+
+    await wrapper.findComponent(SignupForm).vm.$emit('success', PROFILE)
+    expect(replaceMock).toHaveBeenCalledWith('/waiting-room/AB2C')
+
+    const loginButton = wrapper.findAll('button').find((b) => b.text().includes('로그인'))!
+    await loginButton.trigger('click')
+    expect(pushMock).toHaveBeenCalledWith({
+      name: 'login',
+      query: { redirect: '/waiting-room/AB2C' },
+    })
+  })
+
+  it('외부 URL ?redirect=는 무시하고 entry로 복귀한다 (open redirect 방지)', async () => {
+    routeState.query = { redirect: 'https://evil.com' }
+    const wrapper = mount(SignupPage, {
+      global: { stubs: { SignupForm: true } },
+    })
+
+    await wrapper.findComponent(SignupForm).vm.$emit('success', PROFILE)
+
+    expect(replaceMock).toHaveBeenCalledWith({ name: 'entry', query: undefined })
+  })
 })

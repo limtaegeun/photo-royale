@@ -20,8 +20,9 @@ function emitAuthState(user: unknown) {
 function routeWithMeta(
   meta: RouteLocationNormalized['meta'],
   query: RouteLocationNormalized['query'] = {},
+  fullPath = '/',
 ) {
-  return { meta, query } as RouteLocationNormalized
+  return { meta, query, fullPath } as RouteLocationNormalized
 }
 
 describe('authGuard', () => {
@@ -30,12 +31,12 @@ describe('authGuard', () => {
     onAuthStateChangedMock.mockReset()
   })
 
-  it('미인증 사용자가 requiresAuth 경로에 가면 login으로 리다이렉트한다', async () => {
+  it('미인증 사용자가 requiresAuth 경로에 가면 목적지를 ?redirect=로 보존해 login으로 리다이렉트한다', async () => {
     emitAuthState(null)
 
-    const result = await authGuard(routeWithMeta({ requiresAuth: true }))
+    const result = await authGuard(routeWithMeta({ requiresAuth: true }, {}, '/waiting-room/AB2C'))
 
-    expect(result).toEqual({ name: 'login' })
+    expect(result).toEqual({ name: 'login', query: { redirect: '/waiting-room/AB2C' } })
   })
 
   it('인증 사용자는 requiresAuth 경로에 그대로 진입한다', async () => {
@@ -60,6 +61,26 @@ describe('authGuard', () => {
     const result = await authGuard(routeWithMeta({ guestOnly: true }, { code: 'AB2C' }))
 
     expect(result).toEqual({ name: 'entry', query: { code: 'AB2C' } })
+  })
+
+  it('guestOnly 차단 시 보존된 목적지(?redirect=)가 있으면 그리로 바로 보낸다', async () => {
+    emitAuthState({ uid: 'u1' })
+
+    const result = await authGuard(
+      routeWithMeta({ guestOnly: true }, { redirect: '/waiting-room/AB2C' }),
+    )
+
+    expect(result).toBe('/waiting-room/AB2C')
+  })
+
+  it('guestOnly 차단 시 외부 URL ?redirect=는 무시하고 entry로 보낸다 (open redirect 방지)', async () => {
+    emitAuthState({ uid: 'u1' })
+
+    const result = await authGuard(
+      routeWithMeta({ guestOnly: true }, { redirect: 'https://evil.com' }),
+    )
+
+    expect(result).toEqual({ name: 'entry', query: { redirect: 'https://evil.com' } })
   })
 
   it('미인증 사용자는 guestOnly(login/signup) 경로에 그대로 진입한다', async () => {
