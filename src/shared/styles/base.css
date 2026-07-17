@@ -22,6 +22,13 @@ button {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Tailwind v4 Preflight는 버튼 커서를 `default`로 되돌렸다(브라우저 기본값 정합).
+   클릭 가능한 요소에는 pointer가 자연스러우므로 v3 동작을 전역으로 복원한다. */
+button:not(:disabled),
+[role='button']:not(:disabled) {
+  cursor: pointer;
+}
+
 /* 야외에서 뛰며 조작 — 시스템 애니메이션 감소 설정 존중 */
 @media (prefers-reduced-motion: reduce) {
   *,
