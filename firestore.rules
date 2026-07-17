@@ -59,5 +59,68 @@ service cloud.firestore {
       // 프로필 수정 플로우 도입 시 닉네임 재예약 규칙과 함께 재설계한다.
       allow update, delete: if false;
     }
+
+    // 대기실. 문서 ID = 초대 코드(waiting-room/api/rooms.ts generateRoomCode와 동일 형식 —
+    // 혼동 문자 0/O·1/I/L 제외 4자).
+    match /rooms/{roomCode} {
+      // 초대 코드를 아는 로그인 사용자만 단건 조회한다(입장 전 코드 검증·참가 트랜잭션).
+      allow get: if request.auth != null;
+
+      // list는 "내가 만든 방" 조회(where hostUid == 본인)를 만족하는 쿼리만 허용한다 —
+      // 조건 없는 전체 방 코드 수집은 계속 거부된다(fetchMyRooms 참조).
+      allow list: if request.auth != null
+        && resource.data.hostUid == request.auth.uid;
+
+      // 존재하지 않는 코드에만 create가 성립하므로(createRoom 트랜잭션의 존재 검사와 함께)
+      // 코드 유니크가 서버에서 강제된다.
+      allow create: if request.auth != null
+        && roomCode.matches('^[A-HJKMNP-Z2-9]{4}$')
+        && request.resource.data.keys().hasOnly(['hostUid', 'status', 'createdAt'])
+        && request.resource.data.hostUid == request.auth.uid
+        && request.resource.data.status == 'waiting'
+        && request.resource.data.createdAt == request.time;
+
+      // 게임 시작 — 호스트 본인만, status 필드만, waiting → playing 단방향 전이만 허용한다.
+      allow update: if request.auth != null
+        && request.auth.uid == resource.data.hostUid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        && resource.data.status == 'waiting'
+        && request.resource.data.status == 'playing';
+
+      // 방 정리(삭제) 플로우 도입 전까지 불변이다.
+      allow delete: if false;
+
+      // 참가자. 문서 ID = 참가자 uid — 재입장(joinRoom)이 자연스럽게 멱등이 된다.
+      match /participants/{uid} {
+        // 명단은 같은 방 사람끼리 실시간 구독으로 봐야 한다. 경로 접근에 초대 코드가
+        // 필요하므로 로그인 사용자 전체 허용으로 충분하다(MVP).
+        allow read: if request.auth != null;
+
+        // 본인 문서만, 대기(isReady=false) 상태로, 존재하는 방에만 생성한다.
+        // 닉네임은 users 스키마와 같은 제약(2~12자, 한글·영문·숫자)을 강제한다.
+        // gender는 명단 표기용 optional — 있으면 값을 검증한다(프로필 조회 실패 시 생략 허용).
+        allow create: if request.auth != null
+          && request.auth.uid == uid
+          && exists(/databases/$(database)/documents/rooms/$(roomCode))
+          && request.resource.data.keys().hasAll(['nickname', 'isReady', 'joinedAt'])
+          && request.resource.data.keys().hasOnly(['nickname', 'gender', 'isReady', 'joinedAt'])
+          && request.resource.data.nickname is string
+          && request.resource.data.nickname.size() >= 2
+          && request.resource.data.nickname.size() <= 12
+          && request.resource.data.nickname.matches('^[가-힣ㄱ-ㅎㅏ-ㅣA-Za-z0-9]+$')
+          && (!('gender' in request.resource.data) || request.resource.data.gender in ['male', 'female'])
+          && request.resource.data.isReady == false
+          && request.resource.data.joinedAt == request.time;
+
+        // 본인의 레디 확정만 허용한다(레디 해제 플로우는 아직 없다).
+        allow update: if request.auth != null
+          && request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isReady'])
+          && request.resource.data.isReady == true;
+
+        // 퇴장(문서 삭제) 처리 도입 전까지 참가 기록은 불변이다.
+        allow delete: if false;
+      }
+    }
   }
 }

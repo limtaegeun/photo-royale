@@ -22,9 +22,11 @@ const router = createRouter({
       component: EntryPage,
     },
     {
-      path: '/waiting-room',
+      // 초대 코드가 곧 방 문서 ID — 새로고침·딥링크에도 같은 방으로 재입장한다
+      path: '/waiting-room/:roomCode',
       name: 'waiting-room',
       component: WaitingRoomPage,
+      meta: { requiresAuth: true },
     },
     {
       // 풀스크린 카메라 콕핏 — 앱 셸 공용 헤더를 숨긴다
