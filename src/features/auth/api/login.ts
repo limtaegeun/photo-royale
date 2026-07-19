@@ -1,5 +1,5 @@
 import { signInWithEmailAndPassword } from 'firebase/auth'
-import { auth } from './firebase'
+import { auth } from '@/shared/api/firebase'
 import type { LoginInput } from '../types'
 
 /**

@@ -27,13 +27,15 @@ src/
   router/                # 라우트 테이블만. 비즈니스 로직 금지
   features/
     <기능명>/             # kebab-case, 예: photo-upload
-      components/        # 이 기능 전용 컴포넌트
+      XxxPage.vue        # 라우트 진입점(페이지)은 기능 루트에 — components/에 넣지 않는다
+      components/        # 이 기능 전용 컴포넌트 (페이지를 구성하는 조각)
       composables/       # useXxx.ts
       stores/            # useXxxStore.ts (이 기능 전용 Pinia 스토어)
       api/               # 이 기능의 API 호출
       __tests__/         # 이 기능의 테스트
       index.ts           # 이 기능이 외부에 공개하는 것만 re-export
   shared/
+    api/                 # 여러 기능이 공유하는 외부 연동 클라이언트 (예: firebase.ts 단일 초기화)
     components/          # BaseButton.vue 등 Base 접두사 공용 UI
     composables/         # 2개 이상 기능에서 쓰는 것만
     stores/              # 여러 기능이 공유하는 전역 상태
@@ -83,7 +85,7 @@ path alias: `@` → `src/` (예: `@/features/photo-upload`)
 ## 하지 말 것 (→ 대신)
 
 - 기술 유형별 최상위 폴더(`src/components/`, `src/services/`) 생성 금지 → 기능 폴더 안에 만들 것
-- 컴포넌트 안에서 직접 `fetch` 호출 금지 → 해당 기능의 `api/`에 함수로 만들고 composable에서 호출
+- 컴포넌트 안에서 직접 `fetch` 호출 금지 → 해당 기능의 `api/`에 함수로 만든다. 로딩·에러 상태나 검증이 끼는 플로우는 composable(`useXxx`)로 추출하고(예: `useLogin`, `useRoomEntry`), 단순 1회 조회는 컴포넌트에서 api 함수를 직접 호출해도 된다
 - default export 금지 (컴포넌트 .vue 제외) → named export
 - 재사용 가능성 있는 UI 요소를 생 HTML 태그(`<input>`·`<button>` 등)로 화면에 직접 마크업 금지 → `shared/components/Base*.vue` 컴포넌트로 만들어 재사용 (원자 단위 UI는 DS 컴포넌트가 단일 진실원. 현재: `BaseButton`/`BaseBadge`/`BaseInput`/`BaseSegmented`/`BaseDialog`/`BaseBottomSheet`/`BaseToast`, docs/DESIGN_SYSTEM.md §6)
 - **Base 컴포넌트는 Reka UI(headless) 기반으로 만든다** → 접근성·상호작용 행동(focus trap·roving tabindex·ARIA live region·포털 등)은 Reka primitive에 위임하고, 스타일은 프로젝트 시맨틱 유틸리티로만 작성한다. 원자는 `Primitive`(as/asChild), 행동형은 전용 primitive(Dialog/RadioGroup/Toast 등)를 쓴다.

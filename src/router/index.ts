@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { CameraPage } from '@/features/camera'
 import { EntryPage } from '@/features/entry'
+import { WaitingRoomPage } from '@/features/waiting-room'
 import { LoginPage, SignupPage, authGuard } from '@/features/auth'
 import { ProfilePage } from '@/features/profile'
 
@@ -19,6 +20,13 @@ const router = createRouter({
       path: '/',
       name: 'entry',
       component: EntryPage,
+    },
+    {
+      // 초대 코드가 곧 방 문서 ID — 새로고침·딥링크에도 같은 방으로 재입장한다
+      path: '/waiting-room/:roomCode',
+      name: 'waiting-room',
+      component: WaitingRoomPage,
+      meta: { requiresAuth: true },
     },
     {
       // 풀스크린 카메라 콕핏 — 앱 셸 공용 헤더를 숨긴다

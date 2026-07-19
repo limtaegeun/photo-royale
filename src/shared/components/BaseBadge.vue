@@ -11,8 +11,8 @@ interface Props extends PrimitiveProps {
   team?: 'red' | 'blue' | 'green' | 'orange'
   /** 상태·브랜드 톤 — team이 없을 때만 적용 */
   tone?: 'brand' | 'success' | 'warning' | 'danger' | 'info' | 'neutral'
-  /** fill: 배경을 채움 / text: 배경 투명, 텍스트만 색상 적용 */
-  appearance?: 'fill' | 'text'
+  /** fill: 배경을 채움 / text: 배경 투명, 텍스트만 색상 적용 / outline: 배경 투명 + 같은 색 테두리 */
+  appearance?: 'fill' | 'text' | 'outline'
   /** 크기 — sm(기본, 인라인 상태 표식) / md(카테고리·브랜드 태그) */
   size?: 'sm' | 'md'
 }
@@ -53,6 +53,13 @@ const TONE_FILL = {
   neutral: 'bg-neutral text-content',
 } as const
 
+const TEAM_OUTLINE = {
+  red: 'border border-team-red text-team-red',
+  blue: 'border border-team-blue text-team-blue',
+  green: 'border border-team-green text-team-green',
+  orange: 'border border-team-orange text-team-orange',
+} as const
+
 const TONE_TEXT = {
   brand: 'text-brand',
   success: 'text-success',
@@ -60,6 +67,15 @@ const TONE_TEXT = {
   danger: 'text-danger',
   info: 'text-info',
   neutral: 'text-content-secondary',
+} as const
+
+const TONE_OUTLINE = {
+  brand: 'border border-brand text-brand',
+  success: 'border border-success text-success',
+  warning: 'border border-warning text-warning',
+  danger: 'border border-danger text-danger',
+  info: 'border border-info text-info',
+  neutral: 'border border-stroke-strong text-content-secondary',
 } as const
 
 const SIZE_CLASS = {
@@ -70,6 +86,9 @@ const SIZE_CLASS = {
 const colorClass = computed(() => {
   if (props.appearance === 'text') {
     return props.team ? TEAM_TEXT[props.team] : TONE_TEXT[props.tone]
+  }
+  if (props.appearance === 'outline') {
+    return props.team ? TEAM_OUTLINE[props.team] : TONE_OUTLINE[props.tone]
   }
   return props.team ? TEAM_FILL[props.team] : TONE_FILL[props.tone]
 })

@@ -1,6 +1,6 @@
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth'
 import { doc, getDoc, runTransaction, serverTimestamp } from 'firebase/firestore'
-import { auth, db } from './firebase'
+import { auth, db } from '@/shared/api/firebase'
 import type { SignupInput, UserProfile } from '../types'
 
 /**

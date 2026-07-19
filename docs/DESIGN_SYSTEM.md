@@ -76,6 +76,7 @@ src/shared/components/
 | 팀 텍스트 | `text-team-{red,blue,green,orange}` | 인라인 팀 표기 |
 | 팀 solid | `bg-team-{red,blue,green,orange}-solid` | 뱃지·완장 표식 |
 | 팀 라벨 | `text-on-team-{red,blue,green,orange}` | 팀 solid 배경 위 텍스트 (반드시 짝 사용) |
+| 성별 텍스트 | `text-gender-{male,female}` | 참가자 성별 표기(남 파랑·여 빨강) — 팀과 값은 같아도 의미가 달라 별도 시맨틱. 색+접근성 라벨 병기 필수 |
 
 ### 타이포그래피 (역할 유틸리티 — 크기·행간·굵기 세트)
 | 유틸리티 | 크기/굵기 | 용도 |

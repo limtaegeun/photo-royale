@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { SignupInput } from '../types'
 
-vi.mock('../api/firebase', () => ({ auth: {}, db: {} }))
+vi.mock('@/shared/api/firebase', () => ({ auth: {}, db: {} }))
 
 /** 실제 DocumentReference 대신 쓰는 식별자 — doc() mock이 만들어 set/get 호출 검증에 쓴다 */
 interface FakeRef {

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import ProfilePage from '../components/ProfilePage.vue'
+import ProfilePage from '../ProfilePage.vue'
 
 const logoutMock = vi.fn<() => Promise<void>>()
 vi.mock('@/features/auth', () => ({

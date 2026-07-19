@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref, shallowRef } from 'vue'
 import { onAuthStateChanged, signOut, type User } from 'firebase/auth'
-import { auth } from '../api/firebase'
+import { auth } from '@/shared/api/firebase'
 
 /**
  * 세션 유지 스토어. 스레드 결론대로 "세션 날아가면 게임이 터지는" 문제를 막기 위해
