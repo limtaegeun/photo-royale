@@ -4,8 +4,6 @@ import BaseBadge from '@/shared/components/BaseBadge.vue'
 import { groupForArmband, type TeamGroup } from '../armbands'
 
 interface Props {
-  /** 확정된 팀편성 차수(1차~) */
-  round: number
   /** 내 완장 알파벳 — 그룹 색은 완장에서 파생 */
   armband: string
   /** 같은 팀 멤버(본인 포함) */
@@ -73,14 +71,9 @@ const compositionLabel = computed(() => (isSolo.value ? '1인 팀' : '2인 1조'
 </script>
 
 <template>
-  <!-- P03 참가자 배정 카드 — 대기실(라이트) 안에서 렌더된다. 하단 준비 CTA는 페이지가 담당한다. -->
+  <!-- P03 참가자 배정 카드 — 대기실(라이트) 안에서 렌더된다. 하단 준비 CTA는 페이지가 담당한다.
+       페이지 타이틀('라운드 N 배정')은 앱 셸 헤더(AppHeader)가 담당한다(자체 h1 없음). -->
   <section class="flex flex-col gap-6">
-    <!-- 헤더 -->
-    <header>
-      <h1 class="text-title text-content">라운드 {{ round }} 배정</h1>
-      <p class="mt-1 text-caption text-content-secondary">라운드마다 팀과 완장이 바뀝니다</p>
-    </header>
-
     <!-- 완장 히어로 카드 -->
     <div class="flex gap-4 rounded-lg border border-stroke bg-elevated p-5">
       <!-- 완장 타일: 상단 그룹 색 바 + 중앙 알파벳(그룹 색) -->

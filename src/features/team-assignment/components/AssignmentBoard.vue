@@ -76,20 +76,13 @@ async function onConfirm() {
   <!-- H03 호스트 배정 편집 보드 — 대기실(라이트) 안에서 렌더된다. 터치 배정:
        멤버 칩을 선택한 뒤 팀 카드/대기자 영역을 눌러 이동시킨다. -->
   <section class="flex flex-1 flex-col gap-6">
-    <!-- 헤더 -->
-    <header>
+    <!-- 안내 카드 — 페이지 타이틀('배정 편집')·설명은 앱 셸 헤더(AppHeader)가 담당한다(자체 h1 없음).
+         진행 상태 배지(LIVE)는 보드 맥락 정보라 이 카드 헤더에 병기한다. -->
+    <div class="rounded-lg border border-stroke bg-elevated p-4">
       <div class="flex items-center justify-between gap-3">
-        <h1 class="text-title text-content">배정 편집</h1>
+        <h2 class="text-label text-content">터치 배정 보드</h2>
         <BaseBadge tone="success" appearance="outline" size="sm">LIVE</BaseBadge>
       </div>
-      <p class="mt-1 text-caption text-content-secondary">
-        멤버 칩을 터치한 뒤 이동할 팀을 누릅니다
-      </p>
-    </header>
-
-    <!-- 안내 카드 -->
-    <div class="rounded-lg border border-stroke bg-elevated p-4">
-      <h2 class="text-label text-content">터치 배정 보드</h2>
       <p class="mt-1 text-caption text-content-secondary">
         랜덤 재배정은 이번 모임에서 아직 만나지 않았던 사람 위주로 섞습니다.
       </p>

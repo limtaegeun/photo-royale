@@ -57,6 +57,7 @@ vi.mock('vue-router', () => ({
 import { RoomNotFoundError } from '../api/rooms'
 import WaitingRoomPage from '../WaitingRoomPage.vue'
 import PlayerChip from '../components/PlayerChip.vue'
+import { useAppHeader } from '@/shared/composables/useAppHeader'
 
 /** 구독 콜백들을 붙잡아 테스트가 스냅샷 도착을 흉내 낼 수 있게 한다 */
 function captureSnapshotCallbacks() {
@@ -136,6 +137,8 @@ describe('WaitingRoomPage', () => {
     replaceMock.mockReset()
     toastMock.mockReset()
     dismissAllMock.mockReset()
+    // 앱 셸 헤더 오버라이드는 모듈 싱글턴이라 케이스 간 누수를 막기 위해 매번 비운다
+    useAppHeader().clearHeader()
   })
 
   it('라우트의 초대 코드를 정규화해 입장하고 룸 카드와 명단을 렌더한다', async () => {
@@ -299,7 +302,7 @@ describe('WaitingRoomPage', () => {
     await findButton(wrapper, '팀 배정 시작')!.trigger('click')
 
     expect(toastMock).toHaveBeenCalledWith({ title: '참가자가 없어요.', tone: 'danger' })
-    expect(wrapper.text()).not.toContain('배정 편집')
+    expect(wrapper.text()).not.toContain('터치 배정 보드')
   })
 
   it('호스트: 준비가 덜 됐으면 팀 배정 시작이 토스트로 막힌다', async () => {
@@ -319,7 +322,7 @@ describe('WaitingRoomPage', () => {
       title: '모든 참가자가 준비를 완료해야 시작할 수 있어요.',
       tone: 'danger',
     })
-    expect(wrapper.text()).not.toContain('배정 편집')
+    expect(wrapper.text()).not.toContain('터치 배정 보드')
   })
 
   it('호스트: 전원 준비 완료면 팀 배정 시작이 배정 보드로 전환한다', async () => {
@@ -333,7 +336,9 @@ describe('WaitingRoomPage', () => {
     await findButton(wrapper, '팀 배정 시작')!.trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('배정 편집')
+    expect(wrapper.text()).toContain('터치 배정 보드')
+    // 페이지 타이틀은 앱 셸 헤더가 담당한다 — 보드 전환 시 '배정 편집'으로 오버라이드된다
+    expect(useAppHeader().title.value).toBe('배정 편집')
     expect(findButton(wrapper, '팀 배정 시작')).toBeUndefined()
   })
 
@@ -359,7 +364,7 @@ describe('WaitingRoomPage', () => {
     await findButton(wrapper, '팀 배정 시작')!.trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('배정 편집')
+    expect(wrapper.text()).toContain('터치 배정 보드')
     expect(dismissAllMock).toHaveBeenCalledTimes(1)
   })
 
@@ -375,12 +380,14 @@ describe('WaitingRoomPage', () => {
     ])
     await flushPromises()
 
-    expect(wrapper.text()).toContain('라운드 1 배정')
+    expect(wrapper.text()).toContain('이번 게임 규칙서')
     expect(wrapper.text()).toContain('오리(나)')
     expect(wrapper.text()).toContain('하린')
     expect(wrapper.text()).not.toContain('ROOM AB2C')
-    // 배정 카드 뷰는 자체 헤더("라운드 N 배정")가 있으므로 페이지 헤더('대기실')는 중복 노출되지 않는다
+    // 카드는 자체 h1을 두지 않는다 — 페이지 타이틀('라운드 N 배정')은 앱 셸 헤더가 담당하므로
+    // 페이지 본문에는 '대기실'도 '라운드 1 배정'도 직접 렌더되지 않고, 헤더 오버라이드로만 노출된다
     expect(wrapper.text()).not.toContain('대기실')
+    expect(useAppHeader().title.value).toBe('라운드 1 배정')
     // 배정 카드 뷰에서는 준비 CTA 문구가 '준비 완료'다
     expect(findButton(wrapper, '준비 완료')).toBeDefined()
   })

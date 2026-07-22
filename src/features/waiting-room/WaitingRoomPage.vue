@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch, watchEffect } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 import BaseBadge from '@/shared/components/BaseBadge.vue'
@@ -12,12 +12,14 @@ import {
   type DraftMember,
 } from '@/features/team-assignment'
 import { useToast } from '@/shared/composables/useToast'
+import { useAppHeader } from '@/shared/composables/useAppHeader'
 import { normalizeRoomCode, type Participant } from './api/rooms'
 import { useWaitingRoomStore } from './stores/useWaitingRoomStore'
 
 const route = useRoute()
 const router = useRouter()
 const { toast, dismissAll } = useToast()
+const { setHeader, clearHeader } = useAppHeader()
 const store = useWaitingRoomStore()
 const {
   roomCode,
@@ -104,6 +106,18 @@ function onAssignmentConfirmed() {
   toast({ title: '팀 배정을 확정했어요.', tone: 'success' })
 }
 
+// 앱 셸 헤더 타이틀·설명을 화면 상태에 맞춰 바꾼다 — 보드/카드는 자체 h1을 두지 않고
+// 제목을 헤더 한 곳에만 노출한다(이중 타이틀 방지). 기본 대기실 뷰는 라우트 meta로 되돌린다.
+watchEffect(() => {
+  if (showAssignmentBoard.value) {
+    setHeader('배정 편집', '멤버 칩을 터치한 뒤 이동할 팀을 누릅니다')
+  } else if (showGuestAssignment.value) {
+    setHeader(`라운드 ${room.value!.assignmentRound} 배정`, '라운드마다 팀과 완장이 바뀝니다')
+  } else {
+    clearHeader()
+  }
+})
+
 // 보드가 열린 동안 새로 레디한 참가자를 대기열에 합류시킨다(이미 배정/대기 중이면 무시된다)
 watch(participants, (list) => {
   if (!showAssignmentBoard.value) return
@@ -119,6 +133,8 @@ onMounted(() => {
 onUnmounted(() => {
   store.leave()
   taStore.reset()
+  // 대기실을 벗어나면 헤더 오버라이드를 비워 다음 라우트가 meta 기본값을 쓰게 한다
+  clearHeader()
 })
 
 // 호스트가 시작하면 status 스냅샷으로 전원이 동시에 게임(카메라 콕핏)으로 넘어간다
@@ -162,7 +178,6 @@ async function copyInviteLink() {
         <RoundAssignmentCard
           v-else-if="showGuestAssignment"
           class="mt-6"
-          :round="room!.assignmentRound"
           :armband="myParticipant!.team!"
           :members="myTeamMembers"
           :my-id="myId!"

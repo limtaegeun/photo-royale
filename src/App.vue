@@ -2,10 +2,14 @@
 import { useRoute } from 'vue-router'
 import AppHeader from '@/shared/components/AppHeader.vue'
 import BaseToastProvider from '@/shared/components/BaseToastProvider.vue'
+import { useAppHeader } from '@/shared/composables/useAppHeader'
 import { useAuthStore } from '@/features/auth'
 
 const route = useRoute()
 const authStore = useAuthStore()
+
+// 헤더 타이틀·설명 — 기본값은 라우트 meta, 페이지가 setHeader로 덮어쓰면 그 값이 우선한다
+const { title: headerTitle, description: headerDescription } = useAppHeader()
 </script>
 
 <template>
@@ -16,8 +20,8 @@ const authStore = useAuthStore()
       <AppHeader
         v-if="!route.meta.hideAppHeader"
         :show-profile-link="authStore.isLoggedIn"
-        :title="route.meta.appHeaderTitle"
-        :description="route.meta.appHeaderDescription"
+        :title="headerTitle ?? route.meta.appHeaderTitle"
+        :description="headerDescription ?? route.meta.appHeaderDescription"
       />
       <RouterView />
     </main>

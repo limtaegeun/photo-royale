@@ -6,7 +6,6 @@ type Props = InstanceType<typeof RoundAssignmentCard>['$props']
 
 function mountCard(overrides: Partial<Props> = {}) {
   const props: Props = {
-    round: 1,
     armband: 'A', // A는 blue 그룹
     members: [
       { id: 'me', name: '오리' },
@@ -20,10 +19,8 @@ function mountCard(overrides: Partial<Props> = {}) {
 }
 
 describe('RoundAssignmentCard', () => {
-  it('라운드 제목을 렌더한다', () => {
-    const wrapper = mountCard({ round: 2 })
-    expect(wrapper.text()).toContain('라운드 2 배정')
-  })
+  // 페이지 타이틀('라운드 N 배정')은 앱 셸 헤더(AppHeader)가 담당하므로 카드는 자체 h1을 두지 않는다.
+  // 헤더 오버라이드 검증은 WaitingRoomPage 테스트가 담당한다.
 
   it('완장 알파벳과 그룹 라벨(한글·영문)을 그룹 색으로 표기한다', () => {
     const wrapper = mountCard({ armband: 'A' })
