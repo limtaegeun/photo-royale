@@ -12,12 +12,9 @@ const { authQuery, redirectAfterAuth } = useAuthRedirect()
 </script>
 
 <template>
-  <!-- 로그인 — 앱 셸(App.vue)이 max-w-md 가운데 정렬을 제공하므로 여기선 세로 레이아웃만 -->
-  <section class="flex flex-1 flex-col bg-canvas px-6 pt-8 pb-(--pr-inset-bottom-safe)">
-    <header class="mb-8">
-      <h1 class="text-heading text-content">로그인</h1>
-      <p class="mt-1 text-caption text-content-secondary">다시 만나서 반가워요.</p>
-    </header>
+  <!-- 로그인 — 앱 셸(App.vue)이 max-w-md 가운데 정렬을 제공하므로 여기선 세로 레이아웃만.
+       타이틀·설명 헤더는 앱 셸 공용 헤더(AppHeader)가 route meta로 담당한다 -->
+  <section class="flex flex-1 flex-col bg-canvas px-6 pt-6 pb-(--pr-inset-bottom-safe)">
     <LoginForm @success="redirectAfterAuth" />
     <BaseButton
       variant="ghost"

@@ -59,18 +59,13 @@ async function copyInviteLink() {
        호스트/게스트는 같은 화면을 쓰고, 호스트에게만 게임 시작 컨트롤이 추가된다.
        높이는 앱 셸(헤더 아래 남는 공간)을 flex-1로 채운다 — min-h-dvh를 쓰면 헤더 높이만큼
        항상 세로 스크롤이 생긴다. 스크롤은 명단이 실제로 넘칠 때만 생기는 게 정상이다 -->
-  <section class="flex flex-1 flex-col bg-canvas px-6 pt-6 pb-(--pr-inset-bottom-safe)">
+  <!-- 타이틀·설명 헤더는 앱 셸 공용 헤더(AppHeader)가 route meta로 담당한다 -->
+  <section class="flex flex-1 flex-col bg-canvas px-6 pt-3 pb-(--pr-inset-bottom-safe)">
     <div class="flex-1">
-      <!-- 헤더 -->
-      <header>
-        <h1 class="text-title text-content">대기실</h1>
-        <p class="mt-1 text-caption text-content-secondary">준비 전 안전 수칙을 확인합니다</p>
-      </header>
-
       <template v-if="phase === 'joined'">
         <!-- 룸 정보 카드 — 초대 수단(링크 복사)을 상시 노출한다.
              코드는 카드 내 주요 정보(text-heading)로, display(카운트다운용)는 과하다 -->
-        <div class="mt-6 rounded-lg border border-stroke bg-elevated p-4">
+        <div class="mt-3 rounded-lg border border-stroke bg-elevated p-4">
           <div class="flex items-center justify-between gap-3">
             <p class="text-heading text-content">ROOM {{ roomCode }}</p>
             <BaseBadge tone="info" appearance="outline" size="sm">대기 중</BaseBadge>
@@ -122,7 +117,7 @@ async function copyInviteLink() {
       <!-- 입장 실패 — 잘못된 초대 코드 또는 네트워크·권한 문제 -->
       <div
         v-else-if="phase === 'not-found' || phase === 'error'"
-        class="mt-6 rounded-lg border border-stroke bg-elevated p-5"
+        class="mt-3 rounded-lg border border-stroke bg-elevated p-5"
       >
         <h2 class="text-subheading text-content">
           {{ phase === 'not-found' ? '방을 찾을 수 없어요' : '입장에 실패했어요' }}
@@ -145,7 +140,7 @@ async function copyInviteLink() {
       </div>
 
       <!-- 참가 등록 중 로딩 -->
-      <p v-else class="mt-6 text-body text-content-secondary" role="status">
+      <p v-else class="mt-3 text-body text-content-secondary" role="status">
         대기실에 입장하는 중…
       </p>
     </div>

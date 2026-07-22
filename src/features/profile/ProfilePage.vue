@@ -19,13 +19,9 @@ async function onLogout() {
 </script>
 
 <template>
-  <!-- 프로필 관리 — 계정 정보 확인·로그아웃. 닉네임 변경 등 편집은 추후 확장 -->
-  <section class="flex flex-1 flex-col bg-canvas px-6 pt-8 pb-(--pr-inset-bottom-safe)">
-    <header class="mb-8">
-      <h1 class="text-heading text-content">프로필</h1>
-      <p class="mt-1 text-caption text-content-secondary">계정 정보를 관리해요.</p>
-    </header>
-
+  <!-- 프로필 관리 — 계정 정보 확인·로그아웃. 닉네임 변경 등 편집은 추후 확장.
+       타이틀·설명 헤더는 앱 셸 공용 헤더(AppHeader)가 route meta로 담당한다 -->
+  <section class="flex flex-1 flex-col bg-canvas px-6 pt-6 pb-(--pr-inset-bottom-safe)">
     <div class="flex-1 space-y-3">
       <div class="rounded-lg border border-stroke bg-surface p-4">
         <p class="text-caption text-content-secondary">닉네임</p>
