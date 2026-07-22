@@ -13,7 +13,12 @@ const authStore = useAuthStore()
   <div class="flex min-h-dvh justify-center bg-canvas">
     <main class="flex w-full max-w-md flex-col">
       <!-- 공용 헤더 — 카메라 콕핏 등 풀스크린 라우트는 meta.hideAppHeader로 제외 -->
-      <AppHeader v-if="!route.meta.hideAppHeader" :show-profile-link="authStore.isLoggedIn" />
+      <AppHeader
+        v-if="!route.meta.hideAppHeader"
+        :show-profile-link="authStore.isLoggedIn"
+        :title="route.meta.appHeaderTitle"
+        :description="route.meta.appHeaderDescription"
+      />
       <RouterView />
     </main>
   </div>
