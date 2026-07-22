@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Gender } from '@/features/auth'
-import type { ParticipantTeam } from '../api/rooms'
+import { groupForArmband, type TeamGroup } from '@/features/team-assignment'
 
 interface Props {
   name: string
-  /** null이면 아직 팀 미배정 — 중립 보더로 표시한다 */
-  team: ParticipantTeam | null
+  /** 배정된 완장 알파벳(그룹 색은 완장에서 파생). null이면 미배정 — 중립 보더로 표시한다 */
+  team: string | null
   /** 성별 — 이름 색으로 표기(남 파랑·여 빨강). null이면 기본 텍스트 색 */
   gender: Gender | null
   isReady: boolean
@@ -23,11 +23,19 @@ const TEAM_BORDER = {
 } as const
 
 const TEAM_LABEL = {
-  red: '레드팀',
-  blue: '블루팀',
-  green: '그린팀',
-  orange: '오렌지팀',
+  red: '빨강',
+  blue: '파랑',
+  green: '초록',
+  orange: '주황',
 } as const
+
+/**
+ * 완장 알파벳에서 그룹 색을 파생한다. 알파벳 한 글자가 아니면(방어) 미배정과 같이 중립 처리한다.
+ * groupForArmband는 X에 대해 null을 반환한다 — X는 참가자 team으로 저장되지 않지만 방어적으로 다룬다.
+ */
+const group = computed<TeamGroup | null>(() =>
+  props.team && /^[A-Z]$/.test(props.team) ? groupForArmband(props.team) : null,
+)
 
 const GENDER_TEXT = {
   male: 'text-gender-male',
@@ -40,9 +48,11 @@ const GENDER_LABEL = {
 } as const
 
 const teamBorderClass = computed(() =>
-  props.team === null ? 'border-stroke' : TEAM_BORDER[props.team],
+  group.value === null ? 'border-stroke' : TEAM_BORDER[group.value],
 )
-const teamLabel = computed(() => (props.team === null ? '팀 미배정' : TEAM_LABEL[props.team]))
+const teamLabel = computed(() =>
+  group.value === null ? '팀 미배정' : `완장 ${props.team} · ${TEAM_LABEL[group.value]}`,
+)
 
 const nameTextClass = computed(() =>
   props.gender === null ? 'text-content' : GENDER_TEXT[props.gender],

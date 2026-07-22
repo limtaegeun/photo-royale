@@ -16,23 +16,29 @@ import {
 import { db } from '@/shared/api/firebase'
 import type { Gender } from '@/features/auth'
 
-export type ParticipantTeam = 'red' | 'blue' | 'green' | 'orange'
-
 export type RoomStatus = 'waiting' | 'playing'
 
 export interface RoomInfo {
   hostUid: string
   status: RoomStatus
+  /** 확정된 팀편성 차수(1차~3차). 0이면 아직 배정 전 — 배정 확정 시에만 1씩 증가한다 */
+  assignmentRound: number
 }
 
 export interface Participant {
   /** Firestore 문서 ID = 참가자 uid */
   id: string
   name: string
-  /** 입장 시점엔 미배정(null) — 팀 배정 플로우는 이후 단계에서 붙는다 */
-  team: ParticipantTeam | null
+  /** 배정된 완장 알파벳(그룹 색은 완장에서 파생). 입장 시점엔 미배정(null) */
+  team: string | null
   /** 가입 시 확정된 성별 — 명단 표기용. 프로필 조회 실패 등으로 없을 수 있다(null) */
   gender: Gender | null
+  /** X 모듈 — 이 팀이 특수 완장 X를 겸하는지(기존 팀 소속 유지 겸직) */
+  isXTeam: boolean
+  /** 연속 비혼성 배정 횟수 — 배정 확정 시에만 갱신된다(이월 우선권) */
+  sameGenderStreak: number
+  /** 이번 세션 누적 짝꿍 이력 — 재짝꿍 회피용, 확정 시에만 갱신 */
+  previousPartnerIds: string[]
   isReady: boolean
 }
 
@@ -139,6 +145,7 @@ export async function getRoom(code: string): Promise<RoomInfo | null> {
   return {
     hostUid: data.hostUid as string,
     status: data.status as RoomStatus,
+    assignmentRound: (data.assignmentRound as number | undefined) ?? 0,
   }
 }
 
@@ -186,6 +193,7 @@ export function subscribeToRoom(
     onChange({
       hostUid: data.hostUid as string,
       status: data.status as RoomStatus,
+      assignmentRound: (data.assignmentRound as number | undefined) ?? 0,
     })
   })
 }
@@ -216,8 +224,11 @@ export function subscribeToParticipants(
         return {
           id: participantDoc.id,
           name: data.nickname as string,
-          team: (data.team as ParticipantTeam | undefined) ?? null,
+          team: (data.team as string | undefined) ?? null,
           gender: (data.gender as Gender | undefined) ?? null,
+          isXTeam: (data.isXTeam as boolean | undefined) ?? false,
+          sameGenderStreak: (data.sameGenderStreak as number | undefined) ?? 0,
+          previousPartnerIds: (data.previousPartnerIds as string[] | undefined) ?? [],
           isReady: data.isReady as boolean,
         }
       }),

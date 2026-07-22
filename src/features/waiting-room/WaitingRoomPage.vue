@@ -1,12 +1,18 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 import BaseBadge from '@/shared/components/BaseBadge.vue'
 import BaseButton from '@/shared/components/BaseButton.vue'
 import PlayerChip from './components/PlayerChip.vue'
+import {
+  AssignmentBoard,
+  RoundAssignmentCard,
+  useTeamAssignmentStore,
+  type DraftMember,
+} from '@/features/team-assignment'
 import { useToast } from '@/shared/composables/useToast'
-import { normalizeRoomCode } from './api/rooms'
+import { normalizeRoomCode, type Participant } from './api/rooms'
 import { useWaitingRoomStore } from './stores/useWaitingRoomStore'
 
 const route = useRoute()
@@ -16,6 +22,7 @@ const store = useWaitingRoomStore()
 const {
   roomCode,
   phase,
+  room,
   participants,
   participantCount,
   readyCount,
@@ -23,15 +30,91 @@ const {
   isConfirmingReady,
   readyError,
   isHost,
+  myId,
   gameStatus,
 } = storeToRefs(store)
 
-// 입장은 멱등이라 새로고침·재방문에도 안전하다. 이탈 시 구독을 해제한다.
+// 호스트 팀 배정 보드 — 드래프트는 로컬 스토어에만 쌓이고 "배정 확정"만 서버에 쓴다
+const taStore = useTeamAssignmentStore()
+const showAssignmentBoard = ref(false)
+
+/** 참가자 → 배정 드래프트 멤버(배정 로직에 필요한 필드만 추린다) */
+function toDraftMember(participant: Participant): DraftMember {
+  return {
+    id: participant.id,
+    name: participant.name,
+    gender: participant.gender,
+    sameGenderStreak: participant.sameGenderStreak,
+    previousPartnerIds: participant.previousPartnerIds,
+  }
+}
+
+/** 내 참가자 문서 — 게스트 배정 카드 렌더에 쓴다 */
+const myParticipant = computed(
+  () => participants.value.find((participant) => participant.id === myId.value) ?? null,
+)
+/** 게스트: 배정이 한 번이라도 확정됐고(assignmentRound>0) 내 완장이 있으면 라운드 배정 카드를 본다 */
+const showGuestAssignment = computed(
+  () => !isHost.value && (room.value?.assignmentRound ?? 0) > 0 && !!myParticipant.value?.team,
+)
+/** 같은 완장(팀) 멤버 — 표시용 id·name만 */
+const myTeamMembers = computed(() => {
+  const team = myParticipant.value?.team
+  if (!team) return []
+  return participants.value
+    .filter((participant) => participant.team === team)
+    .map((participant) => ({ id: participant.id, name: participant.name }))
+})
+
+/** 게스트 CTA 문구 — 배정 카드 뷰에서는 '준비 완료'(안전 수칙 동의는 배정 전 라운드에서 끝났다) */
+const guestCtaLabel = computed(() => {
+  if (showGuestAssignment.value) return '준비 완료'
+  return isReadyConfirmed.value ? '준비 완료' : '확인하고 준비 완료'
+})
+
+/**
+ * 팀 배정 시작(호스트) — 참가자·레디 상태를 검증한 뒤 드래프트를 채우고 보드를 연다.
+ * 배정 대상은 명단(플레이어)뿐이며, 호스트(진행자)는 플레이어가 아니라 제외된다.
+ */
+function startAssignment() {
+  if (participantCount.value === 0) {
+    toast({ title: '참가자가 없어요.', tone: 'danger' })
+    return
+  }
+  if (readyCount.value < participantCount.value) {
+    toast({ title: '모든 참가자가 준비를 완료해야 시작할 수 있어요.', tone: 'danger' })
+    return
+  }
+  // 이번에 확정할 차수는 클릭 시점의 assignmentRound + 1로 고정한다 — 이후 다른 탭이
+  // 확정해 스냅샷이 올라가도 이 드래프트는 고정된 차수로만 커밋한다(QA N-02)
+  taStore.startDraft(
+    participants.value.map(toDraftMember),
+    (room.value?.assignmentRound ?? 0) + 1,
+  )
+  showAssignmentBoard.value = true
+}
+
+/** 확정 완료 — 보드를 닫고 기존 대기실 뷰로 복귀한다(명단에 완장 보더가 반영된다) */
+function onAssignmentConfirmed() {
+  showAssignmentBoard.value = false
+  toast({ title: '팀 배정을 확정했어요.', tone: 'success' })
+}
+
+// 보드가 열린 동안 새로 레디한 참가자를 대기열에 합류시킨다(이미 배정/대기 중이면 무시된다)
+watch(participants, (list) => {
+  if (!showAssignmentBoard.value) return
+  for (const participant of list) {
+    if (participant.isReady) taStore.addToWaitingPool(toDraftMember(participant))
+  }
+})
+
+// 입장은 멱등이라 새로고침·재방문에도 안전하다. 이탈 시 구독을 해제하고 드래프트를 비운다.
 onMounted(() => {
   store.enter(normalizeRoomCode(String(route.params.roomCode)))
 })
 onUnmounted(() => {
   store.leave()
+  taStore.reset()
 })
 
 // 호스트가 시작하면 status 스냅샷으로 전원이 동시에 게임(카메라 콕핏)으로 넘어간다
@@ -60,14 +143,34 @@ async function copyInviteLink() {
        높이는 앱 셸(헤더 아래 남는 공간)을 flex-1로 채운다 — min-h-dvh를 쓰면 헤더 높이만큼
        항상 세로 스크롤이 생긴다. 스크롤은 명단이 실제로 넘칠 때만 생기는 게 정상이다 -->
   <section class="flex flex-1 flex-col bg-canvas px-6 pt-6 pb-(--pr-inset-bottom-safe)">
-    <div class="flex-1">
-      <!-- 헤더 -->
-      <header>
+    <div class="flex flex-1 flex-col">
+      <!-- 헤더 — 호스트 배정 보드는 자체 헤더가 있어 이 헤더를 숨긴다 -->
+      <header v-if="!showAssignmentBoard">
         <h1 class="text-title text-content">대기실</h1>
         <p class="mt-1 text-caption text-content-secondary">준비 전 안전 수칙을 확인합니다</p>
       </header>
 
       <template v-if="phase === 'joined'">
+        <!-- 호스트: 팀 배정 보드(대기실 콘텐츠·하단 CTA를 대체) -->
+        <AssignmentBoard
+          v-if="showAssignmentBoard"
+          class="mt-6"
+          :room-code="roomCode!"
+          @confirmed="onAssignmentConfirmed"
+        />
+
+        <!-- 게스트: 배정 확정 후 라운드 배정 카드(룸 카드·명단·안전수칙을 대체) -->
+        <RoundAssignmentCard
+          v-else-if="showGuestAssignment"
+          class="mt-6"
+          :round="room!.assignmentRound"
+          :armband="myParticipant!.team!"
+          :members="myTeamMembers"
+          :my-id="myId!"
+          :is-x-team="myParticipant!.isXTeam"
+        />
+
+        <template v-else>
         <!-- 룸 정보 카드 — 초대 수단(링크 복사)을 상시 노출한다.
              코드는 카드 내 주요 정보(text-heading)로, display(카운트다운용)는 과하다 -->
         <div class="mt-6 rounded-lg border border-stroke bg-elevated p-4">
@@ -117,6 +220,7 @@ async function copyInviteLink() {
             아래 확인 버튼을 누르면 안전 수칙과 개인 책임에 동의합니다.
           </p>
         </div>
+        </template>
       </template>
 
       <!-- 입장 실패 — 잘못된 초대 코드 또는 네트워크·권한 문제 -->
@@ -150,10 +254,12 @@ async function copyInviteLink() {
       </p>
     </div>
 
-    <!-- 하단 고정 CTA — 게스트: 안전 수칙 동의 / 호스트(진행자): 팀 배정 시작 -->
-    <div v-if="phase === 'joined'" class="pt-5 pb-6">
-      <!-- 팀 배정 플로우는 아직 미구현 — 진행자 CTA 자리만 확정해 둔다 -->
-      <BaseButton v-if="isHost" variant="accent" size="md" class="w-full">팀 배정 시작</BaseButton>
+    <!-- 하단 고정 CTA — 게스트: 안전 수칙 동의/라운드 준비 / 호스트(진행자): 팀 배정 시작.
+         배정 보드가 열려 있는 동안엔 보드가 자체 액션을 가지므로 이 CTA를 숨긴다. -->
+    <div v-if="phase === 'joined' && !showAssignmentBoard" class="pt-5 pb-6">
+      <BaseButton v-if="isHost" variant="accent" size="md" class="w-full" @click="startAssignment">
+        팀 배정 시작
+      </BaseButton>
 
       <template v-else>
         <p v-if="readyError" class="mb-2 text-caption text-danger" role="alert">
@@ -166,7 +272,7 @@ async function copyInviteLink() {
           :disabled="isReadyConfirmed || isConfirmingReady"
           @click="store.confirmReady()"
         >
-          {{ isReadyConfirmed ? '준비 완료' : '확인하고 준비 완료' }}
+          {{ guestCtaLabel }}
         </BaseButton>
       </template>
     </div>
