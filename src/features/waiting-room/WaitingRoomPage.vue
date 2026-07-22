@@ -17,7 +17,7 @@ import { useWaitingRoomStore } from './stores/useWaitingRoomStore'
 
 const route = useRoute()
 const router = useRouter()
-const { toast } = useToast()
+const { toast, dismissAll } = useToast()
 const store = useWaitingRoomStore()
 const {
   roomCode,
@@ -91,12 +91,16 @@ function startAssignment() {
     participants.value.map(toDraftMember),
     (room.value?.assignmentRound ?? 0) + 1,
   )
+  // 보드로 전환하기 직전 — 이전 화면(대기실)에서 쌓인 에러 토스트가 보드 위에 겹쳐 남지 않도록 비운다
+  dismissAll()
   showAssignmentBoard.value = true
 }
 
 /** 확정 완료 — 보드를 닫고 기존 대기실 뷰로 복귀한다(명단에 완장 보더가 반영된다) */
 function onAssignmentConfirmed() {
   showAssignmentBoard.value = false
+  // 확정 토스트만 남도록 보드 맥락의 잔여 알림(완장 소진 안내 등)을 먼저 정리한다
+  dismissAll()
   toast({ title: '팀 배정을 확정했어요.', tone: 'success' })
 }
 
@@ -144,8 +148,8 @@ async function copyInviteLink() {
        항상 세로 스크롤이 생긴다. 스크롤은 명단이 실제로 넘칠 때만 생기는 게 정상이다 -->
   <section class="flex flex-1 flex-col bg-canvas px-6 pt-6 pb-(--pr-inset-bottom-safe)">
     <div class="flex flex-1 flex-col">
-      <!-- 헤더 — 호스트 배정 보드는 자체 헤더가 있어 이 헤더를 숨긴다 -->
-      <header v-if="!showAssignmentBoard">
+      <!-- 헤더 — 호스트 배정 보드·게스트 배정 카드는 자체 헤더가 있어 이 헤더를 숨긴다 -->
+      <header v-if="!showAssignmentBoard && !showGuestAssignment">
         <h1 class="text-title text-content">대기실</h1>
         <p class="mt-1 text-caption text-content-secondary">준비 전 안전 수칙을 확인합니다</p>
       </header>

@@ -43,8 +43,9 @@ vi.mock('../api/rooms', async (importOriginal) => {
 })
 
 const toastMock = vi.fn<(options: { title: string; tone?: string }) => number>()
+const dismissAllMock = vi.fn<() => void>()
 vi.mock('@/shared/composables/useToast', () => ({
-  useToast: () => ({ toast: toastMock }),
+  useToast: () => ({ toast: toastMock, dismissAll: dismissAllMock }),
 }))
 
 const replaceMock = vi.fn<() => void>()
@@ -134,6 +135,7 @@ describe('WaitingRoomPage', () => {
     unsubscribeRoomMock.mockReset()
     replaceMock.mockReset()
     toastMock.mockReset()
+    dismissAllMock.mockReset()
   })
 
   it('라우트의 초대 코드를 정규화해 입장하고 룸 카드와 명단을 렌더한다', async () => {
@@ -335,6 +337,32 @@ describe('WaitingRoomPage', () => {
     expect(findButton(wrapper, '팀 배정 시작')).toBeUndefined()
   })
 
+  it('호스트: 가드 실패로 토스트가 쌓인 뒤 전원 레디로 재클릭하면 보드 전환 시 토스트 큐가 비워진다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    getRoomMock.mockResolvedValue(MY_ROOM)
+    const wrapper = mountPage()
+    await flushPromises()
+    deliver.participants([{ ...ROSTER[1]!, isReady: false }, { ...ROSTER[2]! }]) // u2 아직 준비 안 됨
+    await flushPromises()
+
+    // 1차 클릭 — 가드 실패로 에러 토스트가 쌓인다(dismissAll은 호출되지 않는다)
+    await findButton(wrapper, '팀 배정 시작')!.trigger('click')
+    expect(toastMock).toHaveBeenCalledWith({
+      title: '모든 참가자가 준비를 완료해야 시작할 수 있어요.',
+      tone: 'danger',
+    })
+    expect(dismissAllMock).not.toHaveBeenCalled()
+
+    // 전원 레디로 스냅샷 갱신 후 재클릭 — 가드를 모두 통과해 보드로 전환된다
+    deliver.participants([{ ...ROSTER[1]! }, { ...ROSTER[2]! }])
+    await flushPromises()
+    await findButton(wrapper, '팀 배정 시작')!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('배정 편집')
+    expect(dismissAllMock).toHaveBeenCalledTimes(1)
+  })
+
   it('게스트: 배정 확정 후(assignmentRound>0·완장 있음) 라운드 배정 카드로 전환한다', async () => {
     const deliver = captureSnapshotCallbacks()
     getRoomMock.mockResolvedValue({ hostUid: 'host9', status: 'waiting', assignmentRound: 1 })
@@ -351,6 +379,8 @@ describe('WaitingRoomPage', () => {
     expect(wrapper.text()).toContain('오리(나)')
     expect(wrapper.text()).toContain('하린')
     expect(wrapper.text()).not.toContain('ROOM AB2C')
+    // 배정 카드 뷰는 자체 헤더("라운드 N 배정")가 있으므로 페이지 헤더('대기실')는 중복 노출되지 않는다
+    expect(wrapper.text()).not.toContain('대기실')
     // 배정 카드 뷰에서는 준비 CTA 문구가 '준비 완료'다
     expect(findButton(wrapper, '준비 완료')).toBeDefined()
   })
