@@ -332,7 +332,7 @@ describe('WaitingRoomPage', () => {
       title: '모든 참가자가 준비를 완료해야 시작할 수 있어요.',
       tone: 'danger',
     })
-    expect(wrapper.text()).not.toContain('터치 배정 보드')
+    expect(wrapper.text()).not.toContain('팀 편성')
   })
 
   it('호스트: 전원 준비 완료면 팀 배정 시작이 배정 보드로 전환한다', async () => {
@@ -346,7 +346,7 @@ describe('WaitingRoomPage', () => {
     await findButton(wrapper, '팀 배정 시작')!.trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('터치 배정 보드')
+    expect(wrapper.text()).toContain('팀 편성')
     // 페이지 타이틀은 앱 셸 헤더가 담당한다 — 보드 전환 시 '배정 편집'으로 오버라이드된다
     expect(useAppHeader().title.value).toBe('배정 편집')
     expect(findButton(wrapper, '팀 배정 시작')).toBeUndefined()
@@ -374,7 +374,7 @@ describe('WaitingRoomPage', () => {
     await findButton(wrapper, '팀 배정 시작')!.trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('터치 배정 보드')
+    expect(wrapper.text()).toContain('팀 편성')
     expect(dismissAllMock).toHaveBeenCalledTimes(1)
   })
 
