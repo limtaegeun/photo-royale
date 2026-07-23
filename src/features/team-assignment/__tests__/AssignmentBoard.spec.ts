@@ -11,6 +11,17 @@ vi.mock('../api/assignment', () => ({
     confirmAssignmentMock(code, nextRound, gameMode, teams),
 }))
 
+// jsdom에선 실제 포인터 드래그를 재현할 수 없으므로 Sortable.create를 모킹해, 어떤 컨테이너에
+// 어떤 옵션으로 붙었는지와 onEnd 콜백 배선만 검증한다(실드래그는 별도 실기기 QA).
+vi.mock('sortablejs', () => ({
+  default: {
+    create: vi.fn<(...args: unknown[]) => { destroy: () => void }>(() => ({
+      destroy: vi.fn<() => void>(),
+    })),
+  },
+}))
+
+import Sortable from 'sortablejs'
 import AssignmentBoard from '../components/AssignmentBoard.vue'
 import {
   useTeamAssignmentStore,
@@ -52,6 +63,7 @@ function findButton(wrapper: ReturnType<typeof mountBoard>['wrapper'], text: str
 describe('AssignmentBoard', () => {
   beforeEach(() => {
     confirmAssignmentMock.mockReset().mockResolvedValue(undefined)
+    vi.mocked(Sortable.create).mockClear().mockReturnValue({ destroy: vi.fn<() => void>() } as never)
   })
 
   // BaseBottomSheet는 포털(document.body)로 렌더되므로 케이스 간 잔여 DOM을 비운다
@@ -279,5 +291,95 @@ describe('AssignmentBoard', () => {
     await findButton(wrapper, '+ 팀 추가')!.trigger('click')
 
     expect(store.draftTeams.map((team) => team.armband)).toEqual(['A', 'B', 'C'])
+  })
+
+  describe('드래그 앤 드롭(sortablejs)', () => {
+    /** onEnd 수동 호출용 evt — jsdom 실제 엘리먼트를 담아 되돌리기·이동 배선을 검증한다 */
+    function dragEvent(
+      item: Element,
+      from: Element,
+      to: Element,
+      oldIndex = 0,
+    ): Sortable.SortableEvent {
+      return { item, from, to, oldIndex } as unknown as Sortable.SortableEvent
+    }
+
+    it('각 팀 칩 컨테이너에 group/draggable 옵션으로 Sortable을 붙인다', async () => {
+      const { store } = mountBoard()
+      store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+      await flushPromises()
+
+      const createMock = vi.mocked(Sortable.create)
+      // 재초기화가 결정적으로 1회 일어나도록, 안정된 뒤 mock을 비우고 구조 변경(팀 추가)을 준다
+      createMock.mockClear()
+      store.addTeam() // A|B → A|B|C
+      await flushPromises()
+
+      // 팀 A·B·C 컨테이너 3개(대기자 없음)에 붙는다
+      expect(createMock).toHaveBeenCalledTimes(3)
+      for (const call of createMock.mock.calls) {
+        expect(call[1]!.group).toBe('assignment-members')
+        expect(call[1]!.draggable).toBe('[data-member]')
+        expect(call[1]!.delay).toBe(150)
+        expect(call[1]!.delayOnTouchOnly).toBe(true)
+      }
+    })
+
+    it('미배정 대기자 컨테이너도 드롭 대상으로 포함한다', async () => {
+      const { store } = mountBoard()
+      store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+      await flushPromises()
+
+      const createMock = vi.mocked(Sortable.create)
+      createMock.mockClear()
+      store.addToWaitingPool(member('w1', '대기자', 'male')) // 대기자 등장 → 재초기화
+      await flushPromises()
+
+      const targets = createMock.mock.calls.map((call) =>
+        (call[0] as HTMLElement).getAttribute('data-drop-target'),
+      )
+      expect(targets).toEqual(expect.arrayContaining(['A', 'B', 'waiting']))
+    })
+
+    it('onEnd는 옮긴 DOM을 원위치로 되돌린 뒤 store.moveMember를 대상 완장으로 호출한다', async () => {
+      const { wrapper, store } = mountBoard()
+      store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+      store.addToWaitingPool(member('w1', '대기자', 'male'))
+      await flushPromises()
+
+      // 실제 이동은 스토어 스펙에서 검증하므로 여기선 배선만 본다 — moveMember를 막아 DOM을 고정
+      const moveSpy = vi.spyOn(store, 'moveMember').mockImplementation(() => {})
+      const onEnd = vi.mocked(Sortable.create).mock.calls[0]![1]!.onEnd!
+
+      const teamA = wrapper.find('[data-drop-target="A"]').element
+      const teamB = wrapper.find('[data-drop-target="B"]').element
+      const waiting = wrapper.find('[data-drop-target="waiting"]').element
+      const m1 = wrapper.find('[data-member="m1"]').element
+
+      // 팀 A → 팀 B
+      onEnd(dragEvent(m1, teamA, teamB))
+      expect(moveSpy).toHaveBeenLastCalledWith('m1', 'B')
+      // 되돌리기: onEnd가 item을 원래 컨테이너(A)로 되돌려 놨다
+      expect(teamA.contains(m1)).toBe(true)
+
+      // 팀 → 대기열('waiting' → null)
+      onEnd(dragEvent(m1, teamA, waiting))
+      expect(moveSpy).toHaveBeenLastCalledWith('m1', null)
+    })
+
+    it('같은 컨테이너 내 재정렬(onEnd from===to)은 moveMember를 호출하지 않는다', async () => {
+      const { wrapper, store } = mountBoard()
+      store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+      await flushPromises()
+
+      const moveSpy = vi.spyOn(store, 'moveMember').mockImplementation(() => {})
+      const onEnd = vi.mocked(Sortable.create).mock.calls[0]![1]!.onEnd!
+      const teamA = wrapper.find('[data-drop-target="A"]').element
+      const m1 = wrapper.find('[data-member="m1"]').element
+
+      onEnd(dragEvent(m1, teamA, teamA))
+
+      expect(moveSpy).not.toHaveBeenCalled()
+    })
   })
 })

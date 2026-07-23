@@ -178,6 +178,114 @@ describe('useTeamAssignmentStore', () => {
     })
   })
 
+  describe('moveMember (선택과 무관한 직접 이동 — 드래그 앤 드롭용)', () => {
+    it('팀 → 팀 이동: 소속을 떼어 대상 팀 끝에 붙인다', () => {
+      const store = useTeamAssignmentStore()
+      store.startDraft(mixedFour(), 1, 'normal', identityRandom) // A[m1,f1] · B[m2,f2]
+
+      store.moveMember('m1', 'B')
+
+      const teamA = store.draftTeams.find((team) => team.armband === 'A')!
+      const teamB = store.draftTeams.find((team) => team.armband === 'B')!
+      expect(teamA.members.map((m) => m.id)).toEqual(['f1'])
+      expect(teamB.members.map((m) => m.id)).toEqual(['m2', 'f2', 'm1'])
+    })
+
+    it('팀 → 대기열 이동: targetArmband가 null이면 대기열로 보내고 빈 팀은 유지한다', () => {
+      const store = useTeamAssignmentStore()
+      store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+
+      store.moveMember('m1', null)
+      store.moveMember('f1', null)
+
+      const teamA = store.draftTeams.find((team) => team.armband === 'A')!
+      expect(teamA.members).toHaveLength(0)
+      expect(store.waitingPool.map((m) => m.id)).toEqual(['m1', 'f1'])
+    })
+
+    it('대기열 → 팀 이동: 대기자를 대상 팀으로 편입한다', () => {
+      const store = useTeamAssignmentStore()
+      store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+      store.addToWaitingPool(member('w1', '대기자', 'male'))
+
+      store.moveMember('w1', 'A')
+
+      const teamA = store.draftTeams.find((team) => team.armband === 'A')!
+      expect(teamA.members.map((m) => m.id)).toEqual(['m1', 'f1', 'w1'])
+      expect(store.waitingPool).toHaveLength(0)
+    })
+
+    it('없는 대상 팀으로 옮기면 멤버를 잃지 않도록 대기열로 되돌린다(방어)', () => {
+      const store = useTeamAssignmentStore()
+      store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+
+      store.moveMember('m1', 'Z') // 존재하지 않는 완장
+
+      const teamA = store.draftTeams.find((team) => team.armband === 'A')!
+      expect(teamA.members.map((m) => m.id)).toEqual(['f1'])
+      expect(store.waitingPool.map((m) => m.id)).toEqual(['m1'])
+    })
+
+    it('없는 멤버 id는 아무 것도 하지 않는다(방어)', () => {
+      const store = useTeamAssignmentStore()
+      store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+
+      store.moveMember('nope', 'B')
+
+      const teamA = store.draftTeams.find((team) => team.armband === 'A')!
+      const teamB = store.draftTeams.find((team) => team.armband === 'B')!
+      expect(teamA.members.map((m) => m.id)).toEqual(['m1', 'f1'])
+      expect(teamB.members.map((m) => m.id)).toEqual(['m2', 'f2'])
+    })
+
+    it('이동 후 2인이 아니게 된 팀의 X를 해제한다', () => {
+      const store = useTeamAssignmentStore()
+      store.setXModule(true, identityRandom)
+      store.startDraft(mixedFour(), 1, 'normal', identityRandom) // A·B 모두 X
+
+      store.moveMember('m1', 'B') // A는 1인, B는 3인 → 둘 다 2인 아님
+
+      const teamA = store.draftTeams.find((team) => team.armband === 'A')!
+      const teamB = store.draftTeams.find((team) => team.armband === 'B')!
+      expect(teamA.isXTeam).toBe(false)
+      expect(teamB.isXTeam).toBe(false)
+    })
+
+    it('선택(selectedMemberId)은 건드리지 않는다 — 선택 해제는 moveSelectedTo의 책임', () => {
+      const store = useTeamAssignmentStore()
+      store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+      store.selectMember('f1')
+
+      store.moveMember('m1', 'B') // 선택된 f1이 아닌 m1을 이동
+
+      expect(store.selectedMemberId).toBe('f1')
+    })
+  })
+
+  describe('moveSelectedTo (탭 이동 — moveMember에 위임)', () => {
+    it('선택 멤버를 옮기고 이동 후 선택을 해제한다', () => {
+      const store = useTeamAssignmentStore()
+      store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+      store.selectMember('m1')
+
+      store.moveSelectedTo('B')
+
+      const teamB = store.draftTeams.find((team) => team.armband === 'B')!
+      expect(teamB.members.map((m) => m.id)).toEqual(['m2', 'f2', 'm1'])
+      expect(store.selectedMemberId).toBeNull()
+    })
+
+    it('선택이 없으면 아무 것도 하지 않는다', () => {
+      const store = useTeamAssignmentStore()
+      store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+
+      store.moveSelectedTo('B') // 선택 없음
+
+      const teamB = store.draftTeams.find((team) => team.armband === 'B')!
+      expect(teamB.members.map((m) => m.id)).toEqual(['m2', 'f2'])
+    })
+  })
+
   describe('addTeam', () => {
     it('사용 중이지 않은 첫 완장으로 빈 팀을 추가한다', () => {
       const store = useTeamAssignmentStore()

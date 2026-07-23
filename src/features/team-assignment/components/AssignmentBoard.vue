@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, nextTick, ref, watch } from 'vue'
+import Sortable from 'sortablejs'
 import { storeToRefs } from 'pinia'
 import BaseBadge from '@/shared/components/BaseBadge.vue'
 import BaseButton from '@/shared/components/BaseButton.vue'
@@ -110,6 +111,83 @@ function teamCardBorderClass(team: { members: unknown[] }): string {
   return empty ? 'border-dashed border-stroke-strong' : 'border-stroke'
 }
 
+/**
+ * 드래그 앤 드롭(sortablejs) — 모바일 기준 이동 수단. 각 팀 칩 컨테이너와 미배정 대기자
+ * 컨테이너를 같은 group으로 묶어, 칩을 다른 섹션에 놓으면 이동한다. 기존 탭 이동(칩 선택 →
+ * 팀 터치)은 폴백·접근성용으로 그대로 둔다.
+ */
+const boardRef = ref<HTMLElement | null>(null)
+/** 현재 살아 있는 Sortable 인스턴스들 — 재초기화 시 destroy 대상 */
+const sortables: Sortable[] = []
+
+/**
+ * 드롭 완료 처리 — Vue 상태가 단일 진실원이므로, Sortable이 옮겨 놓은 DOM을 먼저 원위치로
+ * 되돌린 뒤(되돌리지 않으면 Vue 재렌더가 만든 새 노드와 Sortable이 옮긴 노드가 중복된다)
+ * store.moveMember로만 실제 이동을 반영한다 — 이어지는 Vue 재렌더가 최종 UI를 만든다.
+ */
+function handleDragEnd(evt: Sortable.SortableEvent) {
+  const { item, from, to, oldIndex } = evt
+  // 되돌리기: 목적지에서 떼어내 원래 컨테이너의 원래 위치(oldIndex)에 다시 꽂는다
+  if (item.parentNode) item.parentNode.removeChild(item)
+  const reference = oldIndex != null ? (from.children[oldIndex] ?? null) : null
+  from.insertBefore(item, reference)
+
+  // 같은 컨테이너 내 재정렬은 팀 소속이 안 바뀌므로 무시한다(칩 순서는 Vue 상태 기준)
+  if (to === from) return
+
+  const memberId = item.getAttribute('data-member')
+  const dropTarget = to.getAttribute('data-drop-target')
+  if (memberId === null || dropTarget === null) return
+  // 컨테이너의 data-drop-target: 팀 완장 문자열 또는 'waiting'(대기열=null)
+  store.moveMember(memberId, dropTarget === 'waiting' ? null : dropTarget)
+}
+
+/** 컨테이너 하나에 Sortable을 붙인다 — 팀 칩 영역/대기자 칩 영역 공통 옵션 */
+function createSortable(el: HTMLElement): Sortable {
+  return Sortable.create(el, {
+    group: 'assignment-members',
+    // 래퍼 버튼(data-member)만 드래그 대상 — ×2 배지·"비어 있음" 문구는 끌리지 않는다
+    draggable: '[data-member]',
+    // 모바일: 150ms 롱프레스로 드래그 시작 → 짧은 탭은 그대로 click(선택 토글)으로 통과한다.
+    // delayOnTouchOnly로 마우스에는 지연을 걸지 않고, 세로 스크롤과 드래그를 구분한다.
+    delay: 150,
+    delayOnTouchOnly: true,
+    animation: 150,
+    forceFallback: false,
+    ghostClass: 'member-ghost',
+    chosenClass: 'member-chosen',
+    onEnd: handleDragEnd,
+  })
+}
+
+function destroySortables() {
+  while (sortables.length > 0) sortables.pop()!.destroy()
+}
+
+/** boardRef 아래의 모든 드롭 컨테이너(data-drop-target)에 Sortable을 새로 붙인다 */
+function initSortables() {
+  destroySortables()
+  const root = boardRef.value
+  if (root === null) return
+  const containers = root.querySelectorAll<HTMLElement>('[data-drop-target]')
+  containers.forEach((el) => sortables.push(createSortable(el)))
+}
+
+onMounted(() => {
+  void nextTick(initSortables)
+})
+onBeforeUnmount(destroySortables)
+
+// 팀 구성(완장 목록)·대기자 섹션 유무가 바뀌면 컨테이너 DOM이 갈리므로(팀 추가·재배정·대기자
+// 등장/소멸) destroy 후 재초기화한다. 멤버가 팀 사이를 오가는 것만으로는 컨테이너 요소가
+// 유지되므로 재초기화가 필요 없다. nextTick으로 새 DOM이 그려진 뒤 붙인다.
+watch(
+  () => `${draftTeams.value.map((team) => team.armband).join('|')}#${waitingPool.value.length > 0}`,
+  () => {
+    void nextTick(initSortables)
+  },
+)
+
 /** 배정 확정 — 성공하면 상위(대기실)에 알린다. 실패는 confirmError로 화면에 남는다 */
 async function onConfirm() {
   const ok = await store.confirm(props.roomCode)
@@ -121,7 +199,7 @@ async function onConfirm() {
   <!-- H03 호스트 배정 편집 보드 — 대기실(라이트) 안에서 렌더된다. 터치 배정:
        멤버 칩을 선택한 뒤 팀 카드/대기자 영역을 눌러 이동시킨다.
        페이지 타이틀('배정 편집')·설명은 앱 셸 헤더(AppHeader)가 담당한다(자체 h1 없음). -->
-  <section class="flex flex-1 flex-col gap-6">
+  <section ref="boardRef" class="flex flex-1 flex-col gap-6">
     <!-- 설정 카드 — 게임 모드([1] 모드 선택 축)와 특수 완장 X([2] 세부 모듈)를 한 카드로 묶고
          divider로 구분한다. 각 행은 라벨+캡션(좌) / 컨트롤(우), 컨트롤이 48px 터치 타겟을 보장한다. -->
     <div class="rounded-lg border border-stroke bg-elevated">
@@ -238,8 +316,12 @@ async function onConfirm() {
             </span>
           </div>
 
-          <!-- 칩 영역 — min-h로 빈 팀도 카드 높이가 흔들리지 않게 고정한다 -->
-          <div class="flex min-h-(--pr-size-control-md) flex-wrap content-center items-center gap-1.5">
+          <!-- 칩 영역 — min-h로 빈 팀도 카드 높이가 흔들리지 않게 고정한다.
+               data-drop-target(팀 완장)으로 Sortable 드롭 대상이 된다(빈 팀도 드롭 가능). -->
+          <div
+            :data-drop-target="team.armband"
+            class="flex min-h-(--pr-size-control-md) flex-wrap content-center items-center gap-1.5"
+          >
             <template v-if="team.members.length > 0">
               <template v-for="member in team.members" :key="member.id">
                 <!-- 선택 상태는 래퍼 버튼의 ring(라임)으로, 참가자 표시는 대기실과 동일한 PlayerChip으로 통일한다.
@@ -283,7 +365,11 @@ async function onConfirm() {
       @keydown.space.prevent="store.moveSelectedTo(null)"
     >
       <p class="text-label text-warning">미배정 대기자 {{ waitingPool.length }}명</p>
-      <div class="flex min-h-(--pr-size-control-md) flex-wrap content-center items-center gap-1.5">
+      <!-- data-drop-target="waiting" — Sortable 드롭 시 대기열(null)로 이동시킨다 -->
+      <div
+        data-drop-target="waiting"
+        class="flex min-h-(--pr-size-control-md) flex-wrap content-center items-center gap-1.5"
+      >
         <!-- 대기자는 미배정이므로 team=null(중립 보더). 선택 상태는 래퍼 버튼의 ring으로 표기한다. -->
         <button
           v-for="member in waitingPool"
@@ -337,3 +423,15 @@ async function onConfirm() {
     </div>
   </section>
 </template>
+
+<style scoped>
+/* 드래그 중 원위치에 남는 고스트 — 반투명으로 "여기서 출발"을 표시(색은 원 칩 색 유지, 투명도만 조절). */
+.member-ghost {
+  opacity: 0.4;
+}
+
+/* 집어 든 칩 — 살짝 키워 들려 있는 느낌만 준다(색값 도입 없이 transform만). */
+.member-chosen {
+  transform: scale(1.05);
+}
+</style>

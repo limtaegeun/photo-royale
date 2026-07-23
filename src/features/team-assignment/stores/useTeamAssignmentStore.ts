@@ -147,24 +147,23 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
   }
 
   /**
-   * 선택된 멤버를 소속(팀 or 대기열)에서 떼어 대상 팀으로 옮긴다(null이면 대기열로).
-   * 이동 후 멤버 수가 2가 아니게 된 팀은 X 겸직을 해제한다(X는 2인 팀만 가능 — 확정 스펙).
-   * 빈 팀은 이동 타겟으로 필요하므로 유지한다. 이동 후 선택을 해제한다.
+   * 지정한 멤버를 소속(팀 or 대기열)에서 떼어 대상 팀으로 옮긴다(null이면 대기열로).
+   * 선택 상태와 무관하게 memberId로 직접 이동시키므로, 드래그 앤 드롭(선택을 거치지 않음)과
+   * 탭 이동이 이 한 액션을 공유한다. 이동 후 멤버 수가 2가 아니게 된 팀은 X 겸직을 해제한다
+   * (X는 2인 팀만 가능 — 확정 스펙). 빈 팀은 이동 타겟으로 필요하므로 유지한다.
+   * 선택(selectedMemberId)은 이 액션에서 건드리지 않는다 — 선택 해제는 moveSelectedTo의 책임이다.
    */
-  function moveSelectedTo(targetArmband: string | null) {
-    const id = selectedMemberId.value
-    if (id === null) return
-
+  function moveMember(memberId: string, targetArmband: string | null) {
     let moved: DraftMember | undefined
     for (const team of draftTeams.value) {
-      const index = team.members.findIndex((member) => member.id === id)
+      const index = team.members.findIndex((member) => member.id === memberId)
       if (index !== -1) {
         moved = team.members.splice(index, 1)[0]
         break
       }
     }
     if (!moved) {
-      const index = waitingPool.value.findIndex((member) => member.id === id)
+      const index = waitingPool.value.findIndex((member) => member.id === memberId)
       if (index !== -1) moved = waitingPool.value.splice(index, 1)[0]
     }
     if (!moved) return
@@ -181,6 +180,16 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
     for (const team of draftTeams.value) {
       if (team.members.length !== 2) team.isXTeam = false
     }
+  }
+
+  /**
+   * 현재 선택된 멤버를 대상 팀으로 옮긴다(null이면 대기열로) — 탭 이동(칩 선택 → 팀 터치)용.
+   * 실제 이동은 moveMember에 위임하고, 이동 후 선택을 해제한다(이동 완료 = 선택 종료).
+   */
+  function moveSelectedTo(targetArmband: string | null) {
+    const id = selectedMemberId.value
+    if (id === null) return
+    moveMember(id, targetArmband)
     selectedMemberId.value = null
   }
 
@@ -280,6 +289,7 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
     reroll,
     addToWaitingPool,
     selectMember,
+    moveMember,
     moveSelectedTo,
     addTeam,
     setGameMode,
