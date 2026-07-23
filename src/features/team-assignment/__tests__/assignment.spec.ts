@@ -39,8 +39,8 @@ describe('confirmAssignment', () => {
     },
   ]
 
-  it('참가자마다 완장·X·이월값·isReady 리셋을 batch update하고 방 assignmentRound를 올린 뒤 commit 1회', async () => {
-    await confirmAssignment('AB2C', 2, TEAMS)
+  it('참가자마다 완장·X·이월값·isReady 리셋을 batch update하고 방 assignmentRound·gameMode를 올린 뒤 commit 1회', async () => {
+    await confirmAssignment('AB2C', 2, 'king-hunt', TEAMS)
 
     // 멤버 3명 + 방 문서 1 = update 4회
     expect(batchUpdateMock).toHaveBeenCalledTimes(4)
@@ -59,7 +59,7 @@ describe('confirmAssignment', () => {
     )
     expect(batchUpdateMock).toHaveBeenCalledWith(
       { path: 'rooms/AB2C' },
-      { assignmentRound: 2 },
+      { assignmentRound: 2, gameMode: 'king-hunt' },
     )
 
     expect(batchCommitMock).toHaveBeenCalledTimes(1)
@@ -68,6 +68,6 @@ describe('confirmAssignment', () => {
   it('commit 실패는 호출부로 전파된다', async () => {
     batchCommitMock.mockRejectedValueOnce(new Error('permission denied'))
 
-    await expect(confirmAssignment('AB2C', 1, TEAMS)).rejects.toThrow('permission denied')
+    await expect(confirmAssignment('AB2C', 1, 'normal', TEAMS)).rejects.toThrow('permission denied')
   })
 })

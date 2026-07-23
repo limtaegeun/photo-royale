@@ -65,8 +65,18 @@ function captureSnapshotCallbacks() {
   }
 }
 
-const GUEST_ROOM: RoomInfo = { hostUid: 'host9', status: 'waiting', assignmentRound: 0 }
-const MY_ROOM: RoomInfo = { hostUid: 'me', status: 'waiting', assignmentRound: 0 }
+const GUEST_ROOM: RoomInfo = {
+  hostUid: 'host9',
+  status: 'waiting',
+  assignmentRound: 0,
+  gameMode: 'normal',
+}
+const MY_ROOM: RoomInfo = {
+  hostUid: 'me',
+  status: 'waiting',
+  assignmentRound: 0,
+  gameMode: 'normal',
+}
 
 const ME_WAITING: Participant = {
   id: 'me',

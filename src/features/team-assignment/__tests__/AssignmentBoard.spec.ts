@@ -1,14 +1,14 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import type { Gender } from '@/features/auth'
 
 // api/assignment은 firebase를 끌어오므로 통째로 모킹한다 — 컴포넌트·스토어 상호작용만 검증한다
 const confirmAssignmentMock =
-  vi.fn<(code: string, nextRound: number, teams: unknown) => Promise<void>>()
+  vi.fn<(code: string, nextRound: number, gameMode: string, teams: unknown) => Promise<void>>()
 vi.mock('../api/assignment', () => ({
-  confirmAssignment: (code: string, nextRound: number, teams: unknown) =>
-    confirmAssignmentMock(code, nextRound, teams),
+  confirmAssignment: (code: string, nextRound: number, gameMode: string, teams: unknown) =>
+    confirmAssignmentMock(code, nextRound, gameMode, teams),
 }))
 
 import AssignmentBoard from '../components/AssignmentBoard.vue'
@@ -50,9 +50,14 @@ describe('AssignmentBoard', () => {
     confirmAssignmentMock.mockReset().mockResolvedValue(undefined)
   })
 
+  // BaseBottomSheet는 포털(document.body)로 렌더되므로 케이스 간 잔여 DOM을 비운다
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
   it('팀 카드에 완장과 그룹(영문) 표기를 렌더한다', async () => {
     const { wrapper, store } = mountBoard()
-    store.startDraft(mixedFour(), 1, identityRandom)
+    store.startDraft(mixedFour(), 1, 'normal', identityRandom)
     await flushPromises()
 
     const teamA = wrapper.find('[data-team="A"]')
@@ -68,7 +73,7 @@ describe('AssignmentBoard', () => {
 
   it('1인 팀에는 목숨·포인트 2배(×2) 배지를 표시한다', async () => {
     const { wrapper, store } = mountBoard()
-    store.startDraft([member('solo', '혼자', 'male')], 1, identityRandom)
+    store.startDraft([member('solo', '혼자', 'male')], 1, 'normal', identityRandom)
     await flushPromises()
 
     expect(wrapper.text()).toContain('×2')
@@ -77,7 +82,7 @@ describe('AssignmentBoard', () => {
   it('X 모듈이 켜진 팀 카드 헤더에 X 배지를 병기한다', async () => {
     const { wrapper, store } = mountBoard()
     store.setXModule(true, identityRandom)
-    store.startDraft(mixedFour(), 1, identityRandom)
+    store.startDraft(mixedFour(), 1, 'normal', identityRandom)
     await flushPromises()
 
     // A·B 모두 서로 다른 그룹의 유일 후보라 둘 다 X로 선정된다
@@ -87,7 +92,7 @@ describe('AssignmentBoard', () => {
 
   it('칩을 선택한 뒤 팀 카드를 터치하면 해당 팀으로 이동한다', async () => {
     const { wrapper, store } = mountBoard()
-    store.startDraft(mixedFour(), 1, identityRandom)
+    store.startDraft(mixedFour(), 1, 'normal', identityRandom)
     await flushPromises()
 
     await wrapper.find('[data-member="m1"]').trigger('click')
@@ -104,7 +109,7 @@ describe('AssignmentBoard', () => {
 
   it('미배정 대기자 섹션을 표시하고, 선택 칩을 대기열로 보낸다', async () => {
     const { wrapper, store } = mountBoard()
-    store.startDraft(mixedFour(), 1, identityRandom)
+    store.startDraft(mixedFour(), 1, 'normal', identityRandom)
     store.addToWaitingPool(member('w1', '대기자', 'male'))
     await flushPromises()
 
@@ -121,7 +126,7 @@ describe('AssignmentBoard', () => {
 
   it('대기자가 없으면 미배정 대기자 섹션을 숨긴다', async () => {
     const { wrapper, store } = mountBoard()
-    store.startDraft(mixedFour(), 1, identityRandom)
+    store.startDraft(mixedFour(), 1, 'normal', identityRandom)
     await flushPromises()
 
     expect(wrapper.find('[data-waiting-pool]').exists()).toBe(false)
@@ -133,7 +138,7 @@ describe('AssignmentBoard', () => {
     // 빈 보드 → 확정 불가
     expect(findButton(wrapper, '배정 확정')!.attributes('disabled')).toBeDefined()
 
-    store.startDraft(mixedFour(), 1, identityRandom)
+    store.startDraft(mixedFour(), 1, 'normal', identityRandom)
     await flushPromises()
     expect(findButton(wrapper, '배정 확정')!.attributes('disabled')).toBeUndefined()
 
@@ -149,7 +154,7 @@ describe('AssignmentBoard', () => {
   it('확정 실패 시 안내를 role=alert로 노출하고 confirmed를 emit하지 않는다', async () => {
     confirmAssignmentMock.mockRejectedValueOnce(new Error('permission denied'))
     const { wrapper, store } = mountBoard()
-    store.startDraft(mixedFour(), 1, identityRandom)
+    store.startDraft(mixedFour(), 1, 'normal', identityRandom)
     await flushPromises()
 
     await findButton(wrapper, '배정 확정')!.trigger('click')
@@ -161,7 +166,7 @@ describe('AssignmentBoard', () => {
 
   it('랜덤 재배정 버튼은 스토어 reroll을 호출한다', async () => {
     const { wrapper, store } = mountBoard()
-    store.startDraft(mixedFour(), 1, identityRandom)
+    store.startDraft(mixedFour(), 1, 'normal', identityRandom)
     await flushPromises()
     const rerollSpy = vi.spyOn(store, 'reroll')
 
@@ -170,9 +175,30 @@ describe('AssignmentBoard', () => {
     expect(rerollSpy).toHaveBeenCalledTimes(1)
   })
 
+  it('게임 모드 행은 현재 모드를 보여주고, 변경 시트에서 고르면 스토어가 갱신된다', async () => {
+    const { wrapper, store } = mountBoard()
+    store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+    await flushPromises()
+
+    // 기본 모드(일반전) 표기
+    expect(wrapper.text()).toContain('게임 모드')
+    expect(wrapper.text()).toContain('일반전')
+
+    // '변경'을 눌러 시트를 연다 — 콘텐츠는 포털(document.body)로 렌더된다
+    await findButton(wrapper, '변경')!.trigger('click')
+    await flushPromises()
+
+    const option = document.body.querySelector<HTMLElement>('[data-mode="tail-chase"]')
+    expect(option).not.toBeNull()
+    option!.click()
+    await flushPromises()
+
+    expect(store.draftGameMode).toBe('tail-chase')
+  })
+
   it('팀 추가 버튼은 사용 중이지 않은 완장으로 빈 팀을 추가한다', async () => {
     const { wrapper, store } = mountBoard()
-    store.startDraft(mixedFour(), 1, identityRandom) // A·B 사용 중
+    store.startDraft(mixedFour(), 1, 'normal', identityRandom) // A·B 사용 중
     await flushPromises()
 
     await findButton(wrapper, '+ 팀 추가')!.trigger('click')

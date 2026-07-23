@@ -4,6 +4,7 @@ import type { Gender } from '@/features/auth'
 import { assignTeams, deriveCarryover } from '../teamAssignment'
 import { ARMBAND_LABELS, armbandForTeamIndex } from '../armbands'
 import { pickXTeams } from '../xRole'
+import { DEFAULT_GAME_MODE, type GameModeId } from '../gameModes'
 import { confirmAssignment, type ConfirmedTeamWrite } from '../api/assignment'
 
 /**
@@ -38,6 +39,12 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
    * 커밋해 rules의 +1 검사가 stale 확정을 거부하게 한다.
    */
   const draftRound = ref(0)
+  /**
+   * 이번 드래프트가 확정할 게임 모드 — 모드도 드래프트 속성이다. 로컬에서 고르고 확정 시에만
+   * room에 커밋한다(draftRound와 같은 원칙, QA N-02 참조). startDraft가 명시적으로 세팅하고
+   * reroll은 유지하므로, 보드 재진입 시 페이지가 직전 확정 모드를 넘겨 기본값으로 쓸 수 있다.
+   */
+  const draftGameMode = ref<GameModeId>(DEFAULT_GAME_MODE)
   /** 보드 진입 후 합류한 미배정 대기자 */
   const waitingPool = ref<DraftMember[]>([])
   const xModuleEnabled = ref(false)
@@ -66,11 +73,13 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
   /**
    * 초기 배정 — assignTeams로 2인 1팀 혼성 우선 편성 후 팀 순서대로 완장을 부여한다.
    * X 모듈이 켜져 있으면 X 팀도 함께 선정한다. 대기자·선택 상태는 초기화한다.
-   * nextRound(이번에 확정할 차수)는 보드를 여는 시점에 고정해 draftRound에 담는다.
+   * nextRound(이번에 확정할 차수)·gameMode(이번 라운드 모드)는 보드를 여는 시점에 명시적으로
+   * 고정한다 — 페이지가 직전 확정 모드를 gameMode로 넘겨 기본값을 결정한다.
    */
   function startDraft(
     members: DraftMember[],
     nextRound: number,
+    gameMode: GameModeId,
     random: () => number = Math.random,
   ) {
     const byId = new Map(members.map((member) => [member.id, member]))
@@ -82,6 +91,7 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
       isXTeam: false,
     }))
     draftRound.value = nextRound
+    draftGameMode.value = gameMode
     if (xModuleEnabled.value) applyXModule(random)
     waitingPool.value = []
     selectedMemberId.value = null
@@ -94,8 +104,8 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
   function reroll(random: () => number = Math.random) {
     const assigned = draftTeams.value.flatMap((team) => team.members)
     const pool = waitingPool.value
-    // 재배정은 같은 라운드의 재편성이므로 현재 draftRound를 그대로 유지한다
-    startDraft(assigned, draftRound.value, random)
+    // 재배정은 같은 라운드의 재편성이므로 현재 draftRound·draftGameMode를 그대로 유지한다
+    startDraft(assigned, draftRound.value, draftGameMode.value, random)
     waitingPool.value = pool
   }
 
@@ -167,6 +177,11 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
     draftTeams.value.push({ armband: next, members: [], isXTeam: false })
   }
 
+  /** 게임 모드 선택 — 로컬 드래프트만 바꾼다. 확정 시 confirmAssignment로 room에 커밋된다 */
+  function setGameMode(id: GameModeId) {
+    draftGameMode.value = id
+  }
+
   /** X 모듈 토글 — 켜면 현재 편성 기준으로 X 팀을 재선정하고, 끄면 전 팀의 X를 해제한다 */
   function setXModule(enabled: boolean, random: () => number = Math.random) {
     xModuleEnabled.value = enabled
@@ -203,7 +218,7 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
     isConfirming.value = true
     confirmError.value = null
     try {
-      await confirmAssignment(code, draftRound.value, payload)
+      await confirmAssignment(code, draftRound.value, draftGameMode.value, payload)
       reset()
       return true
     } catch {
@@ -218,6 +233,7 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
   function reset() {
     draftTeams.value = []
     draftRound.value = 0
+    draftGameMode.value = DEFAULT_GAME_MODE
     waitingPool.value = []
     xModuleEnabled.value = false
     selectedMemberId.value = null
@@ -228,6 +244,7 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
   return {
     draftTeams,
     draftRound,
+    draftGameMode,
     waitingPool,
     xModuleEnabled,
     selectedMemberId,
@@ -241,6 +258,7 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
     selectMember,
     moveSelectedTo,
     addTeam,
+    setGameMode,
     setXModule,
     confirm,
     reset,

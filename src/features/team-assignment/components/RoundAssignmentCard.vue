@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import BaseBadge from '@/shared/components/BaseBadge.vue'
 import { groupForArmband, type TeamGroup } from '../armbands'
+import { GAME_MODES, type GameModeId } from '../gameModes'
 
 interface Props {
   /** 내 완장 알파벳 — 그룹 색은 완장에서 파생 */
@@ -12,6 +13,8 @@ interface Props {
   myId: string
   /** 특수 완장 X 겸직 여부 */
   isXTeam: boolean
+  /** 이번 라운드 확정 게임 모드 — 규칙서 배지·목록이 이 모드 정의로 렌더된다 */
+  gameMode: GameModeId
 }
 
 const props = defineProps<Props>()
@@ -68,6 +71,50 @@ const groupLabelEn = computed(() => (group.value === null ? '' : GROUP_LABEL_EN[
 
 /** 팀 구성 요약 — 2인 1조 / 1인 팀 */
 const compositionLabel = computed(() => (isSolo.value ? '1인 팀' : '2인 1조'))
+
+/** 이번 라운드 모드 정의 — 규칙서 배지 라벨과 규칙 목록의 원본 */
+const modeDefinition = computed(() => GAME_MODES[props.gameMode])
+
+/** 규칙서에 실제로 그릴 한 항목 — 번호는 배열 인덱스로 자동 부여한다 */
+interface RenderedRule {
+  text: string
+  caption: string | null
+  /** true면 그룹 색으로 강조(그룹 규칙), false면 보조 텍스트 톤 */
+  captionColored: boolean
+}
+
+/**
+ * 모드 정의의 규칙을 라운드 컨텍스트(팀 구성·그룹 색)로 채워 렌더 항목으로 변환한다.
+ * composition/group은 기존 하드코딩 1·2번 로직을 그대로 재현하고, static은 정의 문구를 쓴다.
+ * X 겸직이면 마지막 항목으로 X 규칙을 덧붙인다 — 번호는 목록 길이에 따라 자동으로 이어진다.
+ */
+const renderedRules = computed<RenderedRule[]>(() => {
+  const items: RenderedRule[] = modeDefinition.value.rules.map((entry) => {
+    if (entry.kind === 'composition') {
+      return {
+        text: isSolo.value ? '1인 팀입니다.' : '팀은 2인 1조입니다.',
+        caption: isSolo.value ? '목숨과 포인트가 2배입니다.' : '팀원과 2m 안에서 함께 이동하세요.',
+        captionColored: false,
+      }
+    }
+    if (entry.kind === 'group') {
+      return {
+        text: '그룹은 완장 색깔입니다.',
+        caption: `이번 라운드는 ${groupLabelKo.value} 그룹입니다.`,
+        captionColored: true,
+      }
+    }
+    return { text: entry.text, caption: entry.caption ?? null, captionColored: false }
+  })
+  if (props.isXTeam) {
+    items.push({
+      text: '특수 완장 X — X끼리만 서로 사냥할 수 있습니다.',
+      caption: null,
+      captionColored: false,
+    })
+  }
+  return items
+})
 </script>
 
 <template>
@@ -134,36 +181,21 @@ const compositionLabel = computed(() => (isSolo.value ? '1인 팀' : '2인 1조'
     <div class="rounded-lg border border-stroke bg-elevated p-4">
       <div class="flex items-center justify-between gap-3">
         <h2 class="text-label text-content">이번 게임 규칙서</h2>
-        <BaseBadge tone="brand" size="sm">일반전</BaseBadge>
+        <BaseBadge tone="brand" size="sm">{{ modeDefinition.label }}</BaseBadge>
       </div>
       <ol class="mt-3 flex flex-col gap-3">
-        <li class="flex gap-2">
-          <span class="text-label font-bold text-content-tertiary">1</span>
+        <li v-for="(rule, index) in renderedRules" :key="index" class="flex gap-2">
+          <span class="text-label font-bold text-content-tertiary">{{ index + 1 }}</span>
           <div>
-            <p class="text-body text-content">
-              {{ isSolo ? '1인 팀입니다.' : '팀은 2인 1조입니다.' }}
-            </p>
-            <p class="mt-0.5 text-caption text-content-secondary">
-              {{ isSolo ? '목숨과 포인트가 2배입니다.' : '팀원과 2m 안에서 함께 이동하세요.' }}
+            <p class="text-body text-content">{{ rule.text }}</p>
+            <p
+              v-if="rule.caption"
+              class="mt-0.5 text-caption"
+              :class="rule.captionColored ? [groupTextClass, 'font-semibold'] : 'text-content-secondary'"
+            >
+              {{ rule.caption }}
             </p>
           </div>
-        </li>
-        <li class="flex gap-2">
-          <span class="text-label font-bold text-content-tertiary">2</span>
-          <div>
-            <p class="text-body text-content">그룹은 완장 색깔입니다.</p>
-            <p class="mt-0.5 text-caption font-semibold" :class="groupTextClass">
-              이번 라운드는 {{ groupLabelKo }} 그룹입니다.
-            </p>
-          </div>
-        </li>
-        <li class="flex gap-2">
-          <span class="text-label font-bold text-content-tertiary">3</span>
-          <p class="text-body text-content">상대 완장 알파벳을 찍어 제출하세요.</p>
-        </li>
-        <li v-if="isXTeam" class="flex gap-2">
-          <span class="text-label font-bold text-content-tertiary">4</span>
-          <p class="text-body text-content">특수 완장 X — X끼리만 서로 사냥할 수 있습니다.</p>
         </li>
       </ol>
     </div>

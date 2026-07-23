@@ -88,12 +88,15 @@ service cloud.firestore {
           (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
             && resource.data.status == 'waiting'
             && request.resource.data.status == 'playing')
-          // 2) 팀편성 차수는 확정 시에만 1씩 증가한다. 아직 대기 중일 때만 허용한다.
-          || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['assignmentRound'])
+          // 2) 배정 확정 — 팀편성 차수(+1)와 게임 모드를 함께 커밋한다. 아직 대기 중일 때만 허용한다.
+          //    모드는 확정과 함께만 커밋된다(드래프트는 로컬) — assignmentRound +1 제약을 유지하므로
+          //    모드만 단독으로 바꾸는 요청은(차수가 그대로라) 거부된다.
+          || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['assignmentRound', 'gameMode'])
             && resource.data.status == 'waiting'
             && request.resource.data.assignmentRound is int
             && request.resource.data.assignmentRound ==
-              (('assignmentRound' in resource.data) ? resource.data.assignmentRound + 1 : 1))
+              (('assignmentRound' in resource.data) ? resource.data.assignmentRound + 1 : 1)
+            && request.resource.data.gameMode in ['normal', 'tail-chase', 'group', 'king-hunt', 'staff-chase', 'bomb-plant', 'kkomkkomi', 'fast-survival'])
         );
 
       // 방 정리(삭제) 플로우 도입 전까지 불변이다.

@@ -1,5 +1,6 @@
 import { doc, writeBatch } from 'firebase/firestore'
 import { db } from '@/shared/api/firebase'
+import type { GameModeId } from '../gameModes'
 
 /** 확정된 팀의 한 멤버에게 쓸 이월값 */
 export interface ConfirmedMemberWrite {
@@ -22,11 +23,13 @@ export interface ConfirmedTeamWrite {
  *
  * @param code      방 초대 코드(= 방 문서 ID)
  * @param nextRound 이번에 확정할 팀편성 차수(기존 assignmentRound + 1)
+ * @param gameMode  이번 라운드 확정 게임 모드 — assignmentRound와 함께 원자적으로 커밋된다
  * @param teams     확정된 팀 구성
  */
 export async function confirmAssignment(
   code: string,
   nextRound: number,
+  gameMode: GameModeId,
   teams: ConfirmedTeamWrite[],
 ): Promise<void> {
   const batch = writeBatch(db)
@@ -43,7 +46,7 @@ export async function confirmAssignment(
     }
   }
 
-  batch.update(doc(db, 'rooms', code), { assignmentRound: nextRound })
+  batch.update(doc(db, 'rooms', code), { assignmentRound: nextRound, gameMode })
 
   await batch.commit()
 }

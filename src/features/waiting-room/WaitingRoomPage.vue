@@ -7,6 +7,7 @@ import BaseButton from '@/shared/components/BaseButton.vue'
 import PlayerChip from './components/PlayerChip.vue'
 import {
   AssignmentBoard,
+  DEFAULT_GAME_MODE,
   RoundAssignmentCard,
   useTeamAssignmentStore,
   type DraftMember,
@@ -88,10 +89,12 @@ function startAssignment() {
     return
   }
   // 이번에 확정할 차수는 클릭 시점의 assignmentRound + 1로 고정한다 — 이후 다른 탭이
-  // 확정해 스냅샷이 올라가도 이 드래프트는 고정된 차수로만 커밋한다(QA N-02)
+  // 확정해 스냅샷이 올라가도 이 드래프트는 고정된 차수로만 커밋한다(QA N-02).
+  // 게임 모드는 직전 확정 모드를 기본값으로 넘긴다 — 호스트는 보드에서 바꿀 수 있다.
   taStore.startDraft(
     participants.value.map(toDraftMember),
     (room.value?.assignmentRound ?? 0) + 1,
+    room.value?.gameMode ?? DEFAULT_GAME_MODE,
   )
   // 보드로 전환하기 직전 — 이전 화면(대기실)에서 쌓인 에러 토스트가 보드 위에 겹쳐 남지 않도록 비운다
   dismissAll()
@@ -182,6 +185,7 @@ async function copyInviteLink() {
           :members="myTeamMembers"
           :my-id="myId!"
           :is-x-team="myParticipant!.isXTeam"
+          :game-mode="room!.gameMode"
         />
 
         <template v-else>

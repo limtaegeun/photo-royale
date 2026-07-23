@@ -87,8 +87,18 @@ function findButton(wrapper: ReturnType<typeof mountPage>, text: string) {
   return wrapper.findAll('button').find((b) => b.text() === text)
 }
 
-const GUEST_ROOM: RoomInfo = { hostUid: 'host9', status: 'waiting', assignmentRound: 0 }
-const MY_ROOM: RoomInfo = { hostUid: 'me', status: 'waiting', assignmentRound: 0 }
+const GUEST_ROOM: RoomInfo = {
+  hostUid: 'host9',
+  status: 'waiting',
+  assignmentRound: 0,
+  gameMode: 'normal',
+}
+const MY_ROOM: RoomInfo = {
+  hostUid: 'me',
+  status: 'waiting',
+  assignmentRound: 0,
+  gameMode: 'normal',
+}
 
 const ROSTER: Participant[] = [
   {
@@ -274,7 +284,7 @@ describe('WaitingRoomPage', () => {
     mountPage()
     await flushPromises()
 
-    deliver.room({ hostUid: 'host9', status: 'playing', assignmentRound: 0 })
+    deliver.room({ hostUid: 'host9', status: 'playing', assignmentRound: 0, gameMode: 'normal' })
     await flushPromises()
 
     expect(replaceMock).toHaveBeenCalledWith({ name: 'camera' })
@@ -370,7 +380,12 @@ describe('WaitingRoomPage', () => {
 
   it('게스트: 배정 확정 후(assignmentRound>0·완장 있음) 라운드 배정 카드로 전환한다', async () => {
     const deliver = captureSnapshotCallbacks()
-    getRoomMock.mockResolvedValue({ hostUid: 'host9', status: 'waiting', assignmentRound: 1 })
+    getRoomMock.mockResolvedValue({
+      hostUid: 'host9',
+      status: 'waiting',
+      assignmentRound: 1,
+      gameMode: 'normal',
+    })
     const wrapper = mountPage()
     await flushPromises()
     deliver.participants([
@@ -395,7 +410,12 @@ describe('WaitingRoomPage', () => {
   it('호스트: 보드 진입 후 room 스냅샷 라운드가 올라가도 드래프트 차수는 고정된다(QA N-02)', async () => {
     // 진입 시점 assignmentRound=2 → 이번 드래프트가 확정할 차수는 3으로 고정되어야 한다
     const deliver = captureSnapshotCallbacks()
-    getRoomMock.mockResolvedValue({ hostUid: 'me', status: 'waiting', assignmentRound: 2 })
+    getRoomMock.mockResolvedValue({
+      hostUid: 'me',
+      status: 'waiting',
+      assignmentRound: 2,
+      gameMode: 'group',
+    })
     // mountPage 대신 명시적 pinia로 마운트해 같은 인스턴스의 팀 배정 스토어를 조회한다
     const pinia = createPinia()
     setActivePinia(pinia)
@@ -408,9 +428,11 @@ describe('WaitingRoomPage', () => {
     await findButton(wrapper, '팀 배정 시작')!.trigger('click')
     await flushPromises()
     expect(taStore.draftRound).toBe(3) // 진입 시점 2 + 1로 고정
+    // 직전 확정 모드(room.gameMode)가 다음 드래프트 기본값으로 세팅된다
+    expect(taStore.draftGameMode).toBe('group')
 
     // 다른 탭이 확정해 room 스냅샷의 assignmentRound가 올라가도(3) 드래프트 차수는 그대로 3
-    deliver.room({ hostUid: 'me', status: 'waiting', assignmentRound: 3 })
+    deliver.room({ hostUid: 'me', status: 'waiting', assignmentRound: 3, gameMode: 'group' })
     await flushPromises()
     expect(taStore.draftRound).toBe(3)
   })

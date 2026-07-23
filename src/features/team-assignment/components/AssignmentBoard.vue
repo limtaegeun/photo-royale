@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import BaseBadge from '@/shared/components/BaseBadge.vue'
 import BaseButton from '@/shared/components/BaseButton.vue'
+import BaseBottomSheet from '@/shared/components/BaseBottomSheet.vue'
 import BaseSegmented from '@/shared/components/BaseSegmented.vue'
 import { groupForArmband, type TeamGroup } from '../armbands'
+import { GAME_MODE_IDS, GAME_MODES, type GameModeId } from '../gameModes'
 import { useTeamAssignmentStore } from '../stores/useTeamAssignmentStore'
 
 interface Props {
@@ -17,7 +19,21 @@ const emit = defineEmits<{ confirmed: [] }>()
 
 // 드래프트는 페이지가 startDraft로 미리 채워 둔다 — 이 컴포넌트는 편집·확정만 담당한다
 const store = useTeamAssignmentStore()
-const { draftTeams, waitingPool, selectedMemberId, canConfirm, confirmError } = storeToRefs(store)
+const { draftTeams, draftGameMode, waitingPool, selectedMemberId, canConfirm, confirmError } =
+  storeToRefs(store)
+
+/** 현재 선택된 모드 정의 — 행 라벨·캡션에 쓴다 */
+const currentMode = computed(() => GAME_MODES[draftGameMode.value])
+/** 시트에 순서대로 나열할 모드 정의 목록 */
+const modeOptions = computed(() => GAME_MODE_IDS.map((id) => GAME_MODES[id]))
+
+const isModeSheetOpen = ref(false)
+
+/** 모드 선택 — 스토어 드래프트를 바꾸고 시트를 닫는다(확정 시에만 서버에 커밋된다) */
+function selectGameMode(id: GameModeId) {
+  store.setGameMode(id)
+  isModeSheetOpen.value = false
+}
 
 /** X 모듈 토글 — 세그먼트 값('on'/'off')과 스토어 boolean을 잇는다 */
 const X_MODULE_OPTIONS = [
@@ -87,6 +103,40 @@ async function onConfirm() {
         랜덤 재배정은 이번 모임에서 아직 만나지 않았던 사람 위주로 섞습니다.
       </p>
     </div>
+
+    <!-- 게임 모드 — [1] 모드 선택 축. X 모듈([2] 세부 모듈)보다 위에 둔다 -->
+    <div class="flex items-center justify-between gap-4">
+      <div class="min-w-0">
+        <p class="text-label text-content">게임 모드</p>
+        <p class="mt-1 truncate text-caption text-content-secondary">
+          {{ currentMode.label }} · {{ currentMode.description }}
+        </p>
+      </div>
+      <BaseButton variant="ghost" size="md" class="shrink-0" @click="isModeSheetOpen = true">
+        변경
+      </BaseButton>
+    </div>
+
+    <!-- 모드 선택 시트 — GAME_MODE_IDS 순서로 나열, 현재 선택을 강조한다 -->
+    <BaseBottomSheet v-model:open="isModeSheetOpen" title="게임 모드 선택">
+      <ul class="flex flex-col gap-2">
+        <li v-for="mode in modeOptions" :key="mode.id">
+          <button
+            type="button"
+            :data-mode="mode.id"
+            :aria-pressed="mode.id === draftGameMode"
+            class="flex min-h-(--pr-size-control-md) w-full flex-col items-start justify-center gap-0.5
+                   rounded-md px-4 py-2 text-left transition-colors duration-100 ease-standard
+                   focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+            :class="mode.id === draftGameMode ? 'border-2 border-accent bg-surface' : 'border border-stroke-strong'"
+            @click="selectGameMode(mode.id)"
+          >
+            <span class="text-label text-content">{{ mode.label }}</span>
+            <span class="text-caption text-content-secondary">{{ mode.description }}</span>
+          </button>
+        </li>
+      </ul>
+    </BaseBottomSheet>
 
     <!-- X 모듈 -->
     <div class="flex items-center justify-between gap-4">

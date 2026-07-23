@@ -119,21 +119,43 @@ describe('roomExists', () => {
 })
 
 describe('getRoom', () => {
-  it('방 문서를 RoomInfo로 매핑하고, 없으면 null을 반환한다', async () => {
+  it('방 문서를 RoomInfo로 매핑하고(게임 모드 포함), 없으면 null을 반환한다', async () => {
     getDocMock.mockResolvedValueOnce({
       exists: () => true,
-      data: () => ({ hostUid: 'host-1', status: 'waiting', assignmentRound: 2 }),
+      data: () => ({
+        hostUid: 'host-1',
+        status: 'waiting',
+        assignmentRound: 2,
+        gameMode: 'king-hunt',
+      }),
     })
 
     await expect(getRoom('AB2C')).resolves.toEqual({
       hostUid: 'host-1',
       status: 'waiting',
       assignmentRound: 2,
+      gameMode: 'king-hunt',
     })
     expect(getDocMock).toHaveBeenCalledWith({ path: 'rooms/AB2C' })
 
     getDocMock.mockResolvedValueOnce({ exists: () => false })
     await expect(getRoom('ZZZZ')).resolves.toBeNull()
+  })
+
+  it('gameMode 필드가 없거나 알 수 없는 값이면 일반전(normal)으로 채운다', async () => {
+    // 필드 자체가 없는 기존 방
+    getDocMock.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ hostUid: 'host-1', status: 'waiting', assignmentRound: 0 }),
+    })
+    await expect(getRoom('AB2C')).resolves.toMatchObject({ gameMode: 'normal' })
+
+    // 저장된 값이 유효 모드가 아닌 경우
+    getDocMock.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ hostUid: 'host-1', status: 'waiting', assignmentRound: 1, gameMode: 'bogus' }),
+    })
+    await expect(getRoom('AB2C')).resolves.toMatchObject({ gameMode: 'normal' })
   })
 })
 
@@ -312,12 +334,18 @@ describe('subscribeToRoom', () => {
 
     onNext({
       exists: () => true,
-      data: () => ({ hostUid: 'host-1', status: 'waiting', assignmentRound: 1 }),
+      data: () => ({
+        hostUid: 'host-1',
+        status: 'waiting',
+        assignmentRound: 1,
+        gameMode: 'staff-chase',
+      }),
     })
     expect(onChange).toHaveBeenCalledWith({
       hostUid: 'host-1',
       status: 'waiting',
       assignmentRound: 1,
+      gameMode: 'staff-chase',
     })
 
     onNext({ exists: () => false })

@@ -15,6 +15,8 @@ import {
 } from 'firebase/firestore'
 import { db } from '@/shared/api/firebase'
 import type { Gender } from '@/features/auth'
+// 게임 모드는 team-assignment 기능의 소유물이라 public API로만 가져온다(내부 파일 직접 import 금지)
+import { DEFAULT_GAME_MODE, isGameModeId, type GameModeId } from '@/features/team-assignment'
 
 export type RoomStatus = 'waiting' | 'playing'
 
@@ -23,6 +25,8 @@ export interface RoomInfo {
   status: RoomStatus
   /** 확정된 팀편성 차수(1차~3차). 0이면 아직 배정 전 — 배정 확정 시에만 1씩 증가한다 */
   assignmentRound: number
+  /** 확정된 이번 라운드 게임 모드. 필드가 없으면(기존 방·배정 전) 일반전(normal) */
+  gameMode: GameModeId
 }
 
 export interface Participant {
@@ -146,6 +150,7 @@ export async function getRoom(code: string): Promise<RoomInfo | null> {
     hostUid: data.hostUid as string,
     status: data.status as RoomStatus,
     assignmentRound: (data.assignmentRound as number | undefined) ?? 0,
+    gameMode: isGameModeId(data.gameMode) ? data.gameMode : DEFAULT_GAME_MODE,
   }
 }
 
@@ -194,6 +199,7 @@ export function subscribeToRoom(
       hostUid: data.hostUid as string,
       status: data.status as RoomStatus,
       assignmentRound: (data.assignmentRound as number | undefined) ?? 0,
+      gameMode: isGameModeId(data.gameMode) ? data.gameMode : DEFAULT_GAME_MODE,
     })
   })
 }
