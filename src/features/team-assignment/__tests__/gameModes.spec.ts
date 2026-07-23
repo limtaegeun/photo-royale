@@ -60,4 +60,14 @@ describe('gameModes', () => {
     expect(rules).toHaveLength(2)
     expect(rules.every((rule) => rule.kind === 'static')).toBe(true)
   })
+
+  it('게임플레이가 구현된 일반전(normal)만 available이고, 나머지 7종은 미구현이라 비활성이다', () => {
+    expect(GAME_MODES.normal.available).toBe(true)
+
+    const otherIds = GAME_MODE_IDS.filter((id) => id !== 'normal')
+    expect(otherIds).toHaveLength(7)
+    for (const id of otherIds) {
+      expect(GAME_MODES[id].available).toBe(false)
+    }
+  })
 })

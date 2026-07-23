@@ -175,7 +175,7 @@ describe('AssignmentBoard', () => {
     expect(rerollSpy).toHaveBeenCalledTimes(1)
   })
 
-  it('게임 모드 행은 현재 모드를 보여주고, 변경 시트에서 고르면 스토어가 갱신된다', async () => {
+  it('게임 모드 행은 현재 모드를 보여준다', async () => {
     const { wrapper, store } = mountBoard()
     store.startDraft(mixedFour(), 1, 'normal', identityRandom)
     await flushPromises()
@@ -183,17 +183,33 @@ describe('AssignmentBoard', () => {
     // 기본 모드(일반전) 표기
     expect(wrapper.text()).toContain('게임 모드')
     expect(wrapper.text()).toContain('일반전')
+  })
+
+  it('미구현 모드는 선택 시트에서 비활성화되고, "준비 중" 배지가 붙으며, 클릭해도 스토어가 바뀌지 않는다', async () => {
+    const { wrapper, store } = mountBoard()
+    store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+    await flushPromises()
 
     // '변경'을 눌러 시트를 연다 — 콘텐츠는 포털(document.body)로 렌더된다
     await findButton(wrapper, '변경')!.trigger('click')
     await flushPromises()
 
-    const option = document.body.querySelector<HTMLElement>('[data-mode="tail-chase"]')
-    expect(option).not.toBeNull()
-    option!.click()
-    await flushPromises()
+    // 게임플레이가 구현된 일반전만 활성 — 나머지 7종은 disabled + '준비 중' 배지
+    const normalOption = document.body.querySelector<HTMLButtonElement>('[data-mode="normal"]')
+    const tailChaseOption =
+      document.body.querySelector<HTMLButtonElement>('[data-mode="tail-chase"]')
+    expect(normalOption).not.toBeNull()
+    expect(tailChaseOption).not.toBeNull()
+    expect(normalOption!.disabled).toBe(false)
+    expect(tailChaseOption!.disabled).toBe(true)
+    expect(tailChaseOption!.getAttribute('aria-disabled')).toBe('true')
+    expect(tailChaseOption!.textContent).toContain('준비 중')
+    expect(normalOption!.textContent).not.toContain('준비 중')
 
-    expect(store.draftGameMode).toBe('tail-chase')
+    // 비활성 옵션은 클릭해도(native disabled라 클릭 이벤트가 발생하지 않음) 스토어가 그대로다
+    tailChaseOption!.click()
+    await flushPromises()
+    expect(store.draftGameMode).toBe('normal')
   })
 
   it('팀 추가 버튼은 사용 중이지 않은 완장으로 빈 팀을 추가한다', async () => {

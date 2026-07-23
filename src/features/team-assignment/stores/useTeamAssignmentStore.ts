@@ -4,7 +4,7 @@ import type { Gender } from '@/features/auth'
 import { assignTeams, deriveCarryover } from '../teamAssignment'
 import { ARMBAND_LABELS, armbandForTeamIndex } from '../armbands'
 import { pickXTeams } from '../xRole'
-import { DEFAULT_GAME_MODE, type GameModeId } from '../gameModes'
+import { DEFAULT_GAME_MODE, GAME_MODES, type GameModeId } from '../gameModes'
 import { confirmAssignment, type ConfirmedTeamWrite } from '../api/assignment'
 
 /**
@@ -177,8 +177,12 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
     draftTeams.value.push({ armband: next, members: [], isXTeam: false })
   }
 
-  /** 게임 모드 선택 — 로컬 드래프트만 바꾼다. 확정 시 confirmAssignment로 room에 커밋된다 */
+  /**
+   * 게임 모드 선택 — 로컬 드래프트만 바꾼다. 확정 시 confirmAssignment로 room에 커밋된다.
+   * UI(모드 선택 시트)가 미구현 모드를 막지만, 방어적으로 store 레벨에서도 무시한다.
+   */
   function setGameMode(id: GameModeId) {
+    if (!GAME_MODES[id].available) return
     draftGameMode.value = id
   }
 

@@ -184,11 +184,22 @@ describe('useTeamAssignmentStore', () => {
 
     it('setGameMode는 드래프트 모드만 바꾼다', () => {
       const store = useTeamAssignmentStore()
+      // startDraft는 가드를 거치지 않으므로 미구현 모드로도 시작할 수 있다 — 이후 setGameMode로
+      // available한 모드(normal)로 되돌려 setGameMode 자체의 동작만 검증한다
+      store.startDraft(mixedFour(), 1, 'king-hunt', identityRandom)
+
+      store.setGameMode('normal')
+
+      expect(store.draftGameMode).toBe('normal')
+    })
+
+    it('setGameMode는 available이 false인 미구현 모드는 무시한다(방어 가드)', () => {
+      const store = useTeamAssignmentStore()
       store.startDraft(mixedFour(), 1, 'normal', identityRandom)
 
-      store.setGameMode('bomb-plant')
+      store.setGameMode('king-hunt') // 미구현 모드 — UI가 막지만 방어적으로도 무시된다
 
-      expect(store.draftGameMode).toBe('bomb-plant')
+      expect(store.draftGameMode).toBe('normal')
     })
 
     it('reroll은 draftGameMode를 유지한다', () => {

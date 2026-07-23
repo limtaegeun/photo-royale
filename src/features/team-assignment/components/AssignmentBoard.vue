@@ -125,14 +125,32 @@ async function onConfirm() {
             type="button"
             :data-mode="mode.id"
             :aria-pressed="mode.id === draftGameMode"
+            :disabled="!mode.available"
+            :aria-disabled="!mode.available"
             class="flex min-h-(--pr-size-control-md) w-full flex-col items-start justify-center gap-0.5
                    rounded-md px-4 py-2 text-left transition-colors duration-100 ease-standard
-                   focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-            :class="mode.id === draftGameMode ? 'border-2 border-accent bg-surface' : 'border border-stroke-strong'"
+                   focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand
+                   disabled:cursor-default"
+            :class="!mode.available
+              ? 'border border-stroke'
+              : mode.id === draftGameMode ? 'border-2 border-accent bg-surface' : 'border border-stroke-strong'"
             @click="selectGameMode(mode.id)"
           >
-            <span class="text-label text-content">{{ mode.label }}</span>
-            <span class="text-caption text-content-secondary">{{ mode.description }}</span>
+            <span class="flex items-center gap-1.5">
+              <span
+                class="text-label"
+                :class="mode.available ? 'text-content' : 'text-content-disabled'"
+              >
+                {{ mode.label }}
+              </span>
+              <BaseBadge v-if="!mode.available" tone="neutral" size="sm">준비 중</BaseBadge>
+            </span>
+            <span
+              class="text-caption"
+              :class="mode.available ? 'text-content-secondary' : 'text-content-disabled'"
+            >
+              {{ mode.description }}
+            </span>
           </button>
         </li>
       </ul>

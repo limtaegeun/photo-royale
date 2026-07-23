@@ -32,6 +32,8 @@ export interface GameModeDefinition {
   description: string
   /** 규칙서 — 배열 순서대로 번호를 매겨 렌더한다 */
   rules: GameModeRuleEntry[]
+  /** 게임플레이가 구현되어 선택 가능한 모드인지 — 미구현 모드는 선택 시트에서 비활성화된다 */
+  available: boolean
 }
 
 /** 필드/모드가 아직 없는 방(기존 방 포함)의 기본값 */
@@ -59,6 +61,7 @@ export const GAME_MODES: Record<GameModeId, GameModeDefinition> = {
       { kind: 'group' },
       { kind: 'static', text: '상대 완장 알파벳을 찍어 제출하세요.' },
     ],
+    available: true,
   },
   'tail-chase': {
     id: 'tail-chase',
@@ -73,6 +76,7 @@ export const GAME_MODES: Record<GameModeId, GameModeDefinition> = {
       },
       { kind: 'static', text: '잡히면 완장을 떼고 잡은 팀의 꼬리로 편입됩니다.' },
     ],
+    available: false,
   },
   group: {
     id: 'group',
@@ -84,6 +88,7 @@ export const GAME_MODES: Record<GameModeId, GameModeDefinition> = {
       { kind: 'static', text: '같은 색 그룹끼리는 동맹이라 서로 공격할 수 없습니다.' },
       { kind: 'static', text: '그룹 점수와 우리 팀 점수를 합산해 정산합니다.' },
     ],
+    available: false,
   },
   'king-hunt': {
     id: 'king-hunt',
@@ -99,6 +104,7 @@ export const GAME_MODES: Record<GameModeId, GameModeDefinition> = {
         caption: '왕이 잡히면 그룹 전체가 막대한 감점을 받습니다.',
       },
     ],
+    available: false,
   },
   'staff-chase': {
     id: 'staff-chase',
@@ -108,6 +114,7 @@ export const GAME_MODES: Record<GameModeId, GameModeDefinition> = {
       { kind: 'static', text: '모든 참가자는 동맹입니다. 사냥꾼(스태프)을 피해 생존하세요.' },
       { kind: 'static', text: '제한 시간까지 생존한 인원에 비례해 전체 점수를 얻습니다.' },
     ],
+    available: false,
   },
   'bomb-plant': {
     id: 'bomb-plant',
@@ -125,6 +132,7 @@ export const GAME_MODES: Record<GameModeId, GameModeDefinition> = {
         text: '하나라도 폭파되면 공격 승리, 전원 아웃되거나 무폭파면 수비 승리입니다.',
       },
     ],
+    available: false,
   },
   kkomkkomi: {
     id: 'kkomkkomi',
@@ -138,6 +146,7 @@ export const GAME_MODES: Record<GameModeId, GameModeDefinition> = {
         caption: '술래의 촬영 시각이 내 스캔 시각보다 빠르면 아웃입니다.',
       },
     ],
+    available: false,
   },
   'fast-survival': {
     id: 'fast-survival',
@@ -148,6 +157,7 @@ export const GAME_MODES: Record<GameModeId, GameModeDefinition> = {
       { kind: 'static', text: '식량·약·물 QR을 각 1개씩 수집해 본부 반납 QR을 스캔하세요.' },
       { kind: 'static', text: '자원 거점은 인당 1회만 획득할 수 있습니다.' },
     ],
+    available: false,
   },
 }
 
