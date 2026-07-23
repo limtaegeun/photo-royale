@@ -49,4 +49,48 @@ describe('BaseButton', () => {
 
     expect(wrapper.emitted('click')).toBeUndefined()
   })
+
+  describe('loading', () => {
+    it('aria-busy·data-loading을 세팅하고 disabled와 동일하게 클릭을 막는다', async () => {
+      const wrapper = mount(BaseButton, {
+        props: { loading: true },
+        slots: { default: '재배정' },
+      })
+
+      expect(wrapper.attributes('aria-busy')).toBe('true')
+      expect(wrapper.attributes('data-loading')).toBe('true')
+      expect(wrapper.attributes('disabled')).toBeDefined()
+
+      await wrapper.trigger('click')
+
+      expect(wrapper.emitted('click')).toBeUndefined()
+    })
+
+    it('스피너를 렌더하면서도 라벨 텍스트는 DOM에 그대로 유지한다(자리 유지, invisible 처리)', () => {
+      const wrapper = mount(BaseButton, {
+        props: { loading: true },
+        slots: { default: '재배정' },
+      })
+
+      // 라벨은 지워지지 않고 invisible 클래스로만 시각적으로 숨는다 — 버튼 폭이 유지된다
+      expect(wrapper.text()).toContain('재배정')
+      expect(wrapper.find('.invisible').text()).toBe('재배정')
+
+      // 스피너는 별도 요소로 렌더되고 스크린리더에서는 숨겨진다(aria-hidden)
+      const spinner = wrapper.find('[aria-hidden="true"]')
+      expect(spinner.exists()).toBe(true)
+      expect(spinner.classes()).toContain('animate-spin')
+    })
+
+    it('loading이 false면 스피너를 렌더하지 않고 라벨이 보인다', () => {
+      const wrapper = mount(BaseButton, {
+        props: { loading: false },
+        slots: { default: '재배정' },
+      })
+
+      expect(wrapper.find('[aria-hidden="true"]').exists()).toBe(false)
+      expect(wrapper.find('.invisible').exists()).toBe(false)
+      expect(wrapper.attributes('aria-busy')).toBeUndefined()
+    })
+  })
 })

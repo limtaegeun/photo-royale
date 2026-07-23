@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import type { Gender } from '@/features/auth'
 
@@ -10,7 +10,11 @@ vi.mock('../api/assignment', () => ({
     confirmAssignmentMock(code, nextRound, gameMode, teams),
 }))
 
-import { useTeamAssignmentStore, type DraftMember } from '../stores/useTeamAssignmentStore'
+import {
+  useTeamAssignmentStore,
+  REROLL_FEEDBACK_MS,
+  type DraftMember,
+} from '../stores/useTeamAssignmentStore'
 import { DEFAULT_GAME_MODE } from '../gameModes'
 
 /**
@@ -83,6 +87,45 @@ describe('useTeamAssignmentStore', () => {
       expect(store.waitingPool.map((m) => m.id)).toEqual(['w1'])
       const assignedIds = store.draftTeams.flatMap((team) => team.members.map((m) => m.id)).sort()
       expect(assignedIds).toEqual(['f1', 'f2', 'm1', 'm2'])
+    })
+
+    describe('isRerolling (로딩 표기용 최소 피드백 시간)', () => {
+      beforeEach(() => {
+        vi.useFakeTimers()
+      })
+
+      afterEach(() => {
+        vi.useRealTimers()
+      })
+
+      it('재배정 중 isRerolling을 true로 유지하다가 REROLL_FEEDBACK_MS 후 해제한다', async () => {
+        const store = useTeamAssignmentStore()
+        store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+
+        const done = store.reroll(identityRandom)
+        // 재편성(draftTeams 갱신)은 동기로 즉시 끝나 있다
+        expect(store.isRerolling).toBe(true)
+        const assignedIds = store.draftTeams.flatMap((team) => team.members.map((m) => m.id)).sort()
+        expect(assignedIds).toEqual(['f1', 'f2', 'm1', 'm2'])
+
+        await vi.advanceTimersByTimeAsync(REROLL_FEEDBACK_MS)
+        await done
+
+        expect(store.isRerolling).toBe(false)
+      })
+
+      it('진행 중 재호출은 무시한다(중복 가드)', async () => {
+        const store = useTeamAssignmentStore()
+        store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+
+        const first = store.reroll(identityRandom)
+        const second = store.reroll(identityRandom) // 진행 중 재호출 — 무시되어야 한다
+
+        await vi.advanceTimersByTimeAsync(REROLL_FEEDBACK_MS)
+        await Promise.all([first, second])
+
+        expect(store.isRerolling).toBe(false)
+      })
     })
   })
 

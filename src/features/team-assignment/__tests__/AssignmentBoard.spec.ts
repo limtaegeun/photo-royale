@@ -12,7 +12,11 @@ vi.mock('../api/assignment', () => ({
 }))
 
 import AssignmentBoard from '../components/AssignmentBoard.vue'
-import { useTeamAssignmentStore, type DraftMember } from '../stores/useTeamAssignmentStore'
+import {
+  useTeamAssignmentStore,
+  REROLL_FEEDBACK_MS,
+  type DraftMember,
+} from '../stores/useTeamAssignmentStore'
 
 /** 항등 셔플 rng — 배정 순서가 입력 순서와 같아지고, pickXTeams는 그룹별 마지막 후보를 고른다 */
 const identityRandom = () => 0.999999
@@ -173,6 +177,31 @@ describe('AssignmentBoard', () => {
     await findButton(wrapper, '랜덤 재배정')!.trigger('click')
 
     expect(rerollSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('재배정 중(isRerolling)에는 랜덤 재배정 버튼이 loading 상태로 바뀐다', async () => {
+    vi.useFakeTimers()
+    try {
+      const { wrapper, store } = mountBoard()
+      store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+      await flushPromises()
+
+      const rerollButton = findButton(wrapper, '랜덤 재배정')!
+      expect(rerollButton.attributes('aria-busy')).toBeUndefined()
+
+      await rerollButton.trigger('click')
+      await flushPromises()
+
+      // isRerolling이 true인 동안 BaseButton의 loading prop이 반영된다
+      expect(wrapper.find('[data-loading="true"]').exists()).toBe(true)
+
+      await vi.advanceTimersByTimeAsync(REROLL_FEEDBACK_MS)
+      await flushPromises()
+
+      expect(wrapper.find('[data-loading="true"]').exists()).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('게임 모드 행은 현재 모드를 보여준다', async () => {

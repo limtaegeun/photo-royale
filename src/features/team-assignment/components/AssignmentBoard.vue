@@ -19,8 +19,15 @@ const emit = defineEmits<{ confirmed: [] }>()
 
 // 드래프트는 페이지가 startDraft로 미리 채워 둔다 — 이 컴포넌트는 편집·확정만 담당한다
 const store = useTeamAssignmentStore()
-const { draftTeams, draftGameMode, waitingPool, selectedMemberId, canConfirm, confirmError } =
-  storeToRefs(store)
+const {
+  draftTeams,
+  draftGameMode,
+  waitingPool,
+  selectedMemberId,
+  canConfirm,
+  confirmError,
+  isRerolling,
+} = storeToRefs(store)
 
 /** 현재 선택된 모드 정의 — 행 라벨·캡션에 쓴다 */
 const currentMode = computed(() => GAME_MODES[draftGameMode.value])
@@ -258,7 +265,12 @@ async function onConfirm() {
         {{ confirmError }}
       </p>
       <div class="grid grid-cols-2 gap-3">
-        <BaseButton variant="ghost" size="md" @click="store.reroll()">랜덤 재배정</BaseButton>
+        <BaseButton variant="ghost" size="md" :loading="isRerolling" @click="store.reroll()">
+          랜덤 재배정
+        </BaseButton>
+        <!-- 재배정 중에도 확정 버튼은 그대로 둔다: 재배정은 로컬 동기 재계산이라 isRerolling은
+             실제 완료 후의 인위적 피드백 표시일 뿐, draftTeams는 클릭 시점에 이미 최종 상태다.
+             즉 "재배정이 아직 끝나지 않은 어중간한 상태"가 존재하지 않으므로 막을 이유가 없다. -->
         <BaseButton variant="accent" size="md" :disabled="!canConfirm" @click="onConfirm">
           배정 확정
         </BaseButton>

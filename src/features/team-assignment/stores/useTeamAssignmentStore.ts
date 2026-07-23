@@ -27,6 +27,13 @@ export interface DraftTeam {
 }
 
 /**
+ * 재배정(reroll) 후 isRerolling을 유지하는 최소 시간(ms) — 재계산 자체는 로컬 동기 연산이라
+ * 순간에 끝나버린다. 표시 없이 즉시 끝내면 결과가 비슷할 때 눌림이 실제로 반영됐는지 알 수
+ * 없으므로, 버튼 로딩 스피너가 최소 이 시간만큼은 보이도록 인위적으로 유지한다.
+ */
+export const REROLL_FEEDBACK_MS = 400
+
+/**
  * 호스트 팀 배정 보드 — 로컬 드래프트. 배정/재배정/수동 편집을 모두 로컬에서만 하고,
  * confirm() 시 writeBatch 1회로 커밋한다. streak·짝꿍 이력이 확정 시에만 저장되므로
  * 재배정을 몇 번 돌려도 이력이 오염되지 않는다.
@@ -50,6 +57,7 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
   const xModuleEnabled = ref(false)
   const selectedMemberId = ref<string | null>(null)
   const isConfirming = ref(false)
+  const isRerolling = ref(false)
   const confirmError = ref<string | null>(null)
 
   const assignedCount = computed(() =>
@@ -100,13 +108,23 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
   /**
    * 재배정 — 현재 배정된 전원(대기자 제외)으로 다시 편성한다. X도 편성마다 새로 선정된다.
    * 대기자는 이번 재배정 대상이 아니므로 대기열에 그대로 남는다.
+   *
+   * 재편성 자체는 동기 연산이라 즉시 끝나므로, 버튼 로딩 스피너가 사용자에게 보이도록
+   * REROLL_FEEDBACK_MS만큼 isRerolling을 인위적으로 유지한 뒤 끈다. 진행 중 중복 호출은
+   * (연타 방지) 무시한다.
    */
-  function reroll(random: () => number = Math.random) {
+  async function reroll(random: () => number = Math.random): Promise<void> {
+    if (isRerolling.value) return
+    isRerolling.value = true
+
     const assigned = draftTeams.value.flatMap((team) => team.members)
     const pool = waitingPool.value
     // 재배정은 같은 라운드의 재편성이므로 현재 draftRound·draftGameMode를 그대로 유지한다
     startDraft(assigned, draftRound.value, draftGameMode.value, random)
     waitingPool.value = pool
+
+    await new Promise<void>((resolve) => setTimeout(resolve, REROLL_FEEDBACK_MS))
+    isRerolling.value = false
   }
 
   /** 대기열 합류 — 보드가 열린 뒤 새로 레디한 참가자용. 이미 배정/대기 중이면(id 기준) 무시한다 */
@@ -242,6 +260,7 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
     xModuleEnabled.value = false
     selectedMemberId.value = null
     isConfirming.value = false
+    isRerolling.value = false
     confirmError.value = null
   }
 
@@ -253,6 +272,7 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
     xModuleEnabled,
     selectedMemberId,
     isConfirming,
+    isRerolling,
     confirmError,
     assignedCount,
     canConfirm,
