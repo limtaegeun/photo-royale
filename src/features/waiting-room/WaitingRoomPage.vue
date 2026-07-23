@@ -4,7 +4,7 @@ import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 import BaseBadge from '@/shared/components/BaseBadge.vue'
 import BaseButton from '@/shared/components/BaseButton.vue'
-import PlayerChip from './components/PlayerChip.vue'
+import PlayerChip from '@/shared/components/PlayerChip.vue'
 import {
   AssignmentBoard,
   DEFAULT_GAME_MODE,

@@ -56,7 +56,7 @@ vi.mock('vue-router', () => ({
 
 import { RoomNotFoundError } from '../api/rooms'
 import WaitingRoomPage from '../WaitingRoomPage.vue'
-import PlayerChip from '../components/PlayerChip.vue'
+import PlayerChip from '@/shared/components/PlayerChip.vue'
 import { useAppHeader } from '@/shared/composables/useAppHeader'
 
 /** 구독 콜백들을 붙잡아 테스트가 스냅샷 도착을 흉내 낼 수 있게 한다 */

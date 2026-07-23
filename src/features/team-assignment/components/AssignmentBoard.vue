@@ -5,6 +5,7 @@ import BaseBadge from '@/shared/components/BaseBadge.vue'
 import BaseButton from '@/shared/components/BaseButton.vue'
 import BaseBottomSheet from '@/shared/components/BaseBottomSheet.vue'
 import BaseSegmented from '@/shared/components/BaseSegmented.vue'
+import PlayerChip from '@/shared/components/PlayerChip.vue'
 import { groupForArmband, type TeamGroup } from '../armbands'
 import { GAME_MODE_IDS, GAME_MODES, type GameModeId } from '../gameModes'
 import { useTeamAssignmentStore } from '../stores/useTeamAssignmentStore'
@@ -203,18 +204,20 @@ async function onConfirm() {
         <!-- 멤버 칩 -->
         <div class="flex flex-wrap items-center gap-1.5">
           <template v-for="member in team.members" :key="member.id">
+            <!-- 선택 상태는 래퍼 버튼의 ring으로, 참가자 표시는 대기실과 동일한 PlayerChip으로 통일한다.
+                 팀 카드 내 칩은 team을 넘겨 그룹 보더 색으로 카드 그룹 표기를 보강한다. -->
             <button
               type="button"
               :aria-pressed="isSelected(member.id)"
               :data-member="member.id"
               :data-selected="isSelected(member.id)"
-              class="inline-flex min-h-(--pr-size-control-md) items-center rounded-full bg-surface px-3
-                     text-label text-content transition-colors duration-100 ease-standard
+              class="inline-flex min-h-(--pr-size-control-md) items-center rounded-full
+                     transition-shadow duration-100 ease-standard
                      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-              :class="isSelected(member.id) ? 'border-2 border-accent' : 'border border-stroke-strong'"
+              :class="isSelected(member.id) ? 'ring-2 ring-accent' : ''"
               @click.stop="store.selectMember(member.id)"
             >
-              {{ member.name }}
+              <PlayerChip :name="member.name" :team="team.armband" :gender="member.gender" />
             </button>
             <!-- 1인 팀: 목숨·포인트 2배 표기 -->
             <BaseBadge v-if="team.members.length === 1" tone="warning" size="sm">×2</BaseBadge>
@@ -241,6 +244,7 @@ async function onConfirm() {
       <p class="text-label text-warning">미배정 대기자 {{ waitingPool.length }}명</p>
       <p class="text-caption text-content-secondary">선택 칩을 여기로 보낼 수 있습니다</p>
       <div class="flex flex-wrap items-center gap-1.5">
+        <!-- 대기자는 미배정이므로 team=null(중립 보더). 선택 상태는 래퍼 버튼의 ring으로 표기한다. -->
         <button
           v-for="member in waitingPool"
           :key="member.id"
@@ -248,13 +252,13 @@ async function onConfirm() {
           :aria-pressed="isSelected(member.id)"
           :data-member="member.id"
           :data-selected="isSelected(member.id)"
-          class="inline-flex min-h-(--pr-size-control-md) items-center rounded-full bg-surface px-3
-                 text-label text-content transition-colors duration-100 ease-standard
+          class="inline-flex min-h-(--pr-size-control-md) items-center rounded-full
+                 transition-shadow duration-100 ease-standard
                  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-          :class="isSelected(member.id) ? 'border-2 border-accent' : 'border border-stroke-strong'"
+          :class="isSelected(member.id) ? 'ring-2 ring-accent' : ''"
           @click.stop="store.selectMember(member.id)"
         >
-          {{ member.name }}
+          <PlayerChip :name="member.name" :team="null" :gender="member.gender" />
         </button>
       </div>
     </div>

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
-import PlayerChip from '../components/PlayerChip.vue'
+import PlayerChip from '../PlayerChip.vue'
 
 describe('PlayerChip', () => {
   it('이름과 준비 상태 라벨을 렌더한다', () => {
@@ -83,5 +83,22 @@ describe('PlayerChip', () => {
     })
 
     expect(wrapper.attributes('aria-label')).toBe('지후 · 남성 · 완장 A · 파랑 · 대기')
+  })
+
+  it('isReady 미전달(배정 보드 맥락)이면 상태 점·라벨을 렌더하지 않고 aria-label에서도 상태를 생략한다', () => {
+    const wrapper = mount(PlayerChip, {
+      props: { name: '지후', team: 'A', gender: 'male' },
+    })
+
+    // 상태 점(success/warning solid)이 렌더되지 않는다
+    expect(wrapper.find('.bg-success-solid').exists()).toBe(false)
+    expect(wrapper.find('.bg-warning-solid').exists()).toBe(false)
+    // 상태 라벨 텍스트가 렌더되지 않는다
+    expect(wrapper.text()).not.toContain('준비')
+    expect(wrapper.text()).not.toContain('대기')
+    // 접근성 라벨에 상태 부분이 빠진다
+    expect(wrapper.attributes('aria-label')).toBe('지후 · 남성 · 완장 A · 파랑')
+    // 이름·성별 색은 그대로 표기된다
+    expect(wrapper.find('.text-gender-male').text()).toBe('지후')
   })
 })

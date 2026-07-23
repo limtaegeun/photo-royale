@@ -75,6 +75,36 @@ describe('AssignmentBoard', () => {
     expect(teamB.find('.text-team-orange').exists()).toBe(true)
   })
 
+  it('멤버 칩을 PlayerChip으로 렌더한다 — 성별에 따른 이름 색이 적용된다', async () => {
+    const { wrapper, store } = mountBoard()
+    store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+    await flushPromises()
+
+    // 남성(m1)은 파랑, 여성(f1)은 빨강 이름 색 — PlayerChip이 렌더됐다는 증거
+    const male = wrapper.find('[data-member="m1"]')
+    const female = wrapper.find('[data-member="f1"]')
+    expect(male.find('.text-gender-male').exists()).toBe(true)
+    expect(female.find('.text-gender-female').exists()).toBe(true)
+    // 보드 맥락에선 레디 상태 점·라벨이 없다(isReady 미전달)
+    expect(male.find('.bg-success-solid').exists()).toBe(false)
+    expect(male.find('.bg-warning-solid').exists()).toBe(false)
+  })
+
+  it('멤버 칩을 선택하면 래퍼 버튼에 선택 ring을 적용한다', async () => {
+    const { wrapper, store } = mountBoard()
+    store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+    await flushPromises()
+
+    const m1 = wrapper.find('[data-member="m1"]')
+    expect(m1.classes()).not.toContain('ring-accent')
+
+    await m1.trigger('click')
+
+    const selected = wrapper.find('[data-member="m1"]')
+    expect(selected.classes()).toContain('ring-accent')
+    expect(selected.attributes('data-selected')).toBe('true')
+  })
+
   it('1인 팀에는 목숨·포인트 2배(×2) 배지를 표시한다', async () => {
     const { wrapper, store } = mountBoard()
     store.startDraft([member('solo', '혼자', 'male')], 1, 'normal', identityRandom)

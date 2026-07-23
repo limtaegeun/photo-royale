@@ -1,3 +1,8 @@
+<!--
+  대기실 명단·배정 보드가 공유하는 참가자 표시 칩.
+  성별은 이름 색(남 파랑·여 빨강), 팀은 보더 색으로 표기하고,
+  색약 대응으로 접근성 라벨에 성별·팀·상태 텍스트를 병기한다.
+-->
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Gender } from '@/features/auth'
@@ -9,10 +14,16 @@ interface Props {
   team: string | null
   /** 성별 — 이름 색으로 표기(남 파랑·여 빨강). null이면 기본 텍스트 색 */
   gender: Gender | null
-  isReady: boolean
+  /**
+   * 준비 여부 — 대기실 명단에서만 의미가 있다. undefined면(배정 보드 드래프트 맥락엔 레디 개념이
+   * 없으므로) 상태 점·상태 라벨을 렌더하지 않고 접근성 라벨에서도 상태를 생략한다.
+   */
+  isReady?: boolean
 }
 
-const props = defineProps<Props>()
+// Vue는 boolean prop이 없으면 false로 캐스팅하므로, 명시적 undefined 기본값으로 '미전달'을 보존한다
+// (미전달 → 상태 점·라벨을 렌더하지 않는 배정 보드 맥락)
+const props = withDefaults(defineProps<Props>(), { isReady: undefined })
 
 /** Tailwind 스캐너 대응 — 완전한 리터럴 클래스명 맵 (팀 보더는 완장 표식과 같은 solid 색) */
 const TEAM_BORDER = {
@@ -58,17 +69,20 @@ const nameTextClass = computed(() =>
   props.gender === null ? 'text-content' : GENDER_TEXT[props.gender],
 )
 
+/** isReady가 주어졌을 때만 상태 점·라벨을 표시한다(보드 드래프트 맥락에선 상태 개념이 없다) */
+const hasStatus = computed(() => props.isReady !== undefined)
 const statusLabel = computed(() => (props.isReady ? '준비' : '대기'))
 const statusTextClass = computed(() => (props.isReady ? 'text-success' : 'text-warning'))
 const dotClass = computed(() => (props.isReady ? 'bg-success-solid' : 'bg-warning-solid'))
 
 /**
  * 팀은 보더 색, 성별은 이름 색으로만 표시되므로(시안) 색약 대응을 위해
- * 접근성 라벨에 팀명·성별을 병기한다
+ * 접근성 라벨에 팀명·성별을 병기한다. 상태는 isReady가 있을 때만 덧붙인다.
  */
 const ariaLabel = computed(() => {
   const genderPart = props.gender === null ? '' : ` · ${GENDER_LABEL[props.gender]}`
-  return `${props.name}${genderPart} · ${teamLabel.value} · ${statusLabel.value}`
+  const statusPart = hasStatus.value ? ` · ${statusLabel.value}` : ''
+  return `${props.name}${genderPart} · ${teamLabel.value}${statusPart}`
 })
 </script>
 
@@ -81,9 +95,18 @@ const ariaLabel = computed(() => {
     :data-gender="gender ?? 'none'"
     :data-ready="isReady"
   >
-    <span class="size-2 shrink-0 rounded-full" :class="dotClass" aria-hidden="true"></span>
+    <span
+      v-if="hasStatus"
+      class="size-2 shrink-0 rounded-full"
+      :class="dotClass"
+      aria-hidden="true"
+    ></span>
     <span class="truncate text-caption font-semibold" :class="nameTextClass">{{ name }}</span>
-    <span class="ml-auto shrink-0 text-caption font-semibold" :class="statusTextClass">
+    <span
+      v-if="hasStatus"
+      class="ml-auto shrink-0 text-caption font-semibold"
+      :class="statusTextClass"
+    >
       {{ statusLabel }}
     </span>
   </div>

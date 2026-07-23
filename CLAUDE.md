@@ -36,7 +36,7 @@ src/
       index.ts           # 이 기능이 외부에 공개하는 것만 re-export
   shared/
     api/                 # 여러 기능이 공유하는 외부 연동 클라이언트 (예: firebase.ts 단일 초기화)
-    components/          # BaseButton.vue 등 Base 접두사 공용 UI
+    components/          # BaseButton.vue 등 Base 접두사 공용 UI + 2개 이상 기능이 쓰는 도메인 공용 컴포넌트(예: PlayerChip)
     composables/         # 2개 이상 기능에서 쓰는 것만
     stores/              # 여러 기능이 공유하는 전역 상태
     styles/              # 디자인 토큰(3계층 CSS variables) + 전역 base — docs/DESIGN_SYSTEM.md 참조
