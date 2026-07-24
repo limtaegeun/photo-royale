@@ -1,8 +1,9 @@
 import { groupForArmband } from './armbands'
 
 /**
- * X 모듈 — 그룹마다 2인 팀 중 1팀을 랜덤 선정해 특수 완장 X를 겸하게 한다(왕잡기에선 X가 왕).
- * X는 기존 팀 소속을 유지한 채 겸직하며, 1인 팀은 X가 될 수 없다(X도 2인 배치 확정).
+ * X 모듈 — 그룹마다 팀 중 1팀을 랜덤 선정해 특수 완장 X를 겸하게 한다(왕잡기에선 X가 왕).
+ * X는 기존 팀 소속을 유지한 채 겸직하며, 1인 팀도 X를 겸할 수 있다(2026-07-24 결정 — 기존
+ * "2인 배치" 전제에서 변경). 멤버가 없는 빈 팀만 제외한다.
  * 편성 때마다 새로 선정한다. 선정된 팀의 완장 집합을 반환한다.
  *
  * 게임 모드마다 켜고 끄는 모듈이라, 인원이 적으면 호출부에서 생략한다.
@@ -14,10 +15,11 @@ export function pickXTeams(
   teams: ReadonlyArray<{ armband: string; memberCount: number }>,
   random: () => number = Math.random,
 ): Set<string> {
-  // 그룹 색 기준으로 2인 팀 후보를 모은다. 그룹이 null인 완장(X 등)은 발생하지 않지만 방어적으로 제외한다.
+  // 그룹 색 기준으로 후보를 모은다. 빈 팀(memberCount === 0)만 제외한다.
+  // 그룹이 null인 완장(X 등)은 발생하지 않지만 방어적으로 제외한다.
   const candidatesByGroup = new Map<string, string[]>()
   for (const team of teams) {
-    if (team.memberCount !== 2) continue
+    if (team.memberCount === 0) continue
     const group = groupForArmband(team.armband)
     if (group === null) continue
 

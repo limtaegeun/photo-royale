@@ -153,6 +153,15 @@ describe('AssignmentBoard', () => {
     expect(teamA.text()).toContain('X')
   })
 
+  it('특수 완장 X 캡션은 1인 팀도 겸직 가능함을 반영해 "한 팀" 문구로 안내한다', async () => {
+    const { wrapper, store } = mountBoard()
+    store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('그룹마다 한 팀이 X를 겸합니다')
+    expect(wrapper.text()).not.toContain('2인 팀')
+  })
+
   it('특수 완장 X 컨트롤은 스위치(role=switch)이며, 토글하면 스토어 xModuleEnabled가 켜진다', async () => {
     const { wrapper, store } = mountBoard()
     store.startDraft(mixedFour(), 1, 'normal', identityRandom)

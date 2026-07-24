@@ -75,4 +75,12 @@ describe('RoundAssignmentCard', () => {
     const wrapper = mountCard({ isXTeam: false })
     expect(wrapper.text()).not.toContain('특수 완장 X')
   })
+
+  it('1인 팀이 X를 겸직해도 1인 팀 문구와 X 안내가 함께 표시된다(1인 팀도 X 겸직 가능 — 2026-07-24 결정)', () => {
+    const wrapper = mountCard({ members: [{ id: 'me', name: '오리' }], isXTeam: true })
+
+    expect(wrapper.text()).toContain('1인 팀 · 목숨과 포인트 2배')
+    expect(wrapper.text()).toContain('특수 완장 X')
+    expect(wrapper.text()).toContain('X끼리만 서로 사냥할 수 있어요')
+  })
 })

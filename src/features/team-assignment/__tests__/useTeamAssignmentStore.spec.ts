@@ -144,7 +144,7 @@ describe('useTeamAssignmentStore', () => {
   })
 
   describe('moveSelectedTo', () => {
-    it('선택 멤버를 대상 팀으로 옮기고, 2인이 아니게 된 팀의 X를 해제한다', () => {
+    it('선택 멤버를 대상 팀으로 옮기고, 빈 팀이 되지 않은 X팀은 X를 유지한다', () => {
       const store = useTeamAssignmentStore()
       store.setXModule(true, identityRandom)
       store.startDraft(mixedFour(), 1, 'normal', identityRandom) // A·B 모두 X
@@ -156,9 +156,9 @@ describe('useTeamAssignmentStore', () => {
       const teamB = store.draftTeams.find((team) => team.armband === 'B')!
       expect(teamA.members.map((m) => m.id)).toEqual(['f1'])
       expect(teamB.members.map((m) => m.id)).toEqual(['m2', 'f2', 'm1'])
-      // 1인 팀·3인 팀 모두 2인이 아니므로 X 해제
-      expect(teamA.isXTeam).toBe(false)
-      expect(teamB.isXTeam).toBe(false)
+      // 1인 팀·3인 팀 모두 빈 팀이 아니므로 X 유지(1인 팀도 X 겸직 가능 — 2026-07-24 결정)
+      expect(teamA.isXTeam).toBe(true)
+      expect(teamB.isXTeam).toBe(true)
       // 이동 후 선택 해제
       expect(store.selectedMemberId).toBeNull()
     })
@@ -238,17 +238,31 @@ describe('useTeamAssignmentStore', () => {
       expect(teamB.members.map((m) => m.id)).toEqual(['m2', 'f2'])
     })
 
-    it('이동 후 2인이 아니게 된 팀의 X를 해제한다', () => {
+    it('이동으로 1인이 된 X팀은 X를 유지한다(1인 팀도 X 겸직 가능 — 2026-07-24 결정)', () => {
       const store = useTeamAssignmentStore()
       store.setXModule(true, identityRandom)
       store.startDraft(mixedFour(), 1, 'normal', identityRandom) // A·B 모두 X
 
-      store.moveMember('m1', 'B') // A는 1인, B는 3인 → 둘 다 2인 아님
+      store.moveMember('m1', 'B') // A는 1인, B는 3인 → 둘 다 빈 팀은 아니다
+
+      const teamA = store.draftTeams.find((team) => team.armband === 'A')!
+      const teamB = store.draftTeams.find((team) => team.armband === 'B')!
+      expect(teamA.isXTeam).toBe(true)
+      expect(teamB.isXTeam).toBe(true)
+    })
+
+    it('이동으로 빈 팀이 된 X팀만 X를 해제한다', () => {
+      const store = useTeamAssignmentStore()
+      store.setXModule(true, identityRandom)
+      store.startDraft(mixedFour(), 1, 'normal', identityRandom) // A[m1,f1]·B[m2,f2] 모두 X
+
+      store.moveMember('m1', 'B')
+      store.moveMember('f1', 'B') // A는 빈 팀, B는 4인
 
       const teamA = store.draftTeams.find((team) => team.armband === 'A')!
       const teamB = store.draftTeams.find((team) => team.armband === 'B')!
       expect(teamA.isXTeam).toBe(false)
-      expect(teamB.isXTeam).toBe(false)
+      expect(teamB.isXTeam).toBe(true)
     })
 
     it('대상 팀에 이미 있는 멤버를 다시 옮기면 무시한다(중복 삽입 방어)', () => {

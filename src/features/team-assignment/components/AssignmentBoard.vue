@@ -237,7 +237,7 @@ async function onConfirm() {
         <div class="min-w-0">
           <p class="text-label text-content">특수 완장 X</p>
           <p class="mt-0.5 text-caption text-content-secondary">
-            그룹마다 2인 팀 1팀이 X를 겸합니다
+            그룹마다 한 팀이 X를 겸합니다
           </p>
         </div>
         <BaseSwitch v-model="isXModuleEnabled" label="특수 완장 X 모듈" class="shrink-0" />

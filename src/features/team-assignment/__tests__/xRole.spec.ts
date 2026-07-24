@@ -12,11 +12,30 @@ function seededRandom(sequence: number[]): () => number {
 }
 
 describe('pickXTeams', () => {
-  it('2인 팀만 후보로 삼고 1인 팀은 제외한다', () => {
-    // 완장 A(blue)는 1인이라 후보에서 빠진다 → 선정 없음
+  it('빈 팀만 후보에서 제외하고 1인 팀은 후보로 포함한다', () => {
+    // 완장 A(blue)는 1인이지만 빈 팀이 아니므로 후보에 포함되어 유일 후보로 선정된다
     const selected = pickXTeams([{ armband: 'A', memberCount: 1 }])
 
+    expect(selected).toEqual(new Set(['A']))
+  })
+
+  it('멤버가 없는 빈 팀은 후보에서 제외한다', () => {
+    // 완장 A(blue)는 0인(빈 팀)이라 후보에서 빠진다 → 선정 없음
+    const selected = pickXTeams([{ armband: 'A', memberCount: 0 }])
+
     expect(selected.size).toBe(0)
+  })
+
+  it('1인 팀도 2인 팀과 함께 같은 그룹 후보로 경쟁해 선정될 수 있다', () => {
+    // A(1인)·E(2인)는 모두 blue 그룹. rng가 인덱스 0(A)을 고르면 1인 팀이 선정된다
+    const teams = [
+      { armband: 'A', memberCount: 1 },
+      { armband: 'E', memberCount: 2 },
+    ]
+
+    const selected = pickXTeams(teams, () => 0)
+
+    expect(selected).toEqual(new Set(['A']))
   })
 
   it('그룹마다 후보가 여럿이어도 정확히 1팀만 선정한다', () => {
@@ -56,10 +75,10 @@ describe('pickXTeams', () => {
   })
 
   it('후보가 없는 그룹은 건너뛴다', () => {
-    // A(blue) 2인만 후보. B(orange)는 1인이라 orange 그룹은 통째로 건너뛴다
+    // A(blue) 2인만 후보. B(orange)는 빈 팀(0인)이라 orange 그룹은 통째로 건너뛴다
     const teams = [
       { armband: 'A', memberCount: 2 },
-      { armband: 'B', memberCount: 1 },
+      { armband: 'B', memberCount: 0 },
     ]
 
     const selected = pickXTeams(teams, () => 0)
