@@ -80,12 +80,24 @@ service cloud.firestore {
         && request.resource.data.status == 'waiting'
         && request.resource.data.createdAt == request.time;
 
-      // 게임 시작 — 호스트 본인만, status 필드만, waiting → playing 단방향 전이만 허용한다.
+      // 호스트 본인만. 두 갈래로 나뉜다.
       allow update: if request.auth != null
         && request.auth.uid == resource.data.hostUid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
-        && resource.data.status == 'waiting'
-        && request.resource.data.status == 'playing';
+        && (
+          // 1) 게임 시작 — status 필드만, waiting → playing 단방향 전이만 허용한다.
+          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+            && resource.data.status == 'waiting'
+            && request.resource.data.status == 'playing')
+          // 2) 배정 확정 — 팀편성 차수(+1)와 게임 모드를 함께 커밋한다. 아직 대기 중일 때만 허용한다.
+          //    모드는 확정과 함께만 커밋된다(드래프트는 로컬) — assignmentRound +1 제약을 유지하므로
+          //    모드만 단독으로 바꾸는 요청은(차수가 그대로라) 거부된다.
+          || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['assignmentRound', 'gameMode'])
+            && resource.data.status == 'waiting'
+            && request.resource.data.assignmentRound is int
+            && request.resource.data.assignmentRound ==
+              (('assignmentRound' in resource.data) ? resource.data.assignmentRound + 1 : 1)
+            && request.resource.data.gameMode in ['normal', 'tail-chase', 'group', 'king-hunt', 'staff-chase', 'bomb-plant', 'kkomkkomi', 'fast-survival'])
+        );
 
       // 방 정리(삭제) 플로우 도입 전까지 불변이다.
       allow delete: if false;
@@ -112,11 +124,27 @@ service cloud.firestore {
           && request.resource.data.isReady == false
           && request.resource.data.joinedAt == request.time;
 
-        // 본인의 레디 확정만 허용한다(레디 해제 플로우는 아직 없다).
-        allow update: if request.auth != null
-          && request.auth.uid == uid
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isReady'])
-          && request.resource.data.isReady == true;
+        // 두 갈래로 나뉜다.
+        allow update: if
+          // 1) 본인의 레디 확정만 허용한다(레디 해제 플로우는 아직 없다).
+          (request.auth != null
+            && request.auth.uid == uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isReady'])
+            && request.resource.data.isReady == true)
+          // 2) 호스트 배정 확정 배치 쓰기 — 드래프트는 로컬이라 확정 시에만 서버에 닿는다.
+          //    team(완장)·X 겸직·이월값을 쓰고, 라운드마다 재레디를 위해 isReady를 false로 리셋한다.
+          || (request.auth != null
+            && get(/databases/$(database)/documents/rooms/$(roomCode)).data.hostUid == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['team', 'isXTeam', 'sameGenderStreak', 'previousPartnerIds', 'isReady'])
+            && request.resource.data.team is string
+            && request.resource.data.team.size() == 1
+            && request.resource.data.team.matches('^[A-Z]$')
+            && request.resource.data.isXTeam is bool
+            && request.resource.data.sameGenderStreak is int
+            && request.resource.data.sameGenderStreak >= 0
+            && request.resource.data.previousPartnerIds is list
+            && request.resource.data.isReady == false);
 
         // 퇴장(문서 삭제) 처리 도입 전까지 참가 기록은 불변이다.
         allow delete: if false;

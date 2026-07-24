@@ -65,14 +65,27 @@ function captureSnapshotCallbacks() {
   }
 }
 
-const GUEST_ROOM: RoomInfo = { hostUid: 'host9', status: 'waiting' }
-const MY_ROOM: RoomInfo = { hostUid: 'me', status: 'waiting' }
+const GUEST_ROOM: RoomInfo = {
+  hostUid: 'host9',
+  status: 'waiting',
+  assignmentRound: 0,
+  gameMode: 'normal',
+}
+const MY_ROOM: RoomInfo = {
+  hostUid: 'me',
+  status: 'waiting',
+  assignmentRound: 0,
+  gameMode: 'normal',
+}
 
 const ME_WAITING: Participant = {
   id: 'me',
   name: '오리',
   team: null,
   gender: 'male',
+  isXTeam: false,
+  sameGenderStreak: 0,
+  previousPartnerIds: [],
   isReady: false,
 }
 const ME_READY: Participant = { ...ME_WAITING, isReady: true }
@@ -81,6 +94,9 @@ const OTHER_READY: Participant = {
   name: '하린',
   team: null,
   gender: 'female',
+  isXTeam: false,
+  sameGenderStreak: 0,
+  previousPartnerIds: [],
   isReady: true,
 }
 

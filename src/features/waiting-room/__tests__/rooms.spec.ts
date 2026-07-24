@@ -119,17 +119,43 @@ describe('roomExists', () => {
 })
 
 describe('getRoom', () => {
-  it('방 문서를 RoomInfo로 매핑하고, 없으면 null을 반환한다', async () => {
+  it('방 문서를 RoomInfo로 매핑하고(게임 모드 포함), 없으면 null을 반환한다', async () => {
     getDocMock.mockResolvedValueOnce({
       exists: () => true,
-      data: () => ({ hostUid: 'host-1', status: 'waiting' }),
+      data: () => ({
+        hostUid: 'host-1',
+        status: 'waiting',
+        assignmentRound: 2,
+        gameMode: 'king-hunt',
+      }),
     })
 
-    await expect(getRoom('AB2C')).resolves.toEqual({ hostUid: 'host-1', status: 'waiting' })
+    await expect(getRoom('AB2C')).resolves.toEqual({
+      hostUid: 'host-1',
+      status: 'waiting',
+      assignmentRound: 2,
+      gameMode: 'king-hunt',
+    })
     expect(getDocMock).toHaveBeenCalledWith({ path: 'rooms/AB2C' })
 
     getDocMock.mockResolvedValueOnce({ exists: () => false })
     await expect(getRoom('ZZZZ')).resolves.toBeNull()
+  })
+
+  it('gameMode 필드가 없거나 알 수 없는 값이면 일반전(normal)으로 채운다', async () => {
+    // 필드 자체가 없는 기존 방
+    getDocMock.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ hostUid: 'host-1', status: 'waiting', assignmentRound: 0 }),
+    })
+    await expect(getRoom('AB2C')).resolves.toMatchObject({ gameMode: 'normal' })
+
+    // 저장된 값이 유효 모드가 아닌 경우
+    getDocMock.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ hostUid: 'host-1', status: 'waiting', assignmentRound: 1, gameMode: 'bogus' }),
+    })
+    await expect(getRoom('AB2C')).resolves.toMatchObject({ gameMode: 'normal' })
   })
 })
 
@@ -238,7 +264,7 @@ describe('joinRoom', () => {
 })
 
 describe('subscribeToParticipants', () => {
-  it('스냅샷 문서를 Participant로 매핑하고 팀이 없으면 미배정(null)으로 채운다', () => {
+  it('스냅샷 문서를 Participant로 매핑하고 없는 필드는 기본값(미배정·0·빈 배열)으로 채운다', () => {
     const unsubscribe = vi.fn<() => void>()
     onSnapshotMock.mockReturnValue(unsubscribe)
     const onChange = vi.fn<(participants: unknown) => void>()
@@ -256,14 +282,40 @@ describe('subscribeToParticipants', () => {
         { id: 'u1', data: () => ({ nickname: '오리', isReady: true }) },
         {
           id: 'u2',
-          data: () => ({ nickname: '하린', isReady: false, team: 'red', gender: 'female' }),
+          data: () => ({
+            nickname: '하린',
+            isReady: false,
+            team: 'A',
+            gender: 'female',
+            isXTeam: true,
+            sameGenderStreak: 2,
+            previousPartnerIds: ['x'],
+          }),
         },
       ],
     })
 
     expect(onChange).toHaveBeenCalledWith([
-      { id: 'u1', name: '오리', team: null, gender: null, isReady: true },
-      { id: 'u2', name: '하린', team: 'red', gender: 'female', isReady: false },
+      {
+        id: 'u1',
+        name: '오리',
+        team: null,
+        gender: null,
+        isXTeam: false,
+        sameGenderStreak: 0,
+        previousPartnerIds: [],
+        isReady: true,
+      },
+      {
+        id: 'u2',
+        name: '하린',
+        team: 'A',
+        gender: 'female',
+        isXTeam: true,
+        sameGenderStreak: 2,
+        previousPartnerIds: ['x'],
+        isReady: false,
+      },
     ])
     expect(result).toBe(unsubscribe)
   })
@@ -280,8 +332,21 @@ describe('subscribeToRoom', () => {
     const [roomRef, onNext] = onSnapshotMock.mock.calls[0]!
     expect(roomRef).toEqual({ path: 'rooms/AB2C' })
 
-    onNext({ exists: () => true, data: () => ({ hostUid: 'host-1', status: 'waiting' }) })
-    expect(onChange).toHaveBeenCalledWith({ hostUid: 'host-1', status: 'waiting' })
+    onNext({
+      exists: () => true,
+      data: () => ({
+        hostUid: 'host-1',
+        status: 'waiting',
+        assignmentRound: 1,
+        gameMode: 'staff-chase',
+      }),
+    })
+    expect(onChange).toHaveBeenCalledWith({
+      hostUid: 'host-1',
+      status: 'waiting',
+      assignmentRound: 1,
+      gameMode: 'staff-chase',
+    })
 
     onNext({ exists: () => false })
     expect(onChange).toHaveBeenLastCalledWith(null)

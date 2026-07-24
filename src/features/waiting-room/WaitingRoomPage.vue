@@ -1,21 +1,31 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch, watchEffect } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 import BaseBadge from '@/shared/components/BaseBadge.vue'
 import BaseButton from '@/shared/components/BaseButton.vue'
-import PlayerChip from './components/PlayerChip.vue'
+import PlayerChip from '@/shared/components/PlayerChip.vue'
+import { DEFAULT_GAME_MODE } from '@/features/game-mode'
+import {
+  AssignmentBoard,
+  RoundAssignmentCard,
+  useTeamAssignmentStore,
+  type DraftMember,
+} from '@/features/team-assignment'
 import { useToast } from '@/shared/composables/useToast'
-import { normalizeRoomCode } from './api/rooms'
+import { useAppHeader } from '@/shared/composables/useAppHeader'
+import { normalizeRoomCode, type Participant } from './api/rooms'
 import { useWaitingRoomStore } from './stores/useWaitingRoomStore'
 
 const route = useRoute()
 const router = useRouter()
-const { toast } = useToast()
+const { toast, dismissAll } = useToast()
+const { setHeader, clearHeader } = useAppHeader()
 const store = useWaitingRoomStore()
 const {
   roomCode,
   phase,
+  room,
   participants,
   participantCount,
   readyCount,
@@ -23,15 +33,111 @@ const {
   isConfirmingReady,
   readyError,
   isHost,
+  myId,
   gameStatus,
 } = storeToRefs(store)
 
-// 입장은 멱등이라 새로고침·재방문에도 안전하다. 이탈 시 구독을 해제한다.
+// 호스트 팀 배정 보드 — 드래프트는 로컬 스토어에만 쌓이고 "배정 확정"만 서버에 쓴다
+const taStore = useTeamAssignmentStore()
+const showAssignmentBoard = ref(false)
+
+/** 참가자 → 배정 드래프트 멤버(배정 로직에 필요한 필드만 추린다) */
+function toDraftMember(participant: Participant): DraftMember {
+  return {
+    id: participant.id,
+    name: participant.name,
+    gender: participant.gender,
+    sameGenderStreak: participant.sameGenderStreak,
+    previousPartnerIds: participant.previousPartnerIds,
+  }
+}
+
+/** 내 참가자 문서 — 게스트 배정 카드 렌더에 쓴다 */
+const myParticipant = computed(
+  () => participants.value.find((participant) => participant.id === myId.value) ?? null,
+)
+/** 게스트: 배정이 한 번이라도 확정됐고(assignmentRound>0) 내 완장이 있으면 라운드 배정 카드를 본다 */
+const showGuestAssignment = computed(
+  () => !isHost.value && (room.value?.assignmentRound ?? 0) > 0 && !!myParticipant.value?.team,
+)
+/** 같은 완장(팀) 멤버 — 표시용 id·name만 */
+const myTeamMembers = computed(() => {
+  const team = myParticipant.value?.team
+  if (!team) return []
+  return participants.value
+    .filter((participant) => participant.team === team)
+    .map((participant) => ({ id: participant.id, name: participant.name }))
+})
+
+/** 게스트 CTA 문구 — 배정 카드 뷰에서는 '준비 완료'(안전 수칙 동의는 배정 전 라운드에서 끝났다) */
+const guestCtaLabel = computed(() => {
+  if (showGuestAssignment.value) return '준비 완료'
+  return isReadyConfirmed.value ? '준비 완료' : '확인하고 준비 완료'
+})
+
+/**
+ * 팀 배정 시작(호스트) — 참가자·레디 상태를 검증한 뒤 드래프트를 채우고 보드를 연다.
+ * 배정 대상은 명단(플레이어)뿐이며, 호스트(진행자)는 플레이어가 아니라 제외된다.
+ */
+function startAssignment() {
+  if (participantCount.value === 0) {
+    toast({ title: '참가자가 없어요.', tone: 'danger' })
+    return
+  }
+  if (readyCount.value < participantCount.value) {
+    toast({ title: '모든 참가자가 준비를 완료해야 시작할 수 있어요.', tone: 'danger' })
+    return
+  }
+  // 이번에 확정할 차수는 클릭 시점의 assignmentRound + 1로 고정한다 — 이후 다른 탭이
+  // 확정해 스냅샷이 올라가도 이 드래프트는 고정된 차수로만 커밋한다(QA N-02).
+  // 게임 모드는 직전 확정 모드를 기본값으로 넘긴다 — 호스트는 보드에서 바꿀 수 있다.
+  taStore.startDraft(
+    participants.value.map(toDraftMember),
+    (room.value?.assignmentRound ?? 0) + 1,
+    room.value?.gameMode ?? DEFAULT_GAME_MODE,
+  )
+  // 보드로 전환하기 직전 — 이전 화면(대기실)에서 쌓인 에러 토스트가 보드 위에 겹쳐 남지 않도록 비운다
+  dismissAll()
+  showAssignmentBoard.value = true
+}
+
+/** 확정 완료 — 보드를 닫고 기존 대기실 뷰로 복귀한다(명단에 완장 보더가 반영된다) */
+function onAssignmentConfirmed() {
+  showAssignmentBoard.value = false
+  // 확정 토스트만 남도록 보드 맥락의 잔여 알림(완장 소진 안내 등)을 먼저 정리한다
+  dismissAll()
+  toast({ title: '팀 배정을 확정했어요.', tone: 'success' })
+}
+
+// 앱 셸 헤더 타이틀·설명을 화면 상태에 맞춰 바꾼다 — 보드/카드는 자체 h1을 두지 않고
+// 제목을 헤더 한 곳에만 노출한다(이중 타이틀 방지). 기본 대기실 뷰는 라우트 meta로 되돌린다.
+watchEffect(() => {
+  if (showAssignmentBoard.value) {
+    setHeader('배정 편집', '멤버 칩을 터치한 뒤 이동할 팀을 누릅니다')
+  } else if (showGuestAssignment.value) {
+    setHeader(`라운드 ${room.value!.assignmentRound} 배정`, '라운드마다 팀과 완장이 바뀝니다')
+  } else {
+    clearHeader()
+  }
+})
+
+// 보드가 열린 동안 새로 레디한 참가자를 대기열에 합류시킨다(이미 배정/대기 중이면 무시된다)
+watch(participants, (list) => {
+  if (!showAssignmentBoard.value) return
+  for (const participant of list) {
+    if (participant.isReady) taStore.addToWaitingPool(toDraftMember(participant))
+  }
+})
+
+// 입장은 멱등이라 새로고침·재방문에도 안전하다. 이탈 시 구독을 해제하고 드래프트를 비운다.
 onMounted(() => {
   store.enter(normalizeRoomCode(String(route.params.roomCode)))
 })
 onUnmounted(() => {
   store.leave()
+  taStore.reset()
+  // 대기실을 벗어나면 헤더 오버라이드를 비워 다음 라우트가 meta 기본값을 쓰게 한다
+  clearHeader()
 })
 
 // 호스트가 시작하면 status 스냅샷으로 전원이 동시에 게임(카메라 콕핏)으로 넘어간다
@@ -63,6 +169,26 @@ async function copyInviteLink() {
   <section class="flex flex-1 flex-col bg-canvas px-6 pt-3 pb-(--pr-inset-bottom-safe)">
     <div class="flex-1">
       <template v-if="phase === 'joined'">
+        <!-- 호스트: 팀 배정 보드(대기실 콘텐츠·하단 CTA를 대체) -->
+        <AssignmentBoard
+          v-if="showAssignmentBoard"
+          class="mt-6"
+          :room-code="roomCode!"
+          @confirmed="onAssignmentConfirmed"
+        />
+
+        <!-- 게스트: 배정 확정 후 라운드 배정 카드(룸 카드·명단·안전수칙을 대체) -->
+        <RoundAssignmentCard
+          v-else-if="showGuestAssignment"
+          class="mt-6"
+          :armband="myParticipant!.team!"
+          :members="myTeamMembers"
+          :my-id="myId!"
+          :is-x-team="myParticipant!.isXTeam"
+          :game-mode="room!.gameMode"
+        />
+
+        <template v-else>
         <!-- 룸 정보 카드 — 초대 수단(링크 복사)을 상시 노출한다.
              코드는 카드 내 주요 정보(text-heading)로, display(카운트다운용)는 과하다 -->
         <div class="mt-3 rounded-lg border border-stroke bg-elevated p-4">
@@ -112,6 +238,7 @@ async function copyInviteLink() {
             아래 확인 버튼을 누르면 안전 수칙과 개인 책임에 동의합니다.
           </p>
         </div>
+        </template>
       </template>
 
       <!-- 입장 실패 — 잘못된 초대 코드 또는 네트워크·권한 문제 -->
@@ -145,10 +272,12 @@ async function copyInviteLink() {
       </p>
     </div>
 
-    <!-- 하단 고정 CTA — 게스트: 안전 수칙 동의 / 호스트(진행자): 팀 배정 시작 -->
-    <div v-if="phase === 'joined'" class="pt-5 pb-6">
-      <!-- 팀 배정 플로우는 아직 미구현 — 진행자 CTA 자리만 확정해 둔다 -->
-      <BaseButton v-if="isHost" variant="accent" size="md" class="w-full">팀 배정 시작</BaseButton>
+    <!-- 하단 고정 CTA — 게스트: 안전 수칙 동의/라운드 준비 / 호스트(진행자): 팀 배정 시작.
+         배정 보드가 열려 있는 동안엔 보드가 자체 액션을 가지므로 이 CTA를 숨긴다. -->
+    <div v-if="phase === 'joined' && !showAssignmentBoard" class="pt-5 pb-6">
+      <BaseButton v-if="isHost" variant="accent" size="md" class="w-full" @click="startAssignment">
+        팀 배정 시작
+      </BaseButton>
 
       <template v-else>
         <p v-if="readyError" class="mb-2 text-caption text-danger" role="alert">
@@ -161,7 +290,7 @@ async function copyInviteLink() {
           :disabled="isReadyConfirmed || isConfirmingReady"
           @click="store.confirmReady()"
         >
-          {{ isReadyConfirmed ? '준비 완료' : '확인하고 준비 완료' }}
+          {{ guestCtaLabel }}
         </BaseButton>
       </template>
     </div>

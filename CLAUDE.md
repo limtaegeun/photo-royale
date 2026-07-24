@@ -36,7 +36,7 @@ src/
       index.ts           # 이 기능이 외부에 공개하는 것만 re-export
   shared/
     api/                 # 여러 기능이 공유하는 외부 연동 클라이언트 (예: firebase.ts 단일 초기화)
-    components/          # BaseButton.vue 등 Base 접두사 공용 UI
+    components/          # BaseButton.vue 등 Base 접두사 공용 UI + 2개 이상 기능이 쓰는 도메인 공용 컴포넌트(예: PlayerChip)
     composables/         # 2개 이상 기능에서 쓰는 것만
     stores/              # 여러 기능이 공유하는 전역 상태
     styles/              # 디자인 토큰(3계층 CSS variables) + 전역 base — docs/DESIGN_SYSTEM.md 참조
@@ -49,7 +49,7 @@ path alias: `@` → `src/` (예: `@/features/photo-upload`)
 ### 배치 규칙
 
 1. **새 코드는 무조건 `features/<기능>/` 안에** 만든다. 어느 기능인지 애매하면 더 구체적인 쪽을 선택한다.
-2. **shared 승격 규칙**: 처음부터 `shared/`에 만들지 않는다. 두 번째 기능이 실제로 import하는 시점에 `shared/`로 옮긴다.
+2. **shared 승격 규칙**: 처음부터 `shared/`에 만들지 않는다. 두 번째 기능이 실제로 import하는 시점에 `shared/`로 옮긴다. 단, 공유 대상이 단일 파일이 아니라 한 도메인으로 응집된 덩어리(타입+데이터+컴포넌트+테스트)면 기술 유형별 `shared/` 하위로 흩뿌리지 말고 Page 없는 독립 feature 폴더로 승격한다(예: `game-mode`).
 3. **기능 간 import는 상대경로 금지** — 반드시 상대 기능의 `index.ts`(public API)를 통해서만: `import { usePhotoUpload } from '@/features/photo-upload'`. 내부 파일 직접 import(`@/features/photo-upload/composables/...`) 금지.
 4. **배럴(index.ts)은 기능 폴더당 1개만.** 하위 폴더(components/, composables/ 등)에 index.ts를 만들지 않는다 — Vite 트리셰이킹과 grep 추적성을 해친다.
 5. **router/에는 라우트 정의만.** 가드 로직이 필요하면 해당 기능의 composable로 만들어 import한다.
@@ -87,9 +87,9 @@ path alias: `@` → `src/` (예: `@/features/photo-upload`)
 - 기술 유형별 최상위 폴더(`src/components/`, `src/services/`) 생성 금지 → 기능 폴더 안에 만들 것
 - 컴포넌트 안에서 직접 `fetch` 호출 금지 → 해당 기능의 `api/`에 함수로 만든다. 로딩·에러 상태나 검증이 끼는 플로우는 composable(`useXxx`)로 추출하고(예: `useLogin`, `useRoomEntry`), 단순 1회 조회는 컴포넌트에서 api 함수를 직접 호출해도 된다
 - default export 금지 (컴포넌트 .vue 제외) → named export
-- 재사용 가능성 있는 UI 요소를 생 HTML 태그(`<input>`·`<button>` 등)로 화면에 직접 마크업 금지 → `shared/components/Base*.vue` 컴포넌트로 만들어 재사용 (원자 단위 UI는 DS 컴포넌트가 단일 진실원. 현재: `BaseButton`/`BaseBadge`/`BaseInput`/`BaseSegmented`/`BaseDialog`/`BaseBottomSheet`/`BaseToast`, docs/DESIGN_SYSTEM.md §6)
+- 재사용 가능성 있는 UI 요소를 생 HTML 태그(`<input>`·`<button>` 등)로 화면에 직접 마크업 금지 → `shared/components/Base*.vue` 컴포넌트로 만들어 재사용 (원자 단위 UI는 DS 컴포넌트가 단일 진실원. 현재: `BaseButton`/`BaseBadge`/`BaseInput`/`BaseSegmented`/`BaseSwitch`/`BaseDialog`/`BaseBottomSheet`/`BaseToast`, docs/DESIGN_SYSTEM.md §6)
 - **Base 컴포넌트는 Reka UI(headless) 기반으로 만든다** → 접근성·상호작용 행동(focus trap·roving tabindex·ARIA live region·포털 등)은 Reka primitive에 위임하고, 스타일은 프로젝트 시맨틱 유틸리티로만 작성한다. 원자는 `Primitive`(as/asChild), 행동형은 전용 primitive(Dialog/RadioGroup/Toast 등)를 쓴다.
-- 라이브러리 추가 전 반드시 사용자에게 확인 → 현재 런타임 의존성은 vue/pinia/vue-router/**reka-ui** + firebase(Auth/Firestore, 인증·세션 유지용) 5개다. reka-ui는 headless UI 기반으로 승인된 의존성이며, 이 목록을 늘리지 않는 것이 기본값 (Tailwind v4는 빌드타임 devDependency라 런타임 의존성 아님)
+- 라이브러리 추가 전 반드시 사용자에게 확인 → 현재 런타임 의존성은 vue/pinia/vue-router/**reka-ui**/**sortablejs** + firebase(Auth/Firestore, 인증·세션 유지용) 6개다. reka-ui는 headless UI 기반으로 승인된 의존성, sortablejs는 배정 보드 드래그 앤 드롭용으로 승인된 의존성이며, 이 목록을 늘리지 않는 것이 기본값 (Tailwind v4는 빌드타임 devDependency라 런타임 의존성 아님)
 
 ## 알아둘 것
 
