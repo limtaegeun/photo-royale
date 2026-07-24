@@ -154,6 +154,15 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
    * 선택(selectedMemberId)은 이 액션에서 건드리지 않는다 — 선택 해제는 moveSelectedTo의 책임이다.
    */
   function moveMember(memberId: string, targetArmband: string | null) {
+    // 이미 목적지(대상 팀 또는 대기열)에 있는 멤버면 아무것도 하지 않는다 — 드래그 앤 드롭이
+    // 같은 소속으로 재-드롭되는 경우 등에서 splice→push로 인한 중복 삽입/무의미한 재정렬을 막는다.
+    if (targetArmband === null) {
+      if (waitingPool.value.some((member) => member.id === memberId)) return
+    } else {
+      const target = draftTeams.value.find((team) => team.armband === targetArmband)
+      if (target?.members.some((member) => member.id === memberId)) return
+    }
+
     let moved: DraftMember | undefined
     for (const team of draftTeams.value) {
       const index = team.members.findIndex((member) => member.id === memberId)

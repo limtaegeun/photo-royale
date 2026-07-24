@@ -121,25 +121,36 @@ const boardRef = ref<HTMLElement | null>(null)
 const sortables: Sortable[] = []
 
 /**
- * 드롭 완료 처리 — Vue 상태가 단일 진실원이므로, Sortable이 옮겨 놓은 DOM을 먼저 원위치로
- * 되돌린 뒤(되돌리지 않으면 Vue 재렌더가 만든 새 노드와 Sortable이 옮긴 노드가 중복된다)
- * store.moveMember로만 실제 이동을 반영한다 — 이어지는 Vue 재렌더가 최종 UI를 만든다.
+ * 드롭 완료 처리 — Vue 상태가 단일 진실원이다. 처리는 두 갈래로 나뉜다.
+ *
+ * 1) cross-container 정상 드롭(다른 팀/대기열로 이동): DOM을 수동으로 되돌리지 않고 store.moveMember만
+ *    호출한다. 멤버 구성이 바뀌면 양쪽 드롭 컨테이너의 membership key(:key)가 달라져 컨테이너가 통째로
+ *    재마운트되므로, Sortable이 옮겨 놓은(Vue 추적 밖) 노드는 새 컨테이너로 대체되어 유령으로 남지 않는다.
+ *    여기서 굳이 revert하면 재마운트 직전 한 프레임 동안 원위치로 깜빡이므로 revert하지 않는다.
+ * 2) 그 외(같은 컨테이너 내 재정렬 to===from, 또는 memberId/dropTarget이 없는 비정상 케이스): 상태 변화가
+ *    없으므로 Sortable이 옮긴 노드를 원래 컨테이너의 원래 위치(oldIndex)로 되돌리기만 한다. 컨테이너가
+ *    순수 칩 리스트(자식이 [data-member]뿐)라 oldIndex가 그대로 정합한다.
  */
 function handleDragEnd(evt: Sortable.SortableEvent) {
+  // 탭 선택 해제는 드래그 시작이 아니라 종료 시점에 한다. onStart에서 해제하면 이동 힌트 배너(v-if)가
+  // 사라지며 그 아래 팀 카드들이 위로 시프트되는데, 이 시프트가 드래그가 "진행 중인 동안" 일어나
+  // 사용자가 조준한 드롭 좌표가 어긋나 이동이 무시되는 버그가 실측(실드래그 2회 재현)됐다.
+  store.selectMember(null)
+
   const { item, from, to, oldIndex } = evt
+  const memberId = item.getAttribute('data-member')
+  const dropTarget = to.getAttribute('data-drop-target')
+
+  // 컨테이너의 data-drop-target: 팀 완장 문자열 또는 'waiting'(대기열=null)
+  if (to !== from && memberId !== null && dropTarget !== null) {
+    store.moveMember(memberId, dropTarget === 'waiting' ? null : dropTarget)
+    return
+  }
+
   // 되돌리기: 목적지에서 떼어내 원래 컨테이너의 원래 위치(oldIndex)에 다시 꽂는다
   if (item.parentNode) item.parentNode.removeChild(item)
   const reference = oldIndex != null ? (from.children[oldIndex] ?? null) : null
   from.insertBefore(item, reference)
-
-  // 같은 컨테이너 내 재정렬은 팀 소속이 안 바뀌므로 무시한다(칩 순서는 Vue 상태 기준)
-  if (to === from) return
-
-  const memberId = item.getAttribute('data-member')
-  const dropTarget = to.getAttribute('data-drop-target')
-  if (memberId === null || dropTarget === null) return
-  // 컨테이너의 data-drop-target: 팀 완장 문자열 또는 'waiting'(대기열=null)
-  store.moveMember(memberId, dropTarget === 'waiting' ? null : dropTarget)
 }
 
 /** 컨테이너 하나에 Sortable을 붙인다 — 팀 칩 영역/대기자 칩 영역 공통 옵션 */
@@ -156,6 +167,8 @@ function createSortable(el: HTMLElement): Sortable {
     forceFallback: false,
     ghostClass: 'member-ghost',
     chosenClass: 'member-chosen',
+    // 탭 선택 해제는 여기(onStart)가 아니라 handleDragEnd(onEnd) 맨 앞에서 한다 — 이유는
+    // handleDragEnd 주석 참조(드래그 도중 해제하면 레이아웃 시프트로 드롭 좌표가 어긋난다).
     onEnd: handleDragEnd,
   })
 }
@@ -178,11 +191,18 @@ onMounted(() => {
 })
 onBeforeUnmount(destroySortables)
 
-// 팀 구성(완장 목록)·대기자 섹션 유무가 바뀌면 컨테이너 DOM이 갈리므로(팀 추가·재배정·대기자
-// 등장/소멸) destroy 후 재초기화한다. 멤버가 팀 사이를 오가는 것만으로는 컨테이너 요소가
-// 유지되므로 재초기화가 필요 없다. nextTick으로 새 DOM이 그려진 뒤 붙인다.
+// 멤버 구성이 조금이라도 바뀌면(팀 추가/삭제·재배정·멤버 이동·대기자 등장/소멸) 드롭 컨테이너의
+// membership key가 달라져 컨테이너가 통째로 재마운트되므로, 새 컨테이너에 Sortable을 다시 붙여야 한다.
+// 따라서 감시 소스를 팀별 "완장+멤버 id" + "대기자 id"의 전체 해시로 잡는다 — 이는 템플릿의 각
+// 드롭 컨테이너 :key(팀 `armband:id.id...`, 대기자 `waiting:id.id...`)를 합성한 문자열과 동일하다.
+// nextTick으로 재마운트된 DOM이 그려진 뒤 destroy→재부착한다.
 watch(
-  () => `${draftTeams.value.map((team) => team.armband).join('|')}#${waitingPool.value.length > 0}`,
+  () => {
+    const teamsHash = draftTeams.value
+      .map((team) => `${team.armband}:${team.members.map((member) => member.id).join('.')}`)
+      .join('|')
+    return `${teamsHash}#waiting:${waitingPool.value.map((member) => member.id).join('.')}`
+  },
   () => {
     void nextTick(initSortables)
   },
@@ -280,13 +300,16 @@ async function onConfirm() {
         <BaseBadge tone="success" appearance="outline" size="sm">LIVE</BaseBadge>
       </div>
 
-      <!-- 이동 힌트 — 칩 선택 중에만(한 곳에서만) 노출. 이 동안 팀/대기자 카드는 brand 보더로 강조된다 -->
+      <!-- 이동 힌트 — v-if로 토글하지 않고 항상 렌더한다(텍스트·보더만 전환). 평상시/선택 중 두 상태
+           모두 padding·border가 동일해 같은 높이를 차지하므로, 등장·소멸에 의한 레이아웃 시프트가
+           생기지 않는다(실측 버그: 배너가 사라지며 팀 카드가 밀려 드래그 중 드롭 좌표가 어긋났다).
+           선택 중엔 이 카드와 팀/대기자 카드가 함께 brand 보더로 강조된다. -->
       <p
-        v-if="hasSelection"
         role="status"
-        class="rounded-md border border-brand bg-elevated px-3 py-2 text-caption font-semibold text-content"
+        class="rounded-md border bg-elevated px-3 py-2 text-caption transition-colors duration-100 ease-standard"
+        :class="hasSelection ? 'border-brand font-semibold text-content' : 'border-stroke text-content-secondary'"
       >
-        이동할 팀 카드를 터치하세요
+        {{ hasSelection ? '이동할 팀 카드를 터치하세요' : '칩을 길게 눌러 끌면 이동할 수 있어요' }}
       </p>
 
       <!-- 팀 그리드 -->
@@ -316,36 +339,41 @@ async function onConfirm() {
             </span>
           </div>
 
-          <!-- 칩 영역 — min-h로 빈 팀도 카드 높이가 흔들리지 않게 고정한다.
-               data-drop-target(팀 완장)으로 Sortable 드롭 대상이 된다(빈 팀도 드롭 가능). -->
+          <!-- 칩 드롭 컨테이너 — 자식은 칩 버튼([data-member])뿐인 "순수 칩 리스트"다. ×2 배지·"비어 있음"
+               문구를 이 안에 두지 않는 이유: Sortable이 이 컨테이너의 노드를 직접 옮기므로, 배지/문구가
+               섞여 있으면 Sortable이 노드 순서를 잘못 계산해 유령이 남는다. w-full·min-h로 빈 팀도 드롭
+               면적을 확보한다(빈 팀도 드롭 대상). membership key(완장:멤버id들)로 구성이 바뀔 때마다
+               컨테이너를 새 요소로 갈아끼워, Sortable이 옮겨 놓은(Vue 추적 밖) 노드를 유령으로 남기지
+               않는다 — 팀A→팀B 이동 시 원본이 팀A에 중복 잔존하던 버그의 근본 수정. -->
           <div
+            :key="`${team.armband}:${team.members.map((member) => member.id).join('.')}`"
             :data-drop-target="team.armband"
-            class="flex min-h-(--pr-size-control-md) flex-wrap content-center items-center gap-1.5"
+            class="flex min-h-(--pr-size-control-md) w-full flex-wrap content-center items-center gap-1.5"
           >
-            <template v-if="team.members.length > 0">
-              <template v-for="member in team.members" :key="member.id">
-                <!-- 선택 상태는 래퍼 버튼의 ring(라임)으로, 참가자 표시는 대기실과 동일한 PlayerChip으로 통일한다.
-                     팀 카드 내 칩은 team을 넘겨 그룹 보더 색으로 카드 그룹 표기를 보강한다. -->
-                <button
-                  type="button"
-                  :aria-pressed="isSelected(member.id)"
-                  :data-member="member.id"
-                  :data-selected="isSelected(member.id)"
-                  class="inline-flex min-h-(--pr-size-control-md) items-center rounded-full
-                         transition-shadow duration-100 ease-standard
-                         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-                  :class="isSelected(member.id) ? 'ring-2 ring-accent' : ''"
-                  @click.stop="store.selectMember(member.id)"
-                >
-                  <PlayerChip :name="member.name" :team="team.armband" :gender="member.gender" />
-                </button>
-                <!-- 1인 팀: 목숨·포인트 2배 표기 -->
-                <BaseBadge v-if="team.members.length === 1" tone="warning" size="sm">×2</BaseBadge>
-              </template>
-            </template>
-            <!-- 빈 팀: 채워질 자리임을 캡션으로 표기(카드 보더는 점선으로 이미 표현) -->
-            <span v-else class="text-caption text-content-tertiary">비어 있음</span>
+            <!-- 선택 상태는 래퍼 버튼의 ring(라임)으로, 참가자 표시는 대기실과 동일한 PlayerChip으로 통일한다.
+                 팀 카드 내 칩은 team을 넘겨 그룹 보더 색으로 카드 그룹 표기를 보강한다. -->
+            <button
+              v-for="member in team.members"
+              :key="member.id"
+              type="button"
+              :aria-pressed="isSelected(member.id)"
+              :data-member="member.id"
+              :data-selected="isSelected(member.id)"
+              class="inline-flex min-h-(--pr-size-control-md) items-center rounded-full
+                     transition-shadow duration-100 ease-standard
+                     focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+              :class="isSelected(member.id) ? 'ring-2 ring-accent' : ''"
+              @click.stop="store.selectMember(member.id)"
+            >
+              <PlayerChip :name="member.name" :team="team.armband" :gender="member.gender" />
+            </button>
           </div>
+          <!-- ×2 배지·"비어 있음"은 드롭 컨테이너 밖(카드 내 형제)에 둔다 — Sortable 자식에서 배제한다.
+               1인 팀: 목숨·포인트 2배 표기 / 빈 팀: 채워질 자리(카드 보더는 점선으로 이미 표현). -->
+          <BaseBadge v-if="team.members.length === 1" tone="warning" size="sm">×2</BaseBadge>
+          <span v-else-if="team.members.length === 0" class="text-caption text-content-tertiary">
+            비어 있음
+          </span>
         </div>
       </div>
     </div>
@@ -365,10 +393,13 @@ async function onConfirm() {
       @keydown.space.prevent="store.moveSelectedTo(null)"
     >
       <p class="text-label text-warning">미배정 대기자 {{ waitingPool.length }}명</p>
-      <!-- data-drop-target="waiting" — Sortable 드롭 시 대기열(null)로 이동시킨다 -->
+      <!-- data-drop-target="waiting" — Sortable 드롭 시 대기열(null)로 이동시킨다. 캡션("미배정 대기자
+           N명")은 이미 이 컨테이너 밖 형제이므로 자식은 칩 버튼뿐이다. membership key(대기자 id들)로
+           구성이 바뀔 때마다 재마운트해 Sortable 유령 노드를 남기지 않는다(팀 카드와 동일 원칙). -->
       <div
+        :key="`waiting:${waitingPool.map((member) => member.id).join('.')}`"
         data-drop-target="waiting"
-        class="flex min-h-(--pr-size-control-md) flex-wrap content-center items-center gap-1.5"
+        class="flex min-h-(--pr-size-control-md) w-full flex-wrap content-center items-center gap-1.5"
       >
         <!-- 대기자는 미배정이므로 team=null(중립 보더). 선택 상태는 래퍼 버튼의 ring으로 표기한다. -->
         <button

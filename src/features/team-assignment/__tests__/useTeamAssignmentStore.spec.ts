@@ -251,6 +251,27 @@ describe('useTeamAssignmentStore', () => {
       expect(teamB.isXTeam).toBe(false)
     })
 
+    it('대상 팀에 이미 있는 멤버를 다시 옮기면 무시한다(중복 삽입 방어)', () => {
+      const store = useTeamAssignmentStore()
+      store.startDraft(mixedFour(), 1, 'normal', identityRandom) // A[m1,f1]
+
+      store.moveMember('m1', 'A') // 이미 A 소속인 멤버를 A로
+
+      const teamA = store.draftTeams.find((team) => team.armband === 'A')!
+      // 순서·개수 그대로 — splice→push로 인한 중복/재정렬이 일어나지 않는다
+      expect(teamA.members.map((m) => m.id)).toEqual(['m1', 'f1'])
+    })
+
+    it('이미 대기열에 있는 멤버를 대기열로 옮기면 무시한다(중복 삽입 방어)', () => {
+      const store = useTeamAssignmentStore()
+      store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+
+      store.moveMember('m1', null) // A → 대기열
+      store.moveMember('m1', null) // 이미 대기열인 멤버를 다시 대기열로
+
+      expect(store.waitingPool.map((m) => m.id)).toEqual(['m1'])
+    })
+
     it('선택(selectedMemberId)은 건드리지 않는다 — 선택 해제는 moveSelectedTo의 책임', () => {
       const store = useTeamAssignmentStore()
       store.startDraft(mixedFour(), 1, 'normal', identityRandom)

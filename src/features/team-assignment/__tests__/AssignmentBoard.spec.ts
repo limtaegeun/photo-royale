@@ -117,6 +117,23 @@ describe('AssignmentBoard', () => {
     expect(selected.attributes('data-selected')).toBe('true')
   })
 
+  it('이동 힌트 영역은 선택 여부와 무관하게 항상 존재하고, 내용만 전환된다(레이아웃 시프트 방지)', async () => {
+    const { wrapper, store } = mountBoard()
+    store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+    await flushPromises()
+
+    // 비선택 상태에도 힌트 영역 자체는 렌더돼 있어야 한다(v-if로 사라지지 않음)
+    const hint = wrapper.find('[role="status"]')
+    expect(hint.exists()).toBe(true)
+    expect(hint.text()).toBe('칩을 길게 눌러 끌면 이동할 수 있어요')
+
+    await wrapper.find('[data-member="m1"]').trigger('click')
+
+    const selectedHint = wrapper.find('[role="status"]')
+    expect(selectedHint.exists()).toBe(true)
+    expect(selectedHint.text()).toBe('이동할 팀 카드를 터치하세요')
+  })
+
   it('1인 팀에는 목숨·포인트 2배(×2) 배지를 표시한다', async () => {
     const { wrapper, store } = mountBoard()
     store.startDraft([member('solo', '혼자', 'male')], 1, 'normal', identityRandom)
@@ -341,7 +358,7 @@ describe('AssignmentBoard', () => {
       expect(targets).toEqual(expect.arrayContaining(['A', 'B', 'waiting']))
     })
 
-    it('onEnd는 옮긴 DOM을 원위치로 되돌린 뒤 store.moveMember를 대상 완장으로 호출한다', async () => {
+    it('onEnd cross-container 드롭: revert 없이 store.moveMember를 대상 완장으로 호출한다', async () => {
       const { wrapper, store } = mountBoard()
       store.startDraft(mixedFour(), 1, 'normal', identityRandom)
       store.addToWaitingPool(member('w1', '대기자', 'male'))
@@ -356,20 +373,22 @@ describe('AssignmentBoard', () => {
       const waiting = wrapper.find('[data-drop-target="waiting"]').element
       const m1 = wrapper.find('[data-member="m1"]').element
 
-      // 팀 A → 팀 B
+      // 팀 A → 팀 B: Sortable이 m1을 B로 옮겨 놓은 상태를 흉내낸다
+      teamB.appendChild(m1)
       onEnd(dragEvent(m1, teamA, teamB))
       expect(moveSpy).toHaveBeenLastCalledWith('m1', 'B')
-      // 되돌리기: onEnd가 item을 원래 컨테이너(A)로 되돌려 놨다
-      expect(teamA.contains(m1)).toBe(true)
+      // revert하지 않으므로 m1은 B에 그대로 남는다(membership key 재마운트가 최종 화면을 만든다)
+      expect(teamB.contains(m1)).toBe(true)
+      expect(teamA.contains(m1)).toBe(false)
 
       // 팀 → 대기열('waiting' → null)
       onEnd(dragEvent(m1, teamA, waiting))
       expect(moveSpy).toHaveBeenLastCalledWith('m1', null)
     })
 
-    it('같은 컨테이너 내 재정렬(onEnd from===to)은 moveMember를 호출하지 않는다', async () => {
+    it('같은 컨테이너 내 재정렬(onEnd from===to)은 moveMember 없이 DOM을 원위치로 되돌린다', async () => {
       const { wrapper, store } = mountBoard()
-      store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+      store.startDraft(mixedFour(), 1, 'normal', identityRandom) // A[m1,f1]
       await flushPromises()
 
       const moveSpy = vi.spyOn(store, 'moveMember').mockImplementation(() => {})
@@ -377,9 +396,87 @@ describe('AssignmentBoard', () => {
       const teamA = wrapper.find('[data-drop-target="A"]').element
       const m1 = wrapper.find('[data-member="m1"]').element
 
-      onEnd(dragEvent(m1, teamA, teamA))
+      // Sortable이 m1을 컨테이너 끝으로 재정렬해 놓은 상태를 흉내낸다(oldIndex=0에서 출발)
+      teamA.appendChild(m1)
+      onEnd(dragEvent(m1, teamA, teamA, 0))
 
       expect(moveSpy).not.toHaveBeenCalled()
+      // 상태 변화가 없으므로 oldIndex(0) 위치로 되돌린다
+      expect(teamA.children[0]).toBe(m1)
+    })
+
+    it('onStart는 탭 선택을 해제하지 않는다(드래그 도중 힌트 배너가 사라져 레이아웃이 시프트하는 것을 방지)', async () => {
+      const { store } = mountBoard()
+      store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+      await flushPromises()
+
+      store.selectMember('m1')
+      expect(store.selectedMemberId).toBe('m1')
+
+      // onStart 옵션 자체가 배선돼 있지 않아야 한다 — 선택 해제는 onEnd(handleDragEnd)의 몫이다
+      expect(vi.mocked(Sortable.create).mock.calls[0]![1]!.onStart).toBeUndefined()
+      expect(store.selectedMemberId).toBe('m1')
+    })
+
+    it('onEnd(handleDragEnd)는 처리 종류와 무관하게 항상 탭 선택을 해제한다', async () => {
+      const { wrapper, store } = mountBoard()
+      store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+      await flushPromises()
+
+      vi.spyOn(store, 'moveMember').mockImplementation(() => {})
+      const onEnd = vi.mocked(Sortable.create).mock.calls[0]![1]!.onEnd!
+      const teamA = wrapper.find('[data-drop-target="A"]').element
+      const m1 = wrapper.find('[data-member="m1"]').element
+
+      // cross-container 드롭이어도
+      store.selectMember('m1')
+      teamA.appendChild(m1)
+      onEnd(dragEvent(m1, teamA, teamA, 0))
+      expect(store.selectedMemberId).toBeNull()
+
+      // 같은 컨테이너 내 되돌리기 케이스여도 선택은 해제된다
+      store.selectMember('f1')
+      onEnd(dragEvent(m1, teamA, teamA, 0))
+      expect(store.selectedMemberId).toBeNull()
+    })
+
+    it('×2 배지·"비어 있음"은 드롭 컨테이너 밖에 렌더된다(컨테이너 자식은 칩 버튼뿐)', async () => {
+      const { wrapper, store } = mountBoard()
+      store.startDraft([member('solo', '혼자', 'male')], 1, 'normal', identityRandom) // A[solo]
+      store.addTeam() // B 빈 팀
+      await flushPromises()
+
+      // 1인 팀 A: 드롭 컨테이너 자식은 칩 버튼 1개뿐, ×2는 컨테이너 밖(카드 안)
+      const dropA = wrapper.find('[data-drop-target="A"]')
+      const childrenA = Array.from(dropA.element.children)
+      expect(childrenA).toHaveLength(1)
+      expect(childrenA.every((el) => el.hasAttribute('data-member'))).toBe(true)
+      expect(dropA.text()).not.toContain('×2')
+      expect(wrapper.find('[data-team="A"]').text()).toContain('×2')
+
+      // 빈 팀 B: 드롭 컨테이너 자식 0개, "비어 있음"은 컨테이너 밖
+      const dropB = wrapper.find('[data-drop-target="B"]')
+      expect(dropB.element.children).toHaveLength(0)
+      expect(dropB.text()).not.toContain('비어 있음')
+      expect(wrapper.find('[data-team="B"]').text()).toContain('비어 있음')
+    })
+
+    it('멤버 이동 시 드롭 컨테이너가 재마운트되어 유령 없이 자식 수가 정합한다', async () => {
+      const { wrapper, store } = mountBoard()
+      store.startDraft(mixedFour(), 1, 'normal', identityRandom) // A[m1,f1] B[m2,f2]
+      await flushPromises()
+      expect(wrapper.find('[data-drop-target="A"]').element.children).toHaveLength(2)
+
+      // m1을 A→B로 이동 → A는 1인, B는 3인. 재마운트로 옛 노드가 유령으로 남지 않아야 한다
+      store.moveMember('m1', 'B')
+      await flushPromises()
+
+      const dropA = wrapper.find('[data-drop-target="A"]')
+      const dropB = wrapper.find('[data-drop-target="B"]')
+      expect(dropA.element.children).toHaveLength(1)
+      expect(dropB.element.children).toHaveLength(3)
+      expect(dropA.find('[data-member="m1"]').exists()).toBe(false)
+      expect(dropB.find('[data-member="m1"]').exists()).toBe(true)
     })
   })
 })
