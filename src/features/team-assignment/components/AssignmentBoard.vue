@@ -7,8 +7,8 @@ import BaseButton from '@/shared/components/BaseButton.vue'
 import BaseBottomSheet from '@/shared/components/BaseBottomSheet.vue'
 import BaseSwitch from '@/shared/components/BaseSwitch.vue'
 import PlayerChip from '@/shared/components/PlayerChip.vue'
+import { GAME_MODE_IDS, GAME_MODES, type GameModeId } from '@/features/game-mode'
 import { groupForArmband, type TeamGroup } from '../armbands'
-import { GAME_MODE_IDS, GAME_MODES, type GameModeId } from '../gameModes'
 import { useTeamAssignmentStore } from '../stores/useTeamAssignmentStore'
 
 interface Props {

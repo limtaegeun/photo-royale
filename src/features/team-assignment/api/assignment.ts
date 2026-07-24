@@ -1,6 +1,6 @@
 import { doc, writeBatch } from 'firebase/firestore'
 import { db } from '@/shared/api/firebase'
-import type { GameModeId } from '../gameModes'
+import type { GameModeId } from '@/features/game-mode'
 
 /** 확정된 팀의 한 멤버에게 쓸 이월값 */
 export interface ConfirmedMemberWrite {

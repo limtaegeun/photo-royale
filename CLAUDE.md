@@ -49,7 +49,7 @@ path alias: `@` → `src/` (예: `@/features/photo-upload`)
 ### 배치 규칙
 
 1. **새 코드는 무조건 `features/<기능>/` 안에** 만든다. 어느 기능인지 애매하면 더 구체적인 쪽을 선택한다.
-2. **shared 승격 규칙**: 처음부터 `shared/`에 만들지 않는다. 두 번째 기능이 실제로 import하는 시점에 `shared/`로 옮긴다.
+2. **shared 승격 규칙**: 처음부터 `shared/`에 만들지 않는다. 두 번째 기능이 실제로 import하는 시점에 `shared/`로 옮긴다. 단, 공유 대상이 단일 파일이 아니라 한 도메인으로 응집된 덩어리(타입+데이터+컴포넌트+테스트)면 기술 유형별 `shared/` 하위로 흩뿌리지 말고 Page 없는 독립 feature 폴더로 승격한다(예: `game-mode`).
 3. **기능 간 import는 상대경로 금지** — 반드시 상대 기능의 `index.ts`(public API)를 통해서만: `import { usePhotoUpload } from '@/features/photo-upload'`. 내부 파일 직접 import(`@/features/photo-upload/composables/...`) 금지.
 4. **배럴(index.ts)은 기능 폴더당 1개만.** 하위 폴더(components/, composables/ 등)에 index.ts를 만들지 않는다 — Vite 트리셰이킹과 grep 추적성을 해친다.
 5. **router/에는 라우트 정의만.** 가드 로직이 필요하면 해당 기능의 composable로 만들어 import한다.

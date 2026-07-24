@@ -10,9 +10,6 @@ export {
 } from './armbands'
 export type { TeamGroup } from './armbands'
 export { pickXTeams } from './xRole'
-// 게임 모드 레지스트리 — 규칙서 표시 구조 모듈화. 데이터 계층(rooms)·UI가 함께 소비한다
-export { DEFAULT_GAME_MODE, GAME_MODE_IDS, GAME_MODES, isGameModeId } from './gameModes'
-export type { GameModeId, GameModeDefinition, GameModeRuleEntry } from './gameModes'
 export { confirmAssignment } from './api/assignment'
 export type { ConfirmedMemberWrite, ConfirmedTeamWrite } from './api/assignment'
 // WaitingRoomPage가 다음 단계에서 호스트 보드 드래프트를 바로 쓸 수 있게 스토어·타입을 노출한다

@@ -15,8 +15,8 @@ import {
 } from 'firebase/firestore'
 import { db } from '@/shared/api/firebase'
 import type { Gender } from '@/features/auth'
-// 게임 모드는 team-assignment 기능의 소유물이라 public API로만 가져온다(내부 파일 직접 import 금지)
-import { DEFAULT_GAME_MODE, isGameModeId, type GameModeId } from '@/features/team-assignment'
+// 게임 모드는 game-mode 기능의 소유물이라 public API로만 가져온다(내부 파일 직접 import 금지)
+import { DEFAULT_GAME_MODE, isGameModeId, type GameModeId } from '@/features/game-mode'
 
 export type RoomStatus = 'waiting' | 'playing'
 

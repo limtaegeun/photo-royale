@@ -5,9 +5,9 @@ import { useRoute, useRouter } from 'vue-router'
 import BaseBadge from '@/shared/components/BaseBadge.vue'
 import BaseButton from '@/shared/components/BaseButton.vue'
 import PlayerChip from '@/shared/components/PlayerChip.vue'
+import { DEFAULT_GAME_MODE } from '@/features/game-mode'
 import {
   AssignmentBoard,
-  DEFAULT_GAME_MODE,
   RoundAssignmentCard,
   useTeamAssignmentStore,
   type DraftMember,

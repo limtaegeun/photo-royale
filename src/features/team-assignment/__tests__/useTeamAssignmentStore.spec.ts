@@ -15,7 +15,7 @@ import {
   REROLL_FEEDBACK_MS,
   type DraftMember,
 } from '../stores/useTeamAssignmentStore'
-import { DEFAULT_GAME_MODE } from '../gameModes'
+import { DEFAULT_GAME_MODE } from '@/features/game-mode'
 
 /**
  * 셔플을 항등(no-op)으로 만드는 rng — assignTeams의 배정 순서가 입력 순서와 같아진다.

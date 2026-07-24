@@ -1,12 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import {
-  DEFAULT_GAME_MODE,
-  GAME_MODE_IDS,
-  GAME_MODES,
-  isGameModeId,
-} from '../gameModes'
+import { DEFAULT_GAME_MODE, GAME_MODE_IDS, GAME_MODES, isGameModeId } from '../registry'
 
-describe('gameModes', () => {
+describe('game-mode registry', () => {
   it('8종 모드를 고정 순서로 노출하고 각 정의가 id·라벨·설명·규칙을 갖는다', () => {
     expect(GAME_MODE_IDS).toEqual([
       'normal',
