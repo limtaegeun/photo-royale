@@ -5,7 +5,7 @@ import { storeToRefs } from 'pinia'
 import BaseBadge from '@/shared/components/BaseBadge.vue'
 import BaseButton from '@/shared/components/BaseButton.vue'
 import BaseBottomSheet from '@/shared/components/BaseBottomSheet.vue'
-import BaseSegmented from '@/shared/components/BaseSegmented.vue'
+import BaseSwitch from '@/shared/components/BaseSwitch.vue'
 import PlayerChip from '@/shared/components/PlayerChip.vue'
 import { groupForArmband, type TeamGroup } from '../armbands'
 import { GAME_MODE_IDS, GAME_MODES, type GameModeId } from '../gameModes'
@@ -54,14 +54,10 @@ function selectGameMode(id: GameModeId) {
   isModeSheetOpen.value = false
 }
 
-/** X 모듈 토글 — 세그먼트 값('on'/'off')과 스토어 boolean을 잇는다 */
-const X_MODULE_OPTIONS = [
-  { label: '끔', value: 'off' },
-  { label: '켬', value: 'on' },
-]
-const xModuleValue = computed<string>({
-  get: () => (store.xModuleEnabled ? 'on' : 'off'),
-  set: (value) => store.setXModule(value === 'on'),
+/** X 모듈 토글 — 스위치 boolean을 스토어와 직결한다(확정 시에만 서버에 커밋) */
+const isXModuleEnabled = computed<boolean>({
+  get: () => store.xModuleEnabled,
+  set: (value) => store.setXModule(value),
 })
 
 /**
@@ -244,7 +240,7 @@ async function onConfirm() {
             그룹마다 2인 팀 1팀이 X를 겸합니다
           </p>
         </div>
-        <BaseSegmented v-model="xModuleValue" :options="X_MODULE_OPTIONS" class="shrink-0" />
+        <BaseSwitch v-model="isXModuleEnabled" label="특수 완장 X 모듈" class="shrink-0" />
       </div>
     </div>
 
@@ -351,7 +347,10 @@ async function onConfirm() {
             class="flex min-h-(--pr-size-control-md) w-full flex-wrap content-center items-center gap-1.5"
           >
             <!-- 선택 상태는 래퍼 버튼의 ring(라임)으로, 참가자 표시는 대기실과 동일한 PlayerChip으로 통일한다.
-                 팀 카드 내 칩은 team을 넘겨 그룹 보더 색으로 카드 그룹 표기를 보강한다. -->
+                 팀 카드 내 칩은 team을 넘겨 그룹 보더 색으로 카드 그룹 표기를 보강한다.
+                 래퍼는 칩(rounded-full)을 그대로 감싸므로 선택 시 배경(bg-surface)·ring이 칩 모양을 따른다.
+                 선택 ring은 ring-offset(카드색 bg-elevated)로 칩 팀 보더와 1칸 띄워 '이중 테두리(계란프라이)'를 없앤다.
+                 시각 트랙이 48px보다 낮으므로 히트 영역은 .chip-hit ::before로 48px까지 확장한다(scoped). -->
             <button
               v-for="member in team.members"
               :key="member.id"
@@ -359,10 +358,12 @@ async function onConfirm() {
               :aria-pressed="isSelected(member.id)"
               :data-member="member.id"
               :data-selected="isSelected(member.id)"
-              class="inline-flex min-h-(--pr-size-control-md) items-center rounded-full
-                     transition-shadow duration-100 ease-standard
+              class="chip-hit relative inline-flex items-center rounded-full
+                     transition duration-100 ease-standard
                      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-              :class="isSelected(member.id) ? 'ring-2 ring-accent' : ''"
+              :class="isSelected(member.id)
+                ? 'bg-surface ring-2 ring-accent ring-offset-2 ring-offset-elevated'
+                : ''"
               @click.stop="store.selectMember(member.id)"
             >
               <PlayerChip :name="member.name" :team="team.armband" :gender="member.gender" />
@@ -401,7 +402,8 @@ async function onConfirm() {
         data-drop-target="waiting"
         class="flex min-h-(--pr-size-control-md) w-full flex-wrap content-center items-center gap-1.5"
       >
-        <!-- 대기자는 미배정이므로 team=null(중립 보더). 선택 상태는 래퍼 버튼의 ring으로 표기한다. -->
+        <!-- 대기자는 미배정이므로 team=null(중립 보더). 선택 상태는 팀 칩과 동일하게 래퍼의
+             배경(bg-surface)+ring-offset ring으로 표기한다(히트 영역은 .chip-hit ::before로 48px 확장). -->
         <button
           v-for="member in waitingPool"
           :key="member.id"
@@ -409,10 +411,12 @@ async function onConfirm() {
           :aria-pressed="isSelected(member.id)"
           :data-member="member.id"
           :data-selected="isSelected(member.id)"
-          class="inline-flex min-h-(--pr-size-control-md) items-center rounded-full
-                 transition-shadow duration-100 ease-standard
+          class="chip-hit relative inline-flex items-center rounded-full
+                 transition duration-100 ease-standard
                  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-          :class="isSelected(member.id) ? 'ring-2 ring-accent' : ''"
+          :class="isSelected(member.id)
+            ? 'bg-surface ring-2 ring-accent ring-offset-2 ring-offset-elevated'
+            : ''"
           @click.stop="store.selectMember(member.id)"
         >
           <PlayerChip :name="member.name" :team="null" :gender="member.gender" />
@@ -456,6 +460,19 @@ async function onConfirm() {
 </template>
 
 <style scoped>
+/* 칩 래퍼 히트 영역 확장 — 시각 칩(높이 40px)이 최소 터치 타겟(48px)보다 낮으므로, 래퍼 자신의
+   ::before로 수직 48px 탭 영역을 덧댄다(폭은 칩 폭으로 충분). 레이아웃에 영향 없고(absolute),
+   래퍼가 버튼이라 ::before 위의 탭도 칩 선택으로 전달된다. */
+.chip-hit::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: var(--pr-size-tap-minimum);
+  transform: translateY(-50%);
+}
+
 /* 드래그 중 원위치에 남는 고스트 — 반투명으로 "여기서 출발"을 표시(색은 원 칩 색 유지, 투명도만 조절). */
 .member-ghost {
   opacity: 0.4;

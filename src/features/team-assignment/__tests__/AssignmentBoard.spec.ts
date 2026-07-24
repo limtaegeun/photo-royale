@@ -153,6 +153,22 @@ describe('AssignmentBoard', () => {
     expect(teamA.text()).toContain('X')
   })
 
+  it('특수 완장 X 컨트롤은 스위치(role=switch)이며, 토글하면 스토어 xModuleEnabled가 켜진다', async () => {
+    const { wrapper, store } = mountBoard()
+    store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+    await flushPromises()
+
+    const toggle = wrapper.get('[role="switch"]')
+    expect(toggle.attributes('aria-checked')).toBe('false')
+    expect(store.xModuleEnabled).toBe(false)
+
+    // 스위치를 켜면 v-model(computed) → store.setXModule로 boolean이 그대로 전달된다
+    await toggle.trigger('click')
+
+    expect(store.xModuleEnabled).toBe(true)
+    expect(wrapper.get('[role="switch"]').attributes('aria-checked')).toBe('true')
+  })
+
   it('칩을 선택한 뒤 팀 카드를 터치하면 해당 팀으로 이동한다', async () => {
     const { wrapper, store } = mountBoard()
     store.startDraft(mixedFour(), 1, 'normal', identityRandom)
