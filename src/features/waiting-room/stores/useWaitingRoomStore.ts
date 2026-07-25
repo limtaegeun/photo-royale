@@ -4,13 +4,16 @@ import { fetchMyGender, useAuthStore } from '@/features/auth'
 import {
   RoomNotFoundError,
   getRoom,
+  isAssignedInRound,
   joinRoom,
   setReady,
+  startGame,
   subscribeToParticipants,
   subscribeToRoom,
   type Participant,
   type RoomInfo,
 } from '../api/rooms'
+
 
 /**
  * joining: 입장 처리 중(입장 직후 로딩) / joined: 명단 구독 중 /
@@ -33,13 +36,24 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
   const allParticipants = ref<Participant[]>([])
   const isConfirmingReady = ref(false)
   const readyError = ref<string | null>(null)
+  const isStartingGame = ref(false)
+  const startGameError = ref<string | null>(null)
 
   let unsubscribeParticipants: (() => void) | null = null
   let unsubscribeRoom: (() => void) | null = null
+  /**
+   * 입장 시도 세대 번호. enter()는 getRoom·joinRoom을 await한 뒤에야 구독을 만들므로, 그 사이
+   * 화면을 떠나면(leave) 해제할 주체가 사라진 구독이 뒤늦게 생겨 영구히 남고 다른 방의 상태까지
+   * 덮어썼다. enter는 시작 시점의 세대를 들고 있다가 await 재개마다 최신 세대인지 확인하고,
+   * leave는 세대를 올려 진행 중인 enter를 무효화한다.
+   */
+  let enterGeneration = 0
 
   const myId = computed(() => authStore.user?.uid ?? null)
   const isHost = computed(() => room.value !== null && room.value.hostUid === myId.value)
   const gameStatus = computed(() => room.value?.status ?? null)
+  /** 확정된 팀편성 차수 — 0이면 아직 배정 전 */
+  const assignmentRound = computed(() => room.value?.assignmentRound ?? 0)
 
   /**
    * 화면에 보이는 명단 = 플레이어만. 호스트는 진행자라 제외한다
@@ -54,9 +68,45 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
     () => participants.value.find((p) => p.id === myId.value)?.isReady ?? false,
   )
 
-  /** 대기실 입장 — 게스트만 참가 등록(멱등)하고, 방 문서·명단 실시간 구독을 시작한다 */
+  /**
+   * 명단 표시용 — 이번 라운드 배정이 아닌 완장은 숨긴다(null). 직전 라운드에 배정됐다가 이번엔
+   * 대기자로 내려간 참가자의 team이 문서에 남아 있어도 유령 완장으로 보이지 않게 하는 단일 기준이다.
+   */
+  const roster = computed(() =>
+    participants.value.map((participant) => ({
+      ...participant,
+      team: isAssignedInRound(participant, assignmentRound.value) ? participant.team : null,
+    })),
+  )
+
+  /**
+   * 내 이번 라운드 배정 — 배정 카드(P03)가 쓰는 유일한 소스. 이번 라운드에 배정되지 않았으면
+   * (미배정·대기자·늦은 합류) null이라 카드가 뜨지 않고 기존 대기실 뷰가 유지된다.
+   * 팀원도 같은 기준으로 걸러 다른 라운드의 잔재가 팀원 목록에 섞이지 않게 한다.
+   */
+  const myAssignment = computed(() => {
+    const me = participants.value.find((participant) => participant.id === myId.value)
+    if (me === undefined || !isAssignedInRound(me, assignmentRound.value)) return null
+    return {
+      armband: me.team!,
+      isXTeam: me.isXTeam,
+      members: participants.value
+        .filter(
+          (participant) =>
+            isAssignedInRound(participant, assignmentRound.value) && participant.team === me.team,
+        )
+        .map((participant) => ({ id: participant.id, name: participant.name })),
+    }
+  })
+
+  /**
+   * 대기실 입장 — 게스트만 참가 등록(멱등)하고, 방 문서·명단 실시간 구독을 시작한다.
+   * 진행 중에 화면을 떠나면(leave) 세대가 올라가므로 이후 단계를 모두 건너뛴다 — 해제할
+   * 주체 없는 구독을 만들지 않고, 이미 비워진 상태를 되살리지도 않는다.
+   */
   async function enter(code: string) {
     leave()
+    const generation = ++enterGeneration
     roomCode.value = code
     phase.value = 'joining'
 
@@ -69,6 +119,7 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
 
     try {
       const roomInfo = await getRoom(code)
+      if (generation !== enterGeneration) return
       if (!roomInfo) {
         phase.value = 'not-found'
         return
@@ -79,9 +130,12 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
       if (roomInfo.hostUid !== user.uid) {
         // 성별은 명단 표기용 보조 정보 — 프로필 조회가 실패해도 입장을 막지 않는다
         const gender = await fetchMyGender(user.uid).catch(() => null)
+        if (generation !== enterGeneration) return
         await joinRoom(code, { uid: user.uid, nickname: user.displayName ?? '', gender })
+        if (generation !== enterGeneration) return
       }
     } catch (error) {
+      if (generation !== enterGeneration) return
       // getRoom과 joinRoom 사이에 방이 사라진 레이스도 잘못된 코드와 같은 안내로 수렴시킨다
       phase.value = error instanceof RoomNotFoundError ? 'not-found' : 'error'
       return
@@ -98,8 +152,12 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
     phase.value = 'joined'
   }
 
-  /** 화면 이탈 시 구독 해제 — 참가자 문서 삭제(퇴장 처리)는 이후 단계에서 다룬다 */
+  /**
+   * 화면 이탈 시 구독 해제 — 참가자 문서 삭제(퇴장 처리)는 이후 단계에서 다룬다.
+   * 세대를 올려 진행 중인 enter()도 함께 무효화한다(뒤늦은 구독 생성 방지).
+   */
   function leave() {
+    enterGeneration++
     unsubscribeParticipants?.()
     unsubscribeRoom?.()
     unsubscribeParticipants = null
@@ -109,6 +167,7 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
     allParticipants.value = []
     phase.value = 'idle'
     readyError.value = null
+    startGameError.value = null
   }
 
   /** 안전 수칙 동의 + 내 준비 완료 확정(게스트 전용) — 스냅샷 구독이 상태를 갱신한다 */
@@ -133,6 +192,28 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
     }
   }
 
+  /**
+   * 게임 시작(호스트 전용) — 방 status를 playing으로 전이한다. 화면 전환은 각 참가자의
+   * 방 스냅샷 구독이 담당하므로(호스트 자신도 포함) 여기서 라우팅하지 않는다.
+   * 배정이 한 번도 확정되지 않았으면(차수 0) 완장 없이 게임이 시작되므로 막는다.
+   */
+  async function startPlaying() {
+    if (!roomCode.value || !isHost.value || isStartingGame.value) return
+    if (assignmentRound.value === 0) {
+      startGameError.value = '팀 배정을 먼저 확정해 주세요.'
+      return
+    }
+    isStartingGame.value = true
+    startGameError.value = null
+    try {
+      await startGame(roomCode.value)
+    } catch {
+      startGameError.value = '게임을 시작하지 못했어요. 다시 시도해 주세요.'
+    } finally {
+      isStartingGame.value = false
+    }
+  }
+
   return {
     roomCode,
     phase,
@@ -141,13 +222,19 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
     myId,
     isHost,
     gameStatus,
+    assignmentRound,
+    roster,
+    myAssignment,
     participantCount,
     readyCount,
     isReadyConfirmed,
     isConfirmingReady,
     readyError,
+    isStartingGame,
+    startGameError,
     enter,
     leave,
     confirmReady,
+    startPlaying,
   }
 })

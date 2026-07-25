@@ -38,6 +38,9 @@ export async function confirmAssignment(
     for (const member of team.members) {
       batch.update(doc(db, 'rooms', code, 'participants', member.id), {
         team: team.armband,
+        // 이 완장이 몇 차 편성인지 함께 남긴다 — 이번 라운드에 대기자로 내려간 참가자는
+        // 이 배치에 없어 team이 직전 값으로 남으므로, 차수 마커로 유효 배정만 걸러낸다
+        assignedRound: nextRound,
         isXTeam: team.isXTeam,
         sameGenderStreak: member.nextStreak,
         previousPartnerIds: member.nextPartnerIds,

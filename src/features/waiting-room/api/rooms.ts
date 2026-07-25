@@ -35,6 +35,16 @@ export interface Participant {
   name: string
   /** 배정된 완장 알파벳(그룹 색은 완장에서 파생). 입장 시점엔 미배정(null) */
   team: string | null
+  /**
+   * 이 완장이 확정된 팀편성 차수. 0이면 한 번도 배정된 적 없다.
+   *
+   * team만으로는 "이번 라운드에 배정됐는가"를 알 수 없다 — 확정 배치는 멤버가 있는 팀만
+   * 쓰므로, 직전 라운드에 배정됐다가 이번 라운드에 미배정 대기자로 내려간 참가자의 team은
+   * 지워지지 않고 그대로 남는다(그리고 rules가 team을 null로 되돌리는 것을 허용하지 않는다).
+   * 그래서 "확정된 차수"를 양수 마커로 함께 저장하고, 화면은 room.assignmentRound와
+   * 같은지로 이번 라운드 배정 여부를 판정한다(isAssignedInRound).
+   */
+  assignedRound: number
   /** 가입 시 확정된 성별 — 명단 표기용. 프로필 조회 실패 등으로 없을 수 있다(null) */
   gender: Gender | null
   /** X 모듈 — 이 팀이 특수 완장 X를 겸하는지(기존 팀 소속 유지 겸직) */
@@ -44,6 +54,21 @@ export interface Participant {
   /** 이번 세션 누적 짝꿍 이력 — 재짝꿍 회피용, 확정 시에만 갱신 */
   previousPartnerIds: string[]
   isReady: boolean
+}
+
+/**
+ * 이번 라운드(room.assignmentRound)에 실제로 배정된 참가자인지 판정한다 — 완장 표시·배정 카드
+ * 노출의 단일 기준. team이 남아 있어도 확정 차수가 다르면 이번 라운드엔 미배정이다: 확정 배치는
+ * 멤버가 있는 팀만 쓰므로, 직전 라운드에 배정됐다가 이번에 미배정 대기자로 내려간 참가자의 team은
+ * 문서에 그대로 남는다(rules가 team을 null로 되돌리는 것도 허용하지 않는다). 배정 전(0차)에는
+ * 어떤 참가자도 배정 상태가 아니다.
+ */
+export function isAssignedInRound(participant: Participant, assignmentRound: number): boolean {
+  return (
+    assignmentRound > 0 &&
+    participant.team !== null &&
+    participant.assignedRound === assignmentRound
+  )
 }
 
 /** 존재하지 않는 초대 코드로 입장을 시도한 경우. 호출부가 안내 문구로 매핑한다. */
@@ -256,6 +281,7 @@ export function subscribeToParticipants(
           id: participantDoc.id,
           name: data.nickname as string,
           team: (data.team as string | undefined) ?? null,
+          assignedRound: (data.assignedRound as number | undefined) ?? 0,
           gender: (data.gender as Gender | undefined) ?? null,
           isXTeam: (data.isXTeam as boolean | undefined) ?? false,
           sameGenderStreak: (data.sameGenderStreak as number | undefined) ?? 0,
