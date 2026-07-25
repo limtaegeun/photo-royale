@@ -26,7 +26,7 @@ export interface ToastOptions {
 const toasts = ref<ToastItem[]>([])
 let seq = 0
 
-const DEFAULT_DURATION = 4000
+const DEFAULT_DURATION = 3000
 
 export function useToast() {
   function toast(options: ToastOptions): number {

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onBeforeUnmount } from 'vue'
 import { ToastClose, ToastDescription, ToastRoot, ToastTitle } from 'reka-ui'
 import type { ToastItem } from '@/shared/composables/useToast'
 
@@ -15,6 +16,7 @@ interface Props {
 
 const props = defineProps<Props>()
 const emit = defineEmits<{ close: [] }>()
+let closeTimer: ReturnType<typeof setTimeout> | undefined
 
 /** 톤별 아이콘 색 — neutral은 아이콘 없이 텍스트만 표시 */
 const TONE_ICON_CLASS = {
@@ -36,17 +38,33 @@ const TONE_ICON_PATH = {
 } as const
 
 function onOpenChange(value: boolean) {
-  if (!value) emit('close')
+  if (!value) closeTimer = setTimeout(finishClose, 250)
 }
+
+function finishClose() {
+  if (closeTimer) clearTimeout(closeTimer)
+  closeTimer = undefined
+  emit('close')
+}
+
+function onAnimationEnd(event: AnimationEvent) {
+  const element = event.currentTarget as HTMLElement
+  if (event.target === element && element.dataset.state === 'closed') finishClose()
+}
+
+onBeforeUnmount(() => {
+  if (closeTimer) clearTimeout(closeTimer)
+})
 </script>
 
 <template>
   <ToastRoot
     :duration="props.toast.duration"
     :data-tone="props.toast.tone"
-    class="toast pointer-events-auto flex items-start gap-3 rounded-xl border border-stroke
+    class="base-toast pointer-events-auto flex items-start gap-3 rounded-xl border border-stroke
            bg-surface-strong p-4 shadow-lg"
     @update:open="onOpenChange"
+    @animationend="onAnimationEnd"
   >
     <svg
       v-if="props.toast.tone !== 'neutral'"
@@ -80,41 +98,70 @@ function onOpenChange(value: boolean) {
   </ToastRoot>
 </template>
 
-<style scoped>
+<style>
 /* 진입/이탈·스와이프 애니메이션 — 값은 토큰 참조 */
-.toast[data-state='open'] {
+.base-toast[data-state='open'] {
   animation: toast-in var(--pr-duration-slow) var(--pr-easing-decelerate);
 }
-.toast[data-state='closed'] {
-  animation: toast-out var(--pr-duration-fast) var(--pr-easing-standard);
+.base-toast[data-state='closed'] {
+  animation: toast-out var(--pr-duration-base) var(--pr-easing-standard);
 }
-.toast[data-swipe='move'] {
-  transform: translateX(var(--reka-toast-swipe-move-x));
+.base-toast[data-swipe='move'] {
+  transform: translateY(var(--reka-toast-swipe-move-y));
 }
-.toast[data-swipe='cancel'] {
-  transform: translateX(0);
-  transition: transform var(--pr-duration-fast) var(--pr-easing-standard);
+.base-toast[data-swipe='cancel'] {
+  transform: translateY(0);
+  transition: transform var(--pr-duration-base) var(--pr-easing-decelerate);
 }
-.toast[data-swipe='end'] {
-  animation: toast-out var(--pr-duration-fast) var(--pr-easing-standard);
+.base-toast[data-swipe='end'] {
+  animation: toast-swipe-out var(--pr-duration-base) var(--pr-easing-standard);
 }
 
 @keyframes toast-in {
-  from {
+  0% {
     opacity: 0;
-    transform: translateY(1rem) scale(0.97);
+    transform: translateY(-0.75rem) scale(0.98);
+  }
+  65% {
+    opacity: 1;
+    transform: translateY(0) scale(1.01);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes toast-swipe-out {
+  to {
+    opacity: 0;
+    transform: translateY(var(--reka-toast-swipe-end-y));
   }
 }
 @keyframes toast-out {
   to {
     opacity: 0;
-    transform: scale(0.98);
+    transform: translateY(-0.5rem) scale(0.98);
+  }
+}
+
+@keyframes toast-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes toast-fade-out {
+  to {
+    opacity: 0;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .toast {
-    animation: none;
+  .base-toast[data-state='open'] {
+    animation: toast-fade-in var(--pr-duration-base) var(--pr-easing-standard);
+  }
+  .base-toast[data-state='closed'],
+  .base-toast[data-swipe='end'] {
+    animation: toast-fade-out var(--pr-duration-base) var(--pr-easing-standard);
   }
 }
 </style>

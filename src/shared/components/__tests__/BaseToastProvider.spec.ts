@@ -35,7 +35,18 @@ describe('BaseToastProvider', () => {
 
     const viewport = wrapper.find('ol')
     expect(viewport.classes()).toContain('pointer-events-none')
-    expect(wrapper.get('[data-tone]').classes()).toContain('pointer-events-auto')
+    const toastElement = wrapper.get('[data-tone]')
+    expect(toastElement.classes()).toContain('pointer-events-auto')
+    expect(toastElement.classes()).toContain('base-toast')
+  })
+
+  it('하단 조작을 가리지 않도록 상단 안전영역에 렌더한다', () => {
+    const wrapper = mount(BaseToastProvider)
+    const viewport = wrapper.get('ol')
+
+    expect(viewport.classes()).toContain('top-0')
+    expect(viewport.classes()).toContain('pt-[calc(var(--pr-inset-top-safe)+1rem)]')
+    expect(viewport.classes()).not.toContain('bottom-0')
   })
 
   it('여러 토스트를 동시에 렌더한다', async () => {
