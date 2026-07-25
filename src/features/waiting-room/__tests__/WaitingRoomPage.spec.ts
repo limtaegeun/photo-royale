@@ -288,7 +288,7 @@ describe('WaitingRoomPage', () => {
     expect(wrapper.text()).not.toContain('오리')
   })
 
-  it('방 status가 playing이 되면 카메라 화면으로 replace 이동한다', async () => {
+  it('게스트: 방 status가 playing이 되면 카메라 화면으로 replace 이동한다', async () => {
     const deliver = captureSnapshotCallbacks()
     mountPage()
     await flushPromises()
@@ -297,6 +297,22 @@ describe('WaitingRoomPage', () => {
     await flushPromises()
 
     expect(replaceMock).toHaveBeenCalledWith({ name: 'camera' })
+  })
+
+  it('호스트(진행자): playing 전이 시 카메라가 아니라 라운드 운영 화면으로 replace 이동한다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    getRoomMock.mockResolvedValue(MY_ROOM)
+    mountPage()
+    await flushPromises()
+
+    deliver.room({ hostUid: 'me', status: 'playing', assignmentRound: 1, gameMode: 'normal' })
+    await flushPromises()
+
+    expect(replaceMock).toHaveBeenCalledWith({
+      name: 'round-ops',
+      params: { roomCode: 'AB2C' },
+    })
+    expect(replaceMock).not.toHaveBeenCalledWith({ name: 'camera' })
   })
 
   it('화면을 떠나면 방·명단 구독을 해제한다', async () => {

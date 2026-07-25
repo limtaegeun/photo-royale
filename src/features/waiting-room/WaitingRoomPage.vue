@@ -151,9 +151,14 @@ onUnmounted(() => {
   clearHeader()
 })
 
-// 호스트가 시작하면 status 스냅샷으로 전원이 동시에 게임(카메라 콕핏)으로 넘어간다
+// 호스트가 시작하면 status 스냅샷으로 전원이 동시에 게임 화면으로 넘어간다. 다만 호스트는
+// 플레이어가 아니라 진행자이므로 카메라 콕핏이 아니라 라운드 운영 화면으로 간다 —
+// 진행자에게 카메라 권한 프롬프트가 뜨는 것 자체가 잘못된 진입이다.
 watch(gameStatus, (status) => {
-  if (status === 'playing') {
+  if (status !== 'playing') return
+  if (isHost.value) {
+    router.replace({ name: 'round-ops', params: { roomCode: roomCode.value } })
+  } else {
     router.replace({ name: 'camera' })
   }
 })
