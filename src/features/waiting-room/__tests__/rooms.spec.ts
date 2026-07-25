@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('@/shared/api/firebase', () => ({ db: {} }))
@@ -42,6 +44,7 @@ vi.mock('firebase/firestore', () => ({
 
 import {
   ROOM_CODE_LENGTH,
+  ROOM_CODE_PATTERN,
   RoomNotFoundError,
   createRoom,
   fetchMyRooms,
@@ -82,7 +85,8 @@ describe('createRoom', () => {
     const code = await createRoom('host-1')
 
     expect(code).toHaveLength(ROOM_CODE_LENGTH)
-    expect(code).toMatch(/^[A-Z2-9]+$/)
+    // 생성 코드가 rules와 공유하는 패턴을 실제로 통과하는지 검증(느슨한 근사 정규식 금지)
+    expect(code).toMatch(new RegExp(ROOM_CODE_PATTERN))
     expect(transactionSetMock).toHaveBeenCalledExactlyOnceWith(
       { path: `rooms/${code}` },
       { hostUid: 'host-1', status: 'waiting', createdAt: 'server-timestamp' },
@@ -377,5 +381,24 @@ describe('setReady', () => {
       { path: 'rooms/AB2C/participants/u1' },
       { isReady: true },
     )
+  })
+})
+
+/**
+ * firestore.rules의 roomCode 정규식은 클라 ROOM_CODE_PATTERN의 이중 정의다(rules는 클라
+ * 코드를 import 불가). 한쪽만 바꾸면 방 생성이 전면 거부되므로, rules 파일을 직접 읽어
+ * 패턴 문자열이 동일한지 여기서 잡는다. 파생값(길이)의 정합도 함께 고정한다.
+ */
+describe('firestore.rules 방 코드 규칙 동기화 가드', () => {
+  it('rules의 roomCode 정규식이 ROOM_CODE_PATTERN과 문자열까지 동일하다', () => {
+    const rules = readFileSync(resolve(process.cwd(), 'firestore.rules'), 'utf8')
+
+    const match = rules.match(/roomCode\.matches\('([^']+)'\)/)
+    expect(match).not.toBeNull()
+    expect(match![1]).toBe(ROOM_CODE_PATTERN)
+  })
+
+  it('패턴에서 파생한 ROOM_CODE_LENGTH가 4다(파생 파싱 회귀 가드)', () => {
+    expect(ROOM_CODE_LENGTH).toBe(4)
   })
 })

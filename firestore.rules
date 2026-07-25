@@ -72,7 +72,8 @@ service cloud.firestore {
         && resource.data.hostUid == request.auth.uid;
 
       // 존재하지 않는 코드에만 create가 성립하므로(createRoom 트랜잭션의 존재 검사와 함께)
-      // 코드 유니크가 서버에서 강제된다.
+      // 코드 유니크가 서버에서 강제된다. 정규식은 rooms.ts의 ROOM_CODE_ALPHABET·LENGTH와
+      // 같은 규칙이어야 한다(rooms.spec이 대조 검증) — 변경 시 양쪽을 함께 갱신·배포할 것.
       allow create: if request.auth != null
         && roomCode.matches('^[A-HJKMNP-Z2-9]{4}$')
         && request.resource.data.keys().hasOnly(['hostUid', 'status', 'createdAt'])
@@ -91,6 +92,8 @@ service cloud.firestore {
           // 2) 배정 확정 — 팀편성 차수(+1)와 게임 모드를 함께 커밋한다. 아직 대기 중일 때만 허용한다.
           //    모드는 확정과 함께만 커밋된다(드래프트는 로컬) — assignmentRound +1 제약을 유지하므로
           //    모드만 단독으로 바꾸는 요청은(차수가 그대로라) 거부된다.
+          //    아래 모드 리스트는 src/features/game-mode/registry.ts의 GAME_MODE_IDS와 일치해야
+          //    한다(registry.spec이 대조 검증) — 새 모드 추가 시 여기도 갱신하고 rules를 배포할 것.
           || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['assignmentRound', 'gameMode'])
             && resource.data.status == 'waiting'
             && request.resource.data.assignmentRound is int

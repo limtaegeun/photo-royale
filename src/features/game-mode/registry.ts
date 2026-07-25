@@ -1,6 +1,9 @@
 /**
  * 게임 모드 레지스트리 — modes/ 아래 모드 1개 = 파일 1개 정의를 한 곳에 조립한다.
- * 새 모드 추가 시: types.ts의 GameModeId 유니온 → modes/<id>.ts 정의 → 여기 IDS·레코드 순.
+ * 새 모드 추가 시: types.ts의 GameModeId 유니온 → modes/<id>.ts 정의 → 여기 IDS·레코드
+ * → **firestore.rules의 gameMode 허용 리스트(+배포)** 순. rules는 클라 코드를 import할 수
+ * 없어 리스트가 이중화되어 있다 — 불일치는 registry.spec의 rules 대조 테스트가 잡는다
+ * (불일치 상태로 배포되면 새 모드 확정이 전부 permission-denied로 거부된다).
  */
 import type { GameModeDefinition, GameModeId } from './types'
 import { normalMode } from './modes/normal'

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, it, expect } from 'vitest'
 import { DEFAULT_GAME_MODE, GAME_MODE_IDS, GAME_MODES, isGameModeId } from '../registry'
 
@@ -64,5 +66,19 @@ describe('game-mode registry', () => {
     for (const id of otherIds) {
       expect(GAME_MODES[id].available).toBe(false)
     }
+  })
+
+  /**
+   * firestore.rules의 gameMode 허용 리스트는 클라 코드를 import할 수 없어 이중화되어 있다.
+   * 불일치 상태로 배포되면 새 모드 확정이 전부 permission-denied로 거부되므로,
+   * 레지스트리를 단일 진실원으로 삼아 rules 쪽 리스트가 항상 일치하는지 여기서 잡는다.
+   */
+  it('firestore.rules의 gameMode 허용 리스트가 GAME_MODE_IDS와 일치한다(이중 소스 동기화 가드)', () => {
+    const rules = readFileSync(resolve(process.cwd(), 'firestore.rules'), 'utf8')
+    const listMatch = rules.match(/gameMode in \[([^\]]+)\]/)
+    expect(listMatch).not.toBeNull()
+
+    const rulesModeIds = [...listMatch![1]!.matchAll(/'([^']+)'/g)].map((m) => m[1])
+    expect(rulesModeIds).toEqual([...GAME_MODE_IDS])
   })
 })

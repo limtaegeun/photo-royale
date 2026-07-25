@@ -54,9 +54,34 @@ export class RoomNotFoundError extends Error {
   }
 }
 
-/** 초대 코드 문자 집합 — 혼동하기 쉬운 문자(0/O, 1/I/L)를 뺀 대문자+숫자 */
-const ROOM_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
-export const ROOM_CODE_LENGTH = 4
+/**
+ * 초대 코드 형식의 단일 소스 — firestore.rules의 roomCode.matches 패턴과 **문자열까지 동일**해야
+ * 한다(rules는 클라 코드를 import할 수 없어 이중 정의이고, rooms.spec이 문자열 대조로 검증한다.
+ * 변경 시 rules도 함께 갱신·배포할 것). 문자 집합은 혼동하기 쉬운 문자(0/O, 1/I/L)를 뺀
+ * 대문자+숫자이고, 생성용 문자 목록·코드 길이는 아래에서 이 패턴으로부터 파생한다.
+ */
+export const ROOM_CODE_PATTERN = '^[A-HJKMNP-Z2-9]{4}$'
+
+/** 패턴의 `[...]` 문자 클래스를 개별 문자로 전개한다 — 코드 생성이 인덱스로 뽑을 문자 목록 */
+function expandPatternAlphabet(pattern: string): string {
+  const charClass = pattern.match(/\[([^\]]+)\]/)![1]!
+  const chars: string[] = []
+  for (let i = 0; i < charClass.length; i++) {
+    if (charClass[i + 1] === '-' && i + 2 < charClass.length) {
+      for (let code = charClass.charCodeAt(i); code <= charClass.charCodeAt(i + 2); code++) {
+        chars.push(String.fromCharCode(code))
+      }
+      i += 2
+    } else {
+      chars.push(charClass[i]!)
+    }
+  }
+  return chars.join('')
+}
+
+/** 생성용 문자 집합(A~H,J,K,M,N,P~Z,2~9 = 31자) — ROOM_CODE_PATTERN에서 파생 */
+const ROOM_CODE_ALPHABET = expandPatternAlphabet(ROOM_CODE_PATTERN)
+export const ROOM_CODE_LENGTH = Number(ROOM_CODE_PATTERN.match(/\{(\d+)\}/)![1])
 /** 코드 충돌 시 새 코드로 재시도하는 상한 — 31^4(≈92만) 공간이라 사실상 도달하지 않는다 */
 const CREATE_ROOM_MAX_ATTEMPTS = 5
 
