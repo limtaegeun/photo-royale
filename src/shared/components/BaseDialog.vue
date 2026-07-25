@@ -54,14 +54,20 @@ const open = defineModel<boolean>('open', { default: false })
           {{ title }}
         </DialogTitle>
 
+        <!-- 여러 줄로 접히는 문장이라 행간을 relaxed로 넓힌다(본문 기본 1.45 → 1.5).
+             제목과의 간격도 8px는 붙어 보여 12px로 띄운다.
+             모달 설명은 두세 줄짜리 짧은 문장이라 text-pretty(끝줄만 보정)보다 balance가 낫다 —
+             줄 길이를 고르게 맞추면 쉼표·어절 경계에서 끊겨 한 호흡으로 읽힌다 -->
         <DialogDescription
           v-if="description"
-          class="mt-2 text-body text-pretty break-keep text-content-secondary"
+          class="mt-3 text-body leading-(--pr-line-height-relaxed) text-balance break-keep
+                 text-content-secondary"
         >
           {{ description }}
         </DialogDescription>
 
-        <div class="mt-4">
+        <!-- 읽는 영역과 행동 영역을 확실히 갈라 놓는다 — 붙어 있으면 문장을 다 읽기 전에 누른다 -->
+        <div class="mt-6">
           <slot />
         </div>
 
