@@ -128,6 +128,17 @@ service cloud.firestore {
           || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['round'])
             && resource.data.status == 'playing'
             && isValidRound(request.resource.data.round))
+          // 4) 게임 종료 — playing → waiting으로 되돌리며 진행 중인 라운드를 지운다.
+          //    1번 갈래가 status를 단방향으로만 열어 두어 오시작을 콘솔로만 되돌릴 수 있었다.
+          //    되돌리기는 status와 round를 **한 번에** 바꿔야 하므로(둘로 나누면 라운드만 남거나
+          //    대기 상태에 라운드가 붙은 중간 상태가 보인다) 두 키를 함께 허용하는 갈래를 둔다.
+          //    round가 없던(시작 전) 방은 affectedKeys가 ['status']뿐이라 hasOnly가 그대로 통과한다.
+          //    배정 이력(assignmentRound·완장)은 건드리지 않는다 — 대기실로 돌아가 재배정하면
+          //    기존 라운드 루프가 그대로 이어진다.
+          || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'round'])
+            && resource.data.status == 'playing'
+            && request.resource.data.status == 'waiting'
+            && !('round' in request.resource.data))
         );
 
       // 방 정리(삭제) 플로우 도입 전까지 불변이다.

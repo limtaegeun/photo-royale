@@ -147,6 +147,13 @@ describe('firestore.rules 라운드 규칙 동기화 가드', () => {
     expect(rules).toMatch(/hasOnly\(\['round'\]\)\s*\n\s*&& resource\.data\.status == 'playing'/)
   })
 
+  it('게임 종료 갈래가 status와 round를 함께 되돌리도록 열려 있다', () => {
+    // 두 키를 한 번에 바꾸는 갈래가 없으면 종료가 중간 상태를 거치거나 403이 된다
+    expect(rules).toContain("affectedKeys().hasOnly(['status', 'round'])")
+    expect(rules).toContain("request.resource.data.status == 'waiting'")
+    expect(rules).toContain("!('round' in request.resource.data)")
+  })
+
   it('rules가 라운드 상태 값과 pausedRemainingMs 부재 조건을 강제한다', () => {
     expect(rules).toContain("round.status in ['running', 'paused']")
     expect(rules).toContain("!('pausedRemainingMs' in round)")
