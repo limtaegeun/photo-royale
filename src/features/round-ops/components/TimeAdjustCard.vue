@@ -10,11 +10,11 @@ import BaseCard from '@/shared/components/BaseCard.vue'
 interface Props {
   /** 아직 반영하지 않은 누적 조정값(분). 0이면 반영할 것이 없다 */
   pendingMinutes: number
-  /** 다른 라운드 쓰기가 진행 중이면 중복 요청을 막는다 */
-  disabled?: boolean
+  /** 반영 요청이 서버 응답을 기다리는 중 — 눌린 버튼에만 진행 표시를 준다 */
+  applying?: boolean
 }
 
-const props = withDefaults(defineProps<Props>(), { disabled: false })
+const props = withDefaults(defineProps<Props>(), { applying: false })
 
 const emit = defineEmits<{
   /** 스테퍼 클릭 — 대기값에 더할 분 */
@@ -37,16 +37,15 @@ const caption = computed(() =>
   <BaseCard>
     <h2 class="text-label text-content">시간 조정</h2>
     <div class="mt-4 grid grid-cols-3 gap-3">
-      <BaseButton variant="ghost" size="md" :disabled="disabled" @click="emit('adjust', -1)">
-        -1분
-      </BaseButton>
-      <BaseButton variant="ghost" size="md" :disabled="disabled" @click="emit('adjust', 1)">
-        +1분
-      </BaseButton>
+      <!-- 스테퍼는 로컬 대기값만 쌓는다(서버 쓰기 없음) — 다른 요청 때문에 잠글 이유가 없고,
+           잠그면 왕복 시간만큼 회색으로 깜빡인다 -->
+      <BaseButton variant="ghost" size="md" @click="emit('adjust', -1)">-1분</BaseButton>
+      <BaseButton variant="ghost" size="md" @click="emit('adjust', 1)">+1분</BaseButton>
       <BaseButton
         variant="primary"
         size="md"
-        :disabled="!hasPending || disabled"
+        :disabled="!hasPending"
+        :loading="applying"
         @click="emit('apply')"
       >
         반영

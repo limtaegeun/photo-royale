@@ -321,6 +321,38 @@ describe('RoundOpsPage', () => {
       expect(wrapper.text()).not.toContain('대기 변경값')
     })
 
+    /**
+     * 전역 pending 하나를 모든 버튼의 disabled에 물리면, 쓰기 왕복(로컬에서도 ~50ms)마다
+     * 관계없는 컨트롤이 회색으로 깜빡인다. 진행 표시는 눌린 버튼에만 준다.
+     */
+    it('한 컨트롤이 쓰는 동안 다른 컨트롤이 잠기지 않는다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      deliver.room(hostRoom({ round: running() }))
+      await flushPromises()
+
+      // 응답이 오지 않는 상태로 붙잡아 '쓰는 중' 구간을 관찰한다
+      let settle: () => void = () => {}
+      pauseRoundMock.mockReturnValueOnce(
+        new Promise<void>((resolve) => {
+          settle = resolve
+        }),
+      )
+      await findButton(wrapper, '일시정지')!.trigger('click')
+      await flushPromises()
+
+      // 눌린 버튼만 진행 표시를 갖는다
+      expect(findButton(wrapper, '일시정지')!.attributes('aria-busy')).toBe('true')
+      // 서버에 쓰지도 않는 스테퍼와, 다이얼로그만 여는 종료 버튼은 그대로 눌린다
+      expect(findButton(wrapper, '+1분')!.attributes('disabled')).toBeUndefined()
+      expect(findButton(wrapper, '-1분')!.attributes('disabled')).toBeUndefined()
+      expect(findButton(wrapper, '게임 종료')!.attributes('disabled')).toBeUndefined()
+
+      settle()
+      await flushPromises()
+      expect(findButton(wrapper, '일시정지')!.attributes('aria-busy')).toBeUndefined()
+    })
+
     it('쓰기에 실패하면 에러 토스트로 알린다', async () => {
       const deliver = captureSnapshotCallbacks()
       const wrapper = mountPage()

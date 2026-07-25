@@ -40,7 +40,7 @@ const {
   assignedTeamCount,
   latestNotice,
   pendingAdjustMinutes,
-  isActionPending,
+  pendingAction,
   actionError,
   isSendingNotice,
 } = storeToRefs(store)
@@ -175,7 +175,8 @@ onUnmounted(() => {
             <BaseButton
               variant="danger"
               size="lg"
-              :disabled="displayState !== 'running' || isActionPending"
+              :disabled="displayState !== 'running'"
+              :loading="pendingAction === 'pause'"
               @click="store.pause()"
             >
               일시정지
@@ -183,7 +184,8 @@ onUnmounted(() => {
             <BaseButton
               variant="accent"
               size="lg"
-              :disabled="displayState !== 'paused' || isActionPending"
+              :disabled="displayState !== 'paused'"
+              :loading="pendingAction === 'resume'"
               @click="store.resume()"
             >
               재개
@@ -194,7 +196,7 @@ onUnmounted(() => {
             variant="primary"
             size="lg"
             class="w-full"
-            :loading="isActionPending"
+            :loading="pendingAction === 'start'"
             @click="store.start()"
           >
             라운드 시작
@@ -204,7 +206,7 @@ onUnmounted(() => {
           <TimeAdjustCard
             v-if="canControlTimer"
             :pending-minutes="pendingAdjustMinutes"
-            :disabled="isActionPending"
+            :applying="pendingAction === 'adjust'"
             @adjust="store.adjustBy($event)"
             @apply="store.applyAdjust()"
           />
@@ -221,7 +223,6 @@ onUnmounted(() => {
             variant="ghost"
             size="md"
             class="w-full text-danger"
-            :disabled="isActionPending"
             @click="isEndGameDialogOpen = true"
           >
             게임 종료
@@ -288,30 +289,37 @@ onUnmounted(() => {
       @send="sendNotice"
     />
 
-    <!-- 되돌릴 수 없는 액션이라 무엇이 사라지는지 문장으로 밝힌다 -->
+    <!-- 되돌릴 수 없는 액션이라 무엇이 사라지는지 밝히되, 두 문장을 한 덩어리로 두면
+         읽히지 않는다. 결과(중요)는 설명으로, 안심 문구(보조)는 캡션으로 위계를 나눈다 -->
     <BaseDialog
       v-model:open="isEndGameDialogOpen"
       title="게임을 종료할까요?"
-      description="참가자 전원이 대기실로 돌아가고 진행 중인 라운드는 사라져요. 팀 배정은 그대로 남아 다음 라운드를 이어서 준비할 수 있어요."
+      description="참가자 전원이 대기실로 돌아가고, 진행 중인 라운드는 사라져요."
     >
-      <div class="flex flex-col gap-3">
-        <BaseButton
-          variant="danger"
-          size="lg"
-          class="w-full"
-          :loading="isActionPending"
-          @click="endGame"
-        >
-          게임 종료
-        </BaseButton>
-        <BaseButton
-          variant="ghost"
-          size="md"
-          class="w-full"
-          @click="isEndGameDialogOpen = false"
-        >
-          계속 진행
-        </BaseButton>
+      <div class="flex flex-col gap-5">
+        <p class="text-caption leading-(--pr-line-height-relaxed) break-keep text-content-tertiary">
+          팀 배정은 그대로 남아 다음 라운드를 이어서 준비할 수 있어요.
+        </p>
+
+        <div class="flex flex-col gap-3">
+          <BaseButton
+            variant="danger"
+            size="lg"
+            class="w-full"
+            :loading="pendingAction === 'end'"
+            @click="endGame"
+          >
+            게임 종료
+          </BaseButton>
+          <BaseButton
+            variant="ghost"
+            size="md"
+            class="w-full"
+            @click="isEndGameDialogOpen = false"
+          >
+            계속 진행
+          </BaseButton>
+        </div>
       </div>
     </BaseDialog>
   </section>

@@ -30,6 +30,13 @@ import { computeRemainingMs } from '../composables/useRoundTimer'
  */
 export type RoundOpsPhase = 'idle' | 'loading' | 'ready' | 'not-found' | 'error'
 
+/**
+ * 지금 서버 응답을 기다리는 액션. "쓰기 중"을 boolean 하나로 두면 화면이 그것을 모든 버튼의
+ * disabled에 물리게 되고, 왕복 한 번(로컬에서도 ~50ms)마다 관계없는 컨트롤까지 회색으로
+ * 깜빡인다. 어떤 액션인지 남겨 두면 눌린 버튼에만 진행 표시를 줄 수 있다.
+ */
+export type RoundOpsAction = 'start' | 'pause' | 'resume' | 'adjust' | 'end'
+
 /** 액션 실패는 원인을 나눠 봐야 진행자가 할 일이 달라지지 않는다 — 한 문구로 모은다 */
 const ACTION_ERROR_MESSAGE = '요청을 처리하지 못했어요. 다시 시도해 주세요.'
 
@@ -50,7 +57,9 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
   const latestNotice = ref<Notice | null>(null)
   /** −1분/+1분으로 쌓는 로컬 대기값 — '반영'을 눌러야 서버(참가자 전원)에 커밋된다 */
   const pendingAdjustMinutes = ref(0)
-  const isActionPending = ref(false)
+  const pendingAction = ref<RoundOpsAction | null>(null)
+  /** 쓰기 가드용 파생값 — 화면은 이 값 대신 pendingAction으로 "무엇이 실행 중인지"를 본다 */
+  const isActionPending = computed(() => pendingAction.value !== null)
   const actionError = ref<string | null>(null)
   const isSendingNotice = ref(false)
 
@@ -115,7 +124,7 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     participants.value = []
     latestNotice.value = null
     pendingAdjustMinutes.value = 0
-    isActionPending.value = false
+    pendingAction.value = null
     actionError.value = null
     phase.value = 'idle'
   }
@@ -131,38 +140,38 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
   }
 
   /** 실패해도 화면은 마지막 스냅샷을 유지하고 안내만 세운다(오프라인 큐는 SDK가 처리한다) */
-  async function runAction(action: () => Promise<void>) {
-    isActionPending.value = true
+  async function runAction(action: RoundOpsAction, write: () => Promise<void>) {
+    pendingAction.value = action
     actionError.value = null
     try {
-      await action()
+      await write()
       return true
     } catch {
       actionError.value = ACTION_ERROR_MESSAGE
       return false
     } finally {
-      isActionPending.value = false
+      pendingAction.value = null
     }
   }
 
   /** 라운드 시작·재시작 — 기본 20분으로 카운트다운을 건다 */
   async function start() {
     if (!canWriteRound()) return
-    await runAction(() => startRound(roomCode.value!))
+    await runAction('start', () => startRound(roomCode.value!))
   }
 
   /** 올스탑 — 진행 중일 때만. 클릭 순간의 남은 시간을 서버에 고정한다 */
   async function pause() {
     if (!canWriteRound() || round.value?.status !== 'running') return
     const remainingMs = computeRemainingMs(round.value, Date.now())
-    await runAction(() => pauseRound(roomCode.value!, remainingMs))
+    await runAction('pause', () => pauseRound(roomCode.value!, remainingMs))
   }
 
   /** 재개 — 정지 중일 때만. 고정해 둔 남은 시간부터 다시 흐른다 */
   async function resume() {
     if (!canWriteRound() || round.value?.status !== 'paused') return
     const remainingMs = computeRemainingMs(round.value, Date.now())
-    await runAction(() => resumeRound(roomCode.value!, remainingMs))
+    await runAction('resume', () => resumeRound(roomCode.value!, remainingMs))
   }
 
   /** −1분/+1분 — 서버에 쓰지 않고 대기값만 쌓는다(오조작을 '반영' 전에 되돌릴 수 있게) */
@@ -176,7 +185,7 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     if (!canWriteRound() || currentRound === null || pendingAdjustMinutes.value === 0) return
     const remainingMs = computeRemainingMs(currentRound, Date.now())
     const deltaMs = pendingAdjustMinutes.value * ROUND_ADJUST_STEP_MS
-    const applied = await runAction(() =>
+    const applied = await runAction('adjust', () =>
       adjustRound(roomCode.value!, currentRound.status, remainingMs, deltaMs),
     )
     if (applied) pendingAdjustMinutes.value = 0
@@ -196,7 +205,7 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     ) {
       return false
     }
-    return runAction(() => endGame(roomCode.value!))
+    return runAction('end', () => endGame(roomCode.value!))
   }
 
   /**
@@ -234,6 +243,7 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     participants,
     latestNotice,
     pendingAdjustMinutes,
+    pendingAction,
     isActionPending,
     actionError,
     isSendingNotice,
