@@ -44,7 +44,8 @@ function onOpenChange(value: boolean) {
   <ToastRoot
     :duration="props.toast.duration"
     :data-tone="props.toast.tone"
-    class="toast flex items-start gap-3 rounded-xl border border-stroke bg-surface-strong p-4 shadow-lg"
+    class="toast pointer-events-auto flex items-start gap-3 rounded-xl border border-stroke
+           bg-surface-strong p-4 shadow-lg"
     @update:open="onOpenChange"
   >
     <svg
