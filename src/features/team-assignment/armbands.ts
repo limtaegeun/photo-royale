@@ -58,6 +58,13 @@ export const ARMBAND_LABELS: readonly string[] = [
 /** 특수 완장 X — 4색이 모두 인쇄되어 있고 별도 규칙(X끼리만 사냥)이 적용된다 */
 export const SPECIAL_ARMBAND = 'X'
 
+/**
+ * 자동 배정이 소화할 수 있는 최대 인원 — 완장 25개 × 2인 1팀. 이보다 많으면 완장을 부여할
+ * 완장 실물이 없어(armbandForTeamIndex throw) 배정이 성립하지 않으므로, 호출부가 배정을
+ * 시작하기 전에 이 값으로 미리 걸러 안내한다.
+ */
+export const MAX_ASSIGNABLE_MEMBERS = ARMBAND_LABELS.length * 2
+
 /** 알파벳 대문자 A~Z의 charCode 경계 */
 const CHAR_CODE_A = 'A'.charCodeAt(0)
 const CHAR_CODE_Z = 'Z'.charCodeAt(0)

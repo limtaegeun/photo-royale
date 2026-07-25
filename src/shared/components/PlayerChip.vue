@@ -6,7 +6,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Gender } from '@/features/auth'
-import { GROUP_LABELS, groupForArmband, type TeamGroup } from '@/features/team-assignment'
+import { GROUP_LABELS, displayGroup, groupSolidBorderClass } from '@/features/team-assignment'
 
 interface Props {
   name: string
@@ -25,21 +25,11 @@ interface Props {
 // (미전달 → 상태 점·라벨을 렌더하지 않는 배정 보드 맥락)
 const props = withDefaults(defineProps<Props>(), { isReady: undefined })
 
-/** Tailwind 스캐너 대응 — 완전한 리터럴 클래스명 맵 (팀 보더는 완장 표식과 같은 solid 색) */
-const TEAM_BORDER = {
-  red: 'border-team-red-solid',
-  blue: 'border-team-blue-solid',
-  green: 'border-team-green-solid',
-  orange: 'border-team-orange-solid',
-} as const
-
 /**
- * 완장 알파벳에서 그룹 색을 파생한다. 알파벳 한 글자가 아니면(방어) 미배정과 같이 중립 처리한다.
- * groupForArmband는 X에 대해 null을 반환한다 — X는 참가자 team으로 저장되지 않지만 방어적으로 다룬다.
+ * 완장 알파벳에서 그룹 색을 파생한다. 알파벳 한 글자가 아니면(방어) 미배정과 같이 중립 처리한다
+ * — X(4색 전부 인쇄)도 단일 그룹이 없어 중립이다. 판정·클래스 맵은 team-assignment가 소유한다.
  */
-const group = computed<TeamGroup | null>(() =>
-  props.team && /^[A-Z]$/.test(props.team) ? groupForArmband(props.team) : null,
-)
+const group = computed(() => displayGroup(props.team))
 
 const GENDER_TEXT = {
   male: 'text-gender-male',
@@ -51,9 +41,8 @@ const GENDER_LABEL = {
   female: '여성',
 } as const
 
-const teamBorderClass = computed(() =>
-  group.value === null ? 'border-stroke' : TEAM_BORDER[group.value],
-)
+/** 팀 보더는 완장 표식과 같은 solid 색 — 미배정·중립은 기본 보더 */
+const teamBorderClass = computed(() => groupSolidBorderClass(props.team))
 const teamLabel = computed(() =>
   group.value === null ? '팀 미배정' : `완장 ${props.team} · ${GROUP_LABELS[group.value].ko}`,
 )
