@@ -37,7 +37,6 @@ const {
   isHost,
   myId,
   assignmentRound,
-  assignedTeamCount,
   latestNotice,
   pendingAdjustMinutes,
   pendingAction,
@@ -166,7 +165,6 @@ onUnmounted(() => {
             :formatted="formatted"
             :state="displayState"
             :round-number="assignmentRound"
-            :team-count="assignedTeamCount"
           />
 
           <!-- 올스탑 — 일시정지/재개는 동등한 무게의 두 액션이라 2열로 나란히 둔다.

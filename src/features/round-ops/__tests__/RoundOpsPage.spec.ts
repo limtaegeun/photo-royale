@@ -211,8 +211,10 @@ describe('RoundOpsPage', () => {
       deliver.participants([assigned('u1', 'A'), assigned('u2', 'A'), assigned('u3', 'B')])
       await flushPromises()
 
+      // 상태는 ROOM 행 배지가, 라운드 번호는 타이머 카드가 맡는다(요약 줄 제거)
       expect(wrapper.text()).toContain('LIVE')
-      expect(wrapper.text()).toContain('라운드 2 · LIVE · 2팀 배정')
+      expect(wrapper.text()).toContain('라운드 2')
+      expect(wrapper.text()).not.toContain('팀 배정')
       expect(findButton(wrapper, '일시정지')!.attributes('disabled')).toBeUndefined()
       expect(findButton(wrapper, '재개')!.attributes('disabled')).toBeDefined()
       expect(wrapper.text()).toContain('시간 조정')
