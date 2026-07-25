@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { createPinia } from 'pinia'
+import { createPinia, setActivePinia } from 'pinia'
+import { useTeamAssignmentStore } from '@/features/team-assignment'
 import type { Participant, RoomInfo } from '../api/rooms'
 
 const authState = { user: null as { uid: string; displayName: string } | null }
@@ -18,6 +19,7 @@ const getRoomMock = vi.fn<(code: string) => Promise<RoomInfo | null>>()
 const joinRoomMock =
   vi.fn<(code: string, member: { uid: string; nickname: string }) => Promise<void>>()
 const setReadyMock = vi.fn<(code: string, uid: string) => Promise<void>>()
+const startGameMock = vi.fn<(code: string) => Promise<void>>()
 const unsubscribeParticipantsMock = vi.fn<() => void>()
 const unsubscribeRoomMock = vi.fn<() => void>()
 const subscribeParticipantsMock =
@@ -30,10 +32,13 @@ vi.mock('../api/rooms', async (importOriginal) => {
   return {
     normalizeRoomCode: actual.normalizeRoomCode,
     RoomNotFoundError: actual.RoomNotFoundError,
+    // 이번 라운드 배정 판정은 순수 함수라 실제 구현을 그대로 쓴다(명단·배정 카드의 단일 기준)
+    isAssignedInRound: actual.isAssignedInRound,
     getRoom: (code: string) => getRoomMock(code),
     joinRoom: (code: string, member: { uid: string; nickname: string }) =>
       joinRoomMock(code, member),
     setReady: (code: string, uid: string) => setReadyMock(code, uid),
+    startGame: (code: string) => startGameMock(code),
     subscribeToParticipants: (code: string, onChange: (participants: Participant[]) => void) =>
       subscribeParticipantsMock(code, onChange),
     subscribeToRoom: (code: string, onChange: (room: RoomInfo | null) => void) =>
@@ -42,8 +47,9 @@ vi.mock('../api/rooms', async (importOriginal) => {
 })
 
 const toastMock = vi.fn<(options: { title: string; tone?: string }) => number>()
+const dismissAllMock = vi.fn<() => void>()
 vi.mock('@/shared/composables/useToast', () => ({
-  useToast: () => ({ toast: toastMock }),
+  useToast: () => ({ toast: toastMock, dismissAll: dismissAllMock }),
 }))
 
 const replaceMock = vi.fn<() => void>()
@@ -54,7 +60,8 @@ vi.mock('vue-router', () => ({
 
 import { RoomNotFoundError } from '../api/rooms'
 import WaitingRoomPage from '../WaitingRoomPage.vue'
-import PlayerChip from '../components/PlayerChip.vue'
+import PlayerChip from '@/shared/components/PlayerChip.vue'
+import { useAppHeader } from '@/shared/composables/useAppHeader'
 
 /** 구독 콜백들을 붙잡아 테스트가 스냅샷 도착을 흉내 낼 수 있게 한다 */
 function captureSnapshotCallbacks() {
@@ -84,13 +91,53 @@ function findButton(wrapper: ReturnType<typeof mountPage>, text: string) {
   return wrapper.findAll('button').find((b) => b.text() === text)
 }
 
-const GUEST_ROOM: RoomInfo = { hostUid: 'host9', status: 'waiting' }
-const MY_ROOM: RoomInfo = { hostUid: 'me', status: 'waiting' }
+const GUEST_ROOM: RoomInfo = {
+  hostUid: 'host9',
+  status: 'waiting',
+  assignmentRound: 0,
+  gameMode: 'normal',
+}
+const MY_ROOM: RoomInfo = {
+  hostUid: 'me',
+  status: 'waiting',
+  assignmentRound: 0,
+  gameMode: 'normal',
+}
 
 const ROSTER: Participant[] = [
-  { id: 'me', name: '오리', team: null, gender: 'male', isReady: false },
-  { id: 'u2', name: '하린', team: 'red', gender: 'female', isReady: true },
-  { id: 'u3', name: '도윤', team: null, gender: 'male', isReady: true },
+  {
+    id: 'me',
+    name: '오리',
+    team: null,
+    assignedRound: 0,
+    gender: 'male',
+    isXTeam: false,
+    sameGenderStreak: 0,
+    previousPartnerIds: [],
+    isReady: false,
+  },
+  {
+    id: 'u2',
+    name: '하린',
+    team: 'D',
+    assignedRound: 0,
+    gender: 'female',
+    isXTeam: false,
+    sameGenderStreak: 0,
+    previousPartnerIds: [],
+    isReady: true,
+  },
+  {
+    id: 'u3',
+    name: '도윤',
+    team: null,
+    assignedRound: 0,
+    gender: 'male',
+    isXTeam: false,
+    sameGenderStreak: 0,
+    previousPartnerIds: [],
+    isReady: true,
+  },
 ]
 
 describe('WaitingRoomPage', () => {
@@ -100,12 +147,16 @@ describe('WaitingRoomPage', () => {
     getRoomMock.mockReset().mockResolvedValue(GUEST_ROOM)
     joinRoomMock.mockReset().mockResolvedValue(undefined)
     setReadyMock.mockReset().mockResolvedValue(undefined)
+    startGameMock.mockReset().mockResolvedValue(undefined)
     subscribeParticipantsMock.mockReset().mockReturnValue(unsubscribeParticipantsMock)
     subscribeRoomMock.mockReset().mockReturnValue(unsubscribeRoomMock)
     unsubscribeParticipantsMock.mockReset()
     unsubscribeRoomMock.mockReset()
     replaceMock.mockReset()
     toastMock.mockReset()
+    dismissAllMock.mockReset()
+    // 앱 셸 헤더 오버라이드는 모듈 싱글턴이라 케이스 간 누수를 막기 위해 매번 비운다
+    useAppHeader().clearHeader()
   })
 
   it('라우트의 초대 코드를 정규화해 입장하고 룸 카드와 명단을 렌더한다', async () => {
@@ -125,8 +176,9 @@ describe('WaitingRoomPage', () => {
     await flushPromises()
 
     expect(wrapper.findAllComponents(PlayerChip)).toHaveLength(3)
-    expect(wrapper.text()).toContain('참가자 3명 · 준비 2명')
-    expect(wrapper.text()).toContain('3명 입장 · 2명 레디')
+    // 인원 수는 명단 헤더 한 곳에서만 노출한다(룸 카드의 중복 캡션 제거) — 용어도 '준비'로 통일
+    expect(wrapper.text()).toContain('3명 입장 · 2명 준비')
+    expect(wrapper.text()).not.toContain('참가자 3명')
   })
 
   it('참가자가 없으면 명단 대신 초대 안내 문구를 보여준다', async () => {
@@ -212,7 +264,7 @@ describe('WaitingRoomPage', () => {
     deliver.participants([{ ...ROSTER[0]!, isReady: true }, ...ROSTER.slice(1)])
     await flushPromises()
 
-    expect(wrapper.text()).toContain('참가자 3명 · 준비 3명')
+    expect(wrapper.text()).toContain('3명 입장 · 3명 준비')
     expect(cta.text()).toBe('준비 완료')
     expect(cta.attributes('disabled')).toBeDefined()
   })
@@ -232,19 +284,35 @@ describe('WaitingRoomPage', () => {
     expect(findButton(wrapper, '게임 시작')).toBeUndefined()
     expect(wrapper.text()).not.toContain('아래 확인 버튼을 누르면')
     expect(wrapper.findAllComponents(PlayerChip)).toHaveLength(2)
-    expect(wrapper.text()).toContain('참가자 2명 · 준비 2명')
+    expect(wrapper.text()).toContain('2명 입장 · 2명 준비')
     expect(wrapper.text()).not.toContain('오리')
   })
 
-  it('방 status가 playing이 되면 카메라 화면으로 replace 이동한다', async () => {
+  it('게스트: 방 status가 playing이 되면 카메라 화면으로 replace 이동한다', async () => {
     const deliver = captureSnapshotCallbacks()
     mountPage()
     await flushPromises()
 
-    deliver.room({ hostUid: 'host9', status: 'playing' })
+    deliver.room({ hostUid: 'host9', status: 'playing', assignmentRound: 0, gameMode: 'normal' })
     await flushPromises()
 
     expect(replaceMock).toHaveBeenCalledWith({ name: 'camera' })
+  })
+
+  it('호스트(진행자): playing 전이 시 카메라가 아니라 라운드 운영 화면으로 replace 이동한다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    getRoomMock.mockResolvedValue(MY_ROOM)
+    mountPage()
+    await flushPromises()
+
+    deliver.room({ hostUid: 'me', status: 'playing', assignmentRound: 1, gameMode: 'normal' })
+    await flushPromises()
+
+    expect(replaceMock).toHaveBeenCalledWith({
+      name: 'round-ops',
+      params: { roomCode: 'AB2C' },
+    })
+    expect(replaceMock).not.toHaveBeenCalledWith({ name: 'camera' })
   })
 
   it('화면을 떠나면 방·명단 구독을 해제한다', async () => {
@@ -256,5 +324,191 @@ describe('WaitingRoomPage', () => {
 
     expect(unsubscribeParticipantsMock).toHaveBeenCalledTimes(1)
     expect(unsubscribeRoomMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('호스트: 참가자가 없으면 팀 배정 시작이 토스트로 막힌다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    getRoomMock.mockResolvedValue(MY_ROOM)
+    const wrapper = mountPage()
+    await flushPromises()
+    deliver.participants([])
+    await flushPromises()
+
+    await findButton(wrapper, '팀 배정 시작')!.trigger('click')
+
+    expect(toastMock).toHaveBeenCalledWith({ title: '참가자가 없어요.', tone: 'danger' })
+    expect(wrapper.text()).not.toContain('터치 배정 보드')
+  })
+
+  it('호스트: 준비가 덜 됐으면 팀 배정 시작이 토스트로 막힌다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    getRoomMock.mockResolvedValue(MY_ROOM)
+    const wrapper = mountPage()
+    await flushPromises()
+    deliver.participants([
+      { ...ROSTER[1]! }, // u2 ready
+      { ...ROSTER[2]!, isReady: false }, // u3 not ready
+    ])
+    await flushPromises()
+
+    await findButton(wrapper, '팀 배정 시작')!.trigger('click')
+
+    expect(toastMock).toHaveBeenCalledWith({
+      title: '모든 참가자가 준비를 완료해야 시작할 수 있어요.',
+      tone: 'danger',
+    })
+    expect(wrapper.text()).not.toContain('팀 편성')
+  })
+
+  it('호스트: 전원 준비 완료면 팀 배정 시작이 배정 보드로 전환한다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    getRoomMock.mockResolvedValue(MY_ROOM)
+    const wrapper = mountPage()
+    await flushPromises()
+    deliver.participants([{ ...ROSTER[1]! }, { ...ROSTER[2]! }]) // u2·u3 모두 ready
+    await flushPromises()
+
+    await findButton(wrapper, '팀 배정 시작')!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('팀 편성')
+    // 페이지 타이틀은 앱 셸 헤더가 담당한다 — 보드 전환 시 '배정 편집'으로 오버라이드된다
+    expect(useAppHeader().title.value).toBe('배정 편집')
+    expect(findButton(wrapper, '팀 배정 시작')).toBeUndefined()
+  })
+
+  it('호스트: 가드 실패로 토스트가 쌓인 뒤 전원 레디로 재클릭하면 보드 전환 시 토스트 큐가 비워진다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    getRoomMock.mockResolvedValue(MY_ROOM)
+    const wrapper = mountPage()
+    await flushPromises()
+    deliver.participants([{ ...ROSTER[1]!, isReady: false }, { ...ROSTER[2]! }]) // u2 아직 준비 안 됨
+    await flushPromises()
+
+    // 1차 클릭 — 가드 실패로 에러 토스트가 쌓인다(dismissAll은 호출되지 않는다)
+    await findButton(wrapper, '팀 배정 시작')!.trigger('click')
+    expect(toastMock).toHaveBeenCalledWith({
+      title: '모든 참가자가 준비를 완료해야 시작할 수 있어요.',
+      tone: 'danger',
+    })
+    expect(dismissAllMock).not.toHaveBeenCalled()
+
+    // 전원 레디로 스냅샷 갱신 후 재클릭 — 가드를 모두 통과해 보드로 전환된다
+    deliver.participants([{ ...ROSTER[1]! }, { ...ROSTER[2]! }])
+    await flushPromises()
+    await findButton(wrapper, '팀 배정 시작')!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('팀 편성')
+    expect(dismissAllMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('게스트: 배정 확정 후(assignmentRound>0·완장 있음) 라운드 배정 카드로 전환한다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    getRoomMock.mockResolvedValue({
+      hostUid: 'host9',
+      status: 'waiting',
+      assignmentRound: 1,
+      gameMode: 'normal',
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+    deliver.participants([
+      { ...ROSTER[0]!, team: 'A', assignedRound: 1, isReady: false }, // me, 완장 A
+      { ...ROSTER[1]!, team: 'A', assignedRound: 1 }, // 같은 팀
+      { ...ROSTER[2]!, team: 'B', assignedRound: 1 }, // 다른 팀
+    ])
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('이번 게임 규칙서')
+    expect(wrapper.text()).toContain('오리(나)')
+    expect(wrapper.text()).toContain('하린')
+    expect(wrapper.text()).not.toContain('ROOM AB2C')
+    // 카드는 자체 h1을 두지 않는다 — 페이지 타이틀('라운드 N 배정')은 앱 셸 헤더가 담당하므로
+    // 페이지 본문에는 '대기실'도 '라운드 1 배정'도 직접 렌더되지 않고, 헤더 오버라이드로만 노출된다
+    expect(wrapper.text()).not.toContain('대기실')
+    expect(useAppHeader().title.value).toBe('라운드 1 배정')
+    // 배정 카드 뷰의 준비 CTA — 아직 확정 전이라 행동 문구다(확정되면 '준비 완료'로 바뀐다)
+    expect(findButton(wrapper, '라운드 준비 완료')).toBeDefined()
+  })
+
+  it('호스트: 보드 진입 후 room 스냅샷 라운드가 올라가도 드래프트 차수는 고정된다(QA N-02)', async () => {
+    // 진입 시점 assignmentRound=2 → 이번 드래프트가 확정할 차수는 3으로 고정되어야 한다
+    const deliver = captureSnapshotCallbacks()
+    getRoomMock.mockResolvedValue({
+      hostUid: 'me',
+      status: 'waiting',
+      assignmentRound: 2,
+      gameMode: 'group',
+    })
+    // mountPage 대신 명시적 pinia로 마운트해 같은 인스턴스의 팀 배정 스토어를 조회한다
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const wrapper = mount(WaitingRoomPage, { global: { plugins: [pinia] } })
+    const taStore = useTeamAssignmentStore()
+    await flushPromises()
+    deliver.participants([{ ...ROSTER[1]! }, { ...ROSTER[2]! }]) // u2·u3 모두 ready
+    await flushPromises()
+
+    // 2차까지 확정된 방이라 배정 CTA는 다음 차수를 표기한다(주 액션은 '게임 시작')
+    await findButton(wrapper, '3차 팀 배정')!.trigger('click')
+    await flushPromises()
+    expect(taStore.draftRound).toBe(3) // 진입 시점 2 + 1로 고정
+    // 직전 확정 모드(room.gameMode)가 다음 드래프트 기본값으로 세팅된다
+    expect(taStore.draftGameMode).toBe('group')
+
+    // 다른 탭이 확정해 room 스냅샷의 assignmentRound가 올라가도(3) 드래프트 차수는 그대로 3
+    deliver.room({ hostUid: 'me', status: 'waiting', assignmentRound: 3, gameMode: 'group' })
+    await flushPromises()
+    expect(taStore.draftRound).toBe(3)
+  })
+  it('호스트: 배정 가능 인원(완장 25개 × 2인)을 넘으면 토스트로 막고 보드를 열지 않는다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    getRoomMock.mockResolvedValue(MY_ROOM)
+    const wrapper = mountPage()
+    await flushPromises()
+    // 51명 전원 레디 — 26팀이 되어 완장이 부족하다(가드가 없으면 완장 부여가 throw한다)
+    deliver.participants(
+      Array.from({ length: 51 }, (_, i) => ({
+        ...ROSTER[2]!,
+        id: `p${i}`,
+        name: `이름${i}`,
+        isReady: true,
+      })),
+    )
+    await flushPromises()
+
+    await findButton(wrapper, '팀 배정 시작')!.trigger('click')
+    await flushPromises()
+
+    expect(toastMock).toHaveBeenCalledWith({
+      title: '배정 가능한 인원은 최대 50명이에요.',
+      tone: 'danger',
+    })
+    expect(wrapper.text()).not.toContain('팀 편성')
+  })
+
+  it('호스트: 배정 확정 후 게임 시작 CTA가 노출되고 클릭하면 status를 playing으로 전이한다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    const hostRound1: RoomInfo = {
+      hostUid: 'me',
+      status: 'waiting',
+      assignmentRound: 1,
+      gameMode: 'normal',
+    }
+    getRoomMock.mockResolvedValue(hostRound1)
+    const wrapper = mountPage()
+    await flushPromises()
+    deliver.room(hostRound1)
+    deliver.participants([{ ...ROSTER[1]!, team: 'A', assignedRound: 1 }])
+    await flushPromises()
+
+    // 확정 후에는 게임 시작이 주 액션이고, 배정은 다음 차수로 강등된다
+    expect(findButton(wrapper, '2차 팀 배정')).toBeDefined()
+
+    await findButton(wrapper, '게임 시작')!.trigger('click')
+    await flushPromises()
+
+    expect(startGameMock).toHaveBeenCalledExactlyOnceWith('AB2C')
   })
 })

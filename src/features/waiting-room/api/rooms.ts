@@ -15,25 +15,60 @@ import {
 } from 'firebase/firestore'
 import { db } from '@/shared/api/firebase'
 import type { Gender } from '@/features/auth'
-
-export type ParticipantTeam = 'red' | 'blue' | 'green' | 'orange'
+// 게임 모드는 game-mode 기능의 소유물이라 public API로만 가져온다(내부 파일 직접 import 금지)
+import { DEFAULT_GAME_MODE, isGameModeId, type GameModeId } from '@/features/game-mode'
 
 export type RoomStatus = 'waiting' | 'playing'
 
 export interface RoomInfo {
   hostUid: string
   status: RoomStatus
+  /** 확정된 팀편성 차수(1차~3차). 0이면 아직 배정 전 — 배정 확정 시에만 1씩 증가한다 */
+  assignmentRound: number
+  /** 확정된 이번 라운드 게임 모드. 필드가 없으면(기존 방·배정 전) 일반전(normal) */
+  gameMode: GameModeId
 }
 
 export interface Participant {
   /** Firestore 문서 ID = 참가자 uid */
   id: string
   name: string
-  /** 입장 시점엔 미배정(null) — 팀 배정 플로우는 이후 단계에서 붙는다 */
-  team: ParticipantTeam | null
+  /** 배정된 완장 알파벳(그룹 색은 완장에서 파생). 입장 시점엔 미배정(null) */
+  team: string | null
+  /**
+   * 이 완장이 확정된 팀편성 차수. 0이면 한 번도 배정된 적 없다.
+   *
+   * team만으로는 "이번 라운드에 배정됐는가"를 알 수 없다 — 확정 배치는 멤버가 있는 팀만
+   * 쓰므로, 직전 라운드에 배정됐다가 이번 라운드에 미배정 대기자로 내려간 참가자의 team은
+   * 지워지지 않고 그대로 남는다(그리고 rules가 team을 null로 되돌리는 것을 허용하지 않는다).
+   * 그래서 "확정된 차수"를 양수 마커로 함께 저장하고, 화면은 room.assignmentRound와
+   * 같은지로 이번 라운드 배정 여부를 판정한다(isAssignedInRound).
+   */
+  assignedRound: number
   /** 가입 시 확정된 성별 — 명단 표기용. 프로필 조회 실패 등으로 없을 수 있다(null) */
   gender: Gender | null
+  /** X 모듈 — 이 팀이 특수 완장 X를 겸하는지(기존 팀 소속 유지 겸직) */
+  isXTeam: boolean
+  /** 연속 비혼성 배정 횟수 — 배정 확정 시에만 갱신된다(이월 우선권) */
+  sameGenderStreak: number
+  /** 이번 세션 누적 짝꿍 이력 — 재짝꿍 회피용, 확정 시에만 갱신 */
+  previousPartnerIds: string[]
   isReady: boolean
+}
+
+/**
+ * 이번 라운드(room.assignmentRound)에 실제로 배정된 참가자인지 판정한다 — 완장 표시·배정 카드
+ * 노출의 단일 기준. team이 남아 있어도 확정 차수가 다르면 이번 라운드엔 미배정이다: 확정 배치는
+ * 멤버가 있는 팀만 쓰므로, 직전 라운드에 배정됐다가 이번에 미배정 대기자로 내려간 참가자의 team은
+ * 문서에 그대로 남는다(rules가 team을 null로 되돌리는 것도 허용하지 않는다). 배정 전(0차)에는
+ * 어떤 참가자도 배정 상태가 아니다.
+ */
+export function isAssignedInRound(participant: Participant, assignmentRound: number): boolean {
+  return (
+    assignmentRound > 0 &&
+    participant.team !== null &&
+    participant.assignedRound === assignmentRound
+  )
 }
 
 /** 존재하지 않는 초대 코드로 입장을 시도한 경우. 호출부가 안내 문구로 매핑한다. */
@@ -44,9 +79,34 @@ export class RoomNotFoundError extends Error {
   }
 }
 
-/** 초대 코드 문자 집합 — 혼동하기 쉬운 문자(0/O, 1/I/L)를 뺀 대문자+숫자 */
-const ROOM_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
-export const ROOM_CODE_LENGTH = 4
+/**
+ * 초대 코드 형식의 단일 소스 — firestore.rules의 roomCode.matches 패턴과 **문자열까지 동일**해야
+ * 한다(rules는 클라 코드를 import할 수 없어 이중 정의이고, rooms.spec이 문자열 대조로 검증한다.
+ * 변경 시 rules도 함께 갱신·배포할 것). 문자 집합은 혼동하기 쉬운 문자(0/O, 1/I/L)를 뺀
+ * 대문자+숫자이고, 생성용 문자 목록·코드 길이는 아래에서 이 패턴으로부터 파생한다.
+ */
+export const ROOM_CODE_PATTERN = '^[A-HJKMNP-Z2-9]{4}$'
+
+/** 패턴의 `[...]` 문자 클래스를 개별 문자로 전개한다 — 코드 생성이 인덱스로 뽑을 문자 목록 */
+function expandPatternAlphabet(pattern: string): string {
+  const charClass = pattern.match(/\[([^\]]+)\]/)![1]!
+  const chars: string[] = []
+  for (let i = 0; i < charClass.length; i++) {
+    if (charClass[i + 1] === '-' && i + 2 < charClass.length) {
+      for (let code = charClass.charCodeAt(i); code <= charClass.charCodeAt(i + 2); code++) {
+        chars.push(String.fromCharCode(code))
+      }
+      i += 2
+    } else {
+      chars.push(charClass[i]!)
+    }
+  }
+  return chars.join('')
+}
+
+/** 생성용 문자 집합(A~H,J,K,M,N,P~Z,2~9 = 31자) — ROOM_CODE_PATTERN에서 파생 */
+const ROOM_CODE_ALPHABET = expandPatternAlphabet(ROOM_CODE_PATTERN)
+export const ROOM_CODE_LENGTH = Number(ROOM_CODE_PATTERN.match(/\{(\d+)\}/)![1])
 /** 코드 충돌 시 새 코드로 재시도하는 상한 — 31^4(≈92만) 공간이라 사실상 도달하지 않는다 */
 const CREATE_ROOM_MAX_ATTEMPTS = 5
 
@@ -139,6 +199,8 @@ export async function getRoom(code: string): Promise<RoomInfo | null> {
   return {
     hostUid: data.hostUid as string,
     status: data.status as RoomStatus,
+    assignmentRound: (data.assignmentRound as number | undefined) ?? 0,
+    gameMode: isGameModeId(data.gameMode) ? data.gameMode : DEFAULT_GAME_MODE,
   }
 }
 
@@ -186,6 +248,8 @@ export function subscribeToRoom(
     onChange({
       hostUid: data.hostUid as string,
       status: data.status as RoomStatus,
+      assignmentRound: (data.assignmentRound as number | undefined) ?? 0,
+      gameMode: isGameModeId(data.gameMode) ? data.gameMode : DEFAULT_GAME_MODE,
     })
   })
 }
@@ -216,8 +280,12 @@ export function subscribeToParticipants(
         return {
           id: participantDoc.id,
           name: data.nickname as string,
-          team: (data.team as ParticipantTeam | undefined) ?? null,
+          team: (data.team as string | undefined) ?? null,
+          assignedRound: (data.assignedRound as number | undefined) ?? 0,
           gender: (data.gender as Gender | undefined) ?? null,
+          isXTeam: (data.isXTeam as boolean | undefined) ?? false,
+          sameGenderStreak: (data.sameGenderStreak as number | undefined) ?? 0,
+          previousPartnerIds: (data.previousPartnerIds as string[] | undefined) ?? [],
           isReady: data.isReady as boolean,
         }
       }),

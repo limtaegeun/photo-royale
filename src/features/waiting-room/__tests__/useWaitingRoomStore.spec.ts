@@ -23,6 +23,7 @@ const joinRoomMock =
     ) => Promise<void>
   >()
 const setReadyMock = vi.fn<(code: string, uid: string) => Promise<void>>()
+const startGameMock = vi.fn<(code: string) => Promise<void>>()
 const unsubscribeParticipantsMock = vi.fn<() => void>()
 const unsubscribeRoomMock = vi.fn<() => void>()
 const subscribeParticipantsMock =
@@ -32,12 +33,18 @@ const subscribeRoomMock =
 
 vi.mock('../api/rooms', () => ({
   RoomNotFoundError: class RoomNotFoundError extends Error {},
+  // 순수 판정 함수 — firebase에 의존하지 않으므로 실제와 같은 로직을 그대로 쓴다
+  isAssignedInRound: (participant: Participant, assignmentRound: number) =>
+    assignmentRound > 0 &&
+    participant.team !== null &&
+    participant.assignedRound === assignmentRound,
   getRoom: (code: string) => getRoomMock(code),
   joinRoom: (
     code: string,
     member: { uid: string; nickname: string; gender: 'male' | 'female' | null },
   ) => joinRoomMock(code, member),
   setReady: (code: string, uid: string) => setReadyMock(code, uid),
+  startGame: (code: string) => startGameMock(code),
   subscribeToParticipants: (code: string, onChange: (participants: Participant[]) => void) =>
     subscribeParticipantsMock(code, onChange),
   subscribeToRoom: (code: string, onChange: (room: RoomInfo | null) => void) =>
@@ -65,14 +72,28 @@ function captureSnapshotCallbacks() {
   }
 }
 
-const GUEST_ROOM: RoomInfo = { hostUid: 'host9', status: 'waiting' }
-const MY_ROOM: RoomInfo = { hostUid: 'me', status: 'waiting' }
+const GUEST_ROOM: RoomInfo = {
+  hostUid: 'host9',
+  status: 'waiting',
+  assignmentRound: 0,
+  gameMode: 'normal',
+}
+const MY_ROOM: RoomInfo = {
+  hostUid: 'me',
+  status: 'waiting',
+  assignmentRound: 0,
+  gameMode: 'normal',
+}
 
 const ME_WAITING: Participant = {
   id: 'me',
   name: '오리',
   team: null,
+  assignedRound: 0,
   gender: 'male',
+  isXTeam: false,
+  sameGenderStreak: 0,
+  previousPartnerIds: [],
   isReady: false,
 }
 const ME_READY: Participant = { ...ME_WAITING, isReady: true }
@@ -80,7 +101,11 @@ const OTHER_READY: Participant = {
   id: 'u2',
   name: '하린',
   team: null,
+  assignedRound: 0,
   gender: 'female',
+  isXTeam: false,
+  sameGenderStreak: 0,
+  previousPartnerIds: [],
   isReady: true,
 }
 
@@ -92,6 +117,7 @@ describe('useWaitingRoomStore', () => {
     getRoomMock.mockReset().mockResolvedValue(GUEST_ROOM)
     joinRoomMock.mockReset().mockResolvedValue(undefined)
     setReadyMock.mockReset().mockResolvedValue(undefined)
+    startGameMock.mockReset().mockResolvedValue(undefined)
     subscribeParticipantsMock.mockReset().mockReturnValue(unsubscribeParticipantsMock)
     subscribeRoomMock.mockReset().mockReturnValue(unsubscribeRoomMock)
     unsubscribeParticipantsMock.mockReset()
@@ -267,5 +293,178 @@ describe('useWaitingRoomStore', () => {
     expect(store.room).toBeNull()
     expect(store.participants).toEqual([])
     expect(store.phase).toBe('idle')
+  })
+  describe('이번 라운드 배정 판정(유령 완장 방지)', () => {
+    /** 라운드 2가 확정된 방 — 배정 카드·명단 완장은 assignedRound가 2인 참가자만 대상이다 */
+    const ROUND2_ROOM: RoomInfo = {
+      hostUid: 'host9',
+      status: 'waiting',
+      assignmentRound: 2,
+      gameMode: 'normal',
+    }
+
+    function assigned(id: string, name: string, team: string, round: number): Participant {
+      return {
+        id,
+        name,
+        team,
+        assignedRound: round,
+        gender: 'male',
+        isXTeam: false,
+        sameGenderStreak: 0,
+        previousPartnerIds: [],
+        isReady: true,
+      }
+    }
+
+    it('직전 라운드 완장이 남아 있어도 이번 라운드 미배정이면 배정 카드가 뜨지 않는다', async () => {
+      // 'me'는 라운드 1에서 완장 A였고 라운드 2에는 미배정 대기자로 내려갔다 —
+      // 확정 배치가 문서를 건드리지 않아 team만 'A'로 남는다(assignedRound는 1로 남는다).
+      getRoomMock.mockResolvedValue(ROUND2_ROOM)
+      const deliver = captureSnapshotCallbacks()
+      const store = useWaitingRoomStore()
+      await store.enter('AB2C')
+      deliver.room(ROUND2_ROOM)
+      deliver.participants([
+        assigned('me', '오리', 'A', 1),
+        assigned('u2', '하린', 'A', 2),
+        assigned('u3', '도윤', 'A', 2),
+      ])
+
+      expect(store.myAssignment).toBeNull()
+      // 명단에서도 유령 완장이 감춰진다(중립 표기)
+      expect(store.roster.find((p) => p.id === 'me')!.team).toBeNull()
+    })
+
+    it('이번 라운드에 배정된 사람만 팀원 목록에 넣는다', async () => {
+      getRoomMock.mockResolvedValue(ROUND2_ROOM)
+      const deliver = captureSnapshotCallbacks()
+      const store = useWaitingRoomStore()
+      await store.enter('AB2C')
+      deliver.room(ROUND2_ROOM)
+      deliver.participants([
+        assigned('me', '오리', 'A', 2),
+        assigned('u2', '하린', 'A', 2),
+        assigned('u3', '도윤', 'A', 1), // 직전 라운드 잔재 — 섞이면 3인 팀이 된다
+      ])
+
+      expect(store.myAssignment).toEqual({
+        armband: 'A',
+        isXTeam: false,
+        members: [
+          { id: 'me', name: '오리' },
+          { id: 'u2', name: '하린' },
+        ],
+      })
+    })
+  })
+
+  describe('입장 중 이탈(구독 leak 방지)', () => {
+    it('enter가 진행되는 동안 leave가 끼면 구독을 만들지 않고 상태도 되살리지 않는다', async () => {
+      let resolveGetRoom: (room: RoomInfo) => void = () => {}
+      getRoomMock.mockReturnValueOnce(
+        new Promise<RoomInfo>((resolve) => {
+          resolveGetRoom = resolve
+        }),
+      )
+      captureSnapshotCallbacks()
+      const store = useWaitingRoomStore()
+
+      const pending = store.enter('AB2C') // 입장 처리 시작(응답 대기)
+      store.leave() // 곧바로 화면 이탈(뒤로가기 등)
+      resolveGetRoom(GUEST_ROOM)
+      await pending
+
+      // 해제할 주체가 없는 구독이 뒤늦게 생기지 않는다
+      expect(subscribeRoomMock).not.toHaveBeenCalled()
+      expect(subscribeParticipantsMock).not.toHaveBeenCalled()
+      expect(store.phase).toBe('idle')
+      expect(store.roomCode).toBeNull()
+    })
+
+    it('다른 방으로 재입장하면 이전 입장 시도가 새 구독을 덮어쓰지 않는다', async () => {
+      let resolveFirst: (room: RoomInfo) => void = () => {}
+      getRoomMock
+        .mockReturnValueOnce(
+          new Promise<RoomInfo>((resolve) => {
+            resolveFirst = resolve
+          }),
+        )
+        .mockResolvedValue(GUEST_ROOM)
+      captureSnapshotCallbacks()
+      const store = useWaitingRoomStore()
+
+      const first = store.enter('AAAA')
+      await store.enter('BB2C') // 두 번째 방 입장이 먼저 완료된다
+      resolveFirst(GUEST_ROOM) // 뒤늦게 응답한 첫 입장
+      await first
+
+      // 구독은 두 번째 방에만 걸려 있다
+      expect(subscribeRoomMock).toHaveBeenCalledTimes(1)
+      expect(subscribeRoomMock.mock.calls[0]![0]).toBe('BB2C')
+      expect(store.roomCode).toBe('BB2C')
+    })
+  })
+
+  describe('startPlaying', () => {
+    const HOST_ROUND1: RoomInfo = {
+      hostUid: 'me',
+      status: 'waiting',
+      assignmentRound: 1,
+      gameMode: 'normal',
+    }
+
+    it('호스트가 배정 확정 후 호출하면 status를 playing으로 전이한다', async () => {
+      authState.user = { uid: 'me', displayName: '오리' }
+      getRoomMock.mockResolvedValue(HOST_ROUND1)
+      captureSnapshotCallbacks()
+      const store = useWaitingRoomStore()
+      await store.enter('AB2C')
+
+      await store.startPlaying()
+
+      expect(startGameMock).toHaveBeenCalledExactlyOnceWith('AB2C')
+      expect(store.startGameError).toBeNull()
+    })
+
+    it('배정 확정 전(0차)에는 시작하지 않고 안내를 세팅한다', async () => {
+      authState.user = { uid: 'me', displayName: '오리' }
+      getRoomMock.mockResolvedValue(MY_ROOM) // assignmentRound 0
+      captureSnapshotCallbacks()
+      const store = useWaitingRoomStore()
+      await store.enter('AB2C')
+
+      await store.startPlaying()
+
+      expect(startGameMock).not.toHaveBeenCalled()
+      expect(store.startGameError).toBe('팀 배정을 먼저 확정해 주세요.')
+    })
+
+    it('게스트는 호출해도 아무 일도 일어나지 않는다', async () => {
+      getRoomMock.mockResolvedValue({ ...GUEST_ROOM, assignmentRound: 1 })
+      captureSnapshotCallbacks()
+      const store = useWaitingRoomStore()
+      await store.enter('AB2C')
+
+      await store.startPlaying()
+
+      expect(startGameMock).not.toHaveBeenCalled()
+    })
+
+    it('실패하면 안내를 세팅하고 재시도할 수 있다', async () => {
+      authState.user = { uid: 'me', displayName: '오리' }
+      getRoomMock.mockResolvedValue(HOST_ROUND1)
+      captureSnapshotCallbacks()
+      const store = useWaitingRoomStore()
+      await store.enter('AB2C')
+
+      startGameMock.mockRejectedValueOnce(new Error('permission denied'))
+      await store.startPlaying()
+      expect(store.startGameError).toBe('게임을 시작하지 못했어요. 다시 시도해 주세요.')
+
+      await store.startPlaying()
+      expect(store.startGameError).toBeNull()
+      expect(startGameMock).toHaveBeenCalledTimes(2)
+    })
   })
 })

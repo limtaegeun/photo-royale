@@ -46,5 +46,10 @@ export function useToast() {
     if (index !== -1) toasts.value.splice(index, 1)
   }
 
-  return { toasts, toast, dismiss }
+  /** 화면(뷰) 전환 시 이전 화면 맥락의 토스트가 새 화면 위에 남지 않도록 큐를 비운다 */
+  function dismissAll(): void {
+    toasts.value = []
+  }
+
+  return { toasts, toast, dismiss, dismissAll }
 }

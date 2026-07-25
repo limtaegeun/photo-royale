@@ -115,6 +115,20 @@ src/shared/components/
 - **재사용 가능성이 있는 UI 요소는 생 HTML 태그로 화면에 직접 두지 않고 `Base*` 컴포넌트로 만들어 재사용한다.** (input·버튼·뱃지 등 원자 단위. 생 `<input>`/`<button>` 직접 마크업 금지 → 해당 `Base*` 사용.)
 - 컴포넌트 문서화 순서는 TDS 가이드 규칙을 따른다: 타입 → 영역 → 상세 스펙 → 접근성 → 큰 텍스트 → 다크모드.
 
+**현재 원자·레이아웃 컴포넌트**
+
+| 컴포넌트 | 역할 | 비고 |
+|---|---|---|
+| `BaseButton` | 버튼 | `variant` 5종 / `size` sm(36)·md(48)·lg(56). **하단 고정 주 CTA는 lg, 리스트 행 안의 인라인 액션은 sm** |
+| `BaseBadge` | 상태·팀 표식 | `flex` 컨테이너 안에 둘 때는 `self-start` 필수(stretch로 폭이 늘어난다) |
+| `BaseInput` / `BaseSegmented` / `BaseSwitch` | 입력·선택·토글 | |
+| `BaseDialog` / `BaseBottomSheet` / `BaseToast`(+`useToast`) | 오버레이 | |
+| `BaseCard` | 카드 서피스(`bg-elevated` + 보더 + radius + 패딩) | `padding` md(16)·lg(20)·none. `none`은 `BaseListRow`를 담는 리스트 카드용 |
+| `BaseSectionHeader` | 화면 섹션 제목 행(제목 + 요약 + `#aside` 슬롯) | 섹션 헤딩 위계를 `text-subheading`으로 고정 |
+| `BaseListRow` | 설정 행(라벨 + 캡션 / `#control` 슬롯) | 행 높이를 `--pr-size-control-lg`로 고정. 여러 행은 `BaseCard padding="none"` + `divide-y divide-stroke` |
+
+**타이포 위계 규칙(화면 간 통일)**: 화면 섹션 헤딩 = `text-subheading`(=`BaseSectionHeader`) / 카드 내부 타이틀 = `text-label` / 보조 설명·요약 = `text-caption`. 같은 위계에 서로 다른 역할 유틸리티를 쓰지 않는다.
+
 ### 6.1 Headless 기반 (Reka UI)
 
 **Base 컴포넌트는 [Reka UI](https://reka-ui.com/)(headless, unstyled) 위에 만든다.** 접근성·상호작용 행동은 Reka primitive에 위임하고, 스타일은 이 문서의 시맨틱 유틸리티로만 작성한다. Reka는 `data-state`/`data-*` 속성을 스타일 훅으로 노출하므로(`data-[state=checked]:bg-brand`) 프로젝트의 `data-*` 스타일 훅 패턴과 그대로 맞물린다.
@@ -122,12 +136,21 @@ src/shared/components/
 - **원자(비행동형)** — Reka `Primitive`(`as`/`as-child`)로 렌더해 다형·합성(예: `DialogTrigger as-child`)을 얻는다:
   `BaseButton`(`as="button"`), `BaseBadge`(`as="span"`), `BaseInput`(`as="input"`, Reka에 전용 Input primitive 없음 → 이미 접근성 확보된 네이티브 input을 Primitive로 렌더).
 - **행동형** — 전용 primitive를 쓴다(a11y가 무거워 headless의 실익이 큰 지점):
-  - `BaseSegmented` — `RadioGroup`(화살표키 네비·roving tabindex).
+  - `BaseSegmented` — `RadioGroup`(화살표키 네비·roving tabindex). 2개 이상 값 택1용.
+  - `BaseSwitch` — `Switch`(단일 boolean on/off 토글; 트랙 색+thumb 위치로 상태 표기, role=switch·aria-checked는 Reka가 담당).
   - `BaseDialog` — `Dialog` 중앙 모달(focus trap·scroll lock·Escape/backdrop dismiss·포털).
   - `BaseBottomSheet` — `Dialog` 하단 시트(모바일 코어, safe-area·슬라이드업).
   - `BaseToast` + `useToast`(`shared/composables`) + `BaseToastProvider` — `Toast`(ARIA live region·타이머·스와이프 dismiss). Provider는 `App.vue`에 1회 마운트하고, 발행은 어느 기능에서든 `useToast().toast({ title, tone })`.
 - 진입/이탈 애니메이션은 Reka `Presence`가 `data-state=closed`에서 애니메이션 종료까지 언마운트를 지연하므로, scoped `<style>`의 `@keyframes`로 작성하되 값은 `--pr-duration-*`/`--pr-easing-*` 토큰만 참조한다(`prefers-reduced-motion` 대응 포함).
-- 성장 예정 후보(**실제 두 번째 사용처가 생길 때 추가** — shared 승격 규칙과 동일): BottomCta(하단 고정 CTA), ListRow, LifeGauge.
+- **비행동형 레이아웃 컴포넌트**(`BaseCard`·`BaseSectionHeader`·`BaseListRow`)는 접근성 행동이 없어 Reka primitive의 실익이 없다. `BaseCard`만 다형 렌더(`as="section"`)가 필요해 `Primitive`를 쓰고, 나머지는 평범한 마크업 + 슬롯으로 둔다.
+- 성장 예정 후보(**실제 두 번째 사용처가 생길 때 추가** — shared 승격 규칙과 동일): BottomCta(하단 고정 CTA), LifeGauge, IconButton(현재 `AppHeader`의 프로필 링크가 유일 사용처).
+
+### 6.2 최소 터치 타겟 확보 방식
+
+시각 높이가 48px보다 낮아야 하는 요소는 **컴포넌트가 스스로** 히트 영역을 `::before`로 48px까지 넓힌다(레이아웃에 영향 없는 `absolute`). 사용처가 매번 챙기지 않아도 규칙이 지켜지게 하는 것이 요점이다.
+
+- `BaseButton size="sm"`(36px) — `[data-size='sm']::before`로 확장.
+- `SelectableMemberChip`(칩 40px, team-assignment) — `.chip-hit::before`로 확장.
 
 ## 7. 미확정/후속 과제
 

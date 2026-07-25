@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { CameraPage } from '@/features/camera'
 import { EntryPage } from '@/features/entry'
+import { RoundOpsPage } from '@/features/round-ops'
 import { WaitingRoomPage } from '@/features/waiting-room'
 import { LoginPage, SignupPage, authGuard } from '@/features/auth'
 import { ProfilePage } from '@/features/profile'
@@ -38,6 +39,18 @@ const router = createRouter({
         requiresAuth: true,
         appHeaderTitle: '대기실',
         appHeaderDescription: '준비 전 안전 수칙을 확인합니다',
+      },
+    },
+    {
+      // 호스트(진행자)의 게임 진행 화면 — 게스트가 가는 카메라 콕핏과 갈라지는 지점이다.
+      // 방 코드를 경로에 두어 새로고침·딥링크에도 같은 방의 운영을 이어간다
+      path: '/round-ops/:roomCode',
+      name: 'round-ops',
+      component: RoundOpsPage,
+      meta: {
+        requiresAuth: true,
+        appHeaderTitle: '라운드 운영',
+        appHeaderDescription: '올스탑과 시간을 즉시 제어합니다',
       },
     },
     {

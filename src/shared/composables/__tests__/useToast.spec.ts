@@ -46,4 +46,16 @@ describe('useToast', () => {
 
     expect(toasts.value[0]).toMatchObject({ tone: 'danger', duration: 0 })
   })
+
+  it('dismissAll()은 큐에 쌓인 모든 토스트를 비운다', () => {
+    const { toast, dismissAll, toasts } = useToast()
+
+    toast({ title: 'A' })
+    toast({ title: 'B' })
+    toast({ title: 'C' })
+
+    dismissAll()
+
+    expect(toasts.value).toHaveLength(0)
+  })
 })

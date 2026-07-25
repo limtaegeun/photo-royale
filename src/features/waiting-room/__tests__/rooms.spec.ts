@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('@/shared/api/firebase', () => ({ db: {} }))
@@ -42,6 +44,7 @@ vi.mock('firebase/firestore', () => ({
 
 import {
   ROOM_CODE_LENGTH,
+  ROOM_CODE_PATTERN,
   RoomNotFoundError,
   createRoom,
   fetchMyRooms,
@@ -82,7 +85,8 @@ describe('createRoom', () => {
     const code = await createRoom('host-1')
 
     expect(code).toHaveLength(ROOM_CODE_LENGTH)
-    expect(code).toMatch(/^[A-Z2-9]+$/)
+    // 생성 코드가 rules와 공유하는 패턴을 실제로 통과하는지 검증(느슨한 근사 정규식 금지)
+    expect(code).toMatch(new RegExp(ROOM_CODE_PATTERN))
     expect(transactionSetMock).toHaveBeenCalledExactlyOnceWith(
       { path: `rooms/${code}` },
       { hostUid: 'host-1', status: 'waiting', createdAt: 'server-timestamp' },
@@ -119,17 +123,43 @@ describe('roomExists', () => {
 })
 
 describe('getRoom', () => {
-  it('방 문서를 RoomInfo로 매핑하고, 없으면 null을 반환한다', async () => {
+  it('방 문서를 RoomInfo로 매핑하고(게임 모드 포함), 없으면 null을 반환한다', async () => {
     getDocMock.mockResolvedValueOnce({
       exists: () => true,
-      data: () => ({ hostUid: 'host-1', status: 'waiting' }),
+      data: () => ({
+        hostUid: 'host-1',
+        status: 'waiting',
+        assignmentRound: 2,
+        gameMode: 'king-hunt',
+      }),
     })
 
-    await expect(getRoom('AB2C')).resolves.toEqual({ hostUid: 'host-1', status: 'waiting' })
+    await expect(getRoom('AB2C')).resolves.toEqual({
+      hostUid: 'host-1',
+      status: 'waiting',
+      assignmentRound: 2,
+      gameMode: 'king-hunt',
+    })
     expect(getDocMock).toHaveBeenCalledWith({ path: 'rooms/AB2C' })
 
     getDocMock.mockResolvedValueOnce({ exists: () => false })
     await expect(getRoom('ZZZZ')).resolves.toBeNull()
+  })
+
+  it('gameMode 필드가 없거나 알 수 없는 값이면 일반전(normal)으로 채운다', async () => {
+    // 필드 자체가 없는 기존 방
+    getDocMock.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ hostUid: 'host-1', status: 'waiting', assignmentRound: 0 }),
+    })
+    await expect(getRoom('AB2C')).resolves.toMatchObject({ gameMode: 'normal' })
+
+    // 저장된 값이 유효 모드가 아닌 경우
+    getDocMock.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ hostUid: 'host-1', status: 'waiting', assignmentRound: 1, gameMode: 'bogus' }),
+    })
+    await expect(getRoom('AB2C')).resolves.toMatchObject({ gameMode: 'normal' })
   })
 })
 
@@ -238,7 +268,7 @@ describe('joinRoom', () => {
 })
 
 describe('subscribeToParticipants', () => {
-  it('스냅샷 문서를 Participant로 매핑하고 팀이 없으면 미배정(null)으로 채운다', () => {
+  it('스냅샷 문서를 Participant로 매핑하고 없는 필드는 기본값(미배정·0·빈 배열)으로 채운다', () => {
     const unsubscribe = vi.fn<() => void>()
     onSnapshotMock.mockReturnValue(unsubscribe)
     const onChange = vi.fn<(participants: unknown) => void>()
@@ -256,14 +286,43 @@ describe('subscribeToParticipants', () => {
         { id: 'u1', data: () => ({ nickname: '오리', isReady: true }) },
         {
           id: 'u2',
-          data: () => ({ nickname: '하린', isReady: false, team: 'red', gender: 'female' }),
+          data: () => ({
+            nickname: '하린',
+            isReady: false,
+            team: 'A',
+            assignedRound: 2,
+            gender: 'female',
+            isXTeam: true,
+            sameGenderStreak: 2,
+            previousPartnerIds: ['x'],
+          }),
         },
       ],
     })
 
     expect(onChange).toHaveBeenCalledWith([
-      { id: 'u1', name: '오리', team: null, gender: null, isReady: true },
-      { id: 'u2', name: '하린', team: 'red', gender: 'female', isReady: false },
+      {
+        id: 'u1',
+        name: '오리',
+        team: null,
+        assignedRound: 0,
+        gender: null,
+        isXTeam: false,
+        sameGenderStreak: 0,
+        previousPartnerIds: [],
+        isReady: true,
+      },
+      {
+        id: 'u2',
+        name: '하린',
+        team: 'A',
+        assignedRound: 2,
+        gender: 'female',
+        isXTeam: true,
+        sameGenderStreak: 2,
+        previousPartnerIds: ['x'],
+        isReady: false,
+      },
     ])
     expect(result).toBe(unsubscribe)
   })
@@ -280,8 +339,21 @@ describe('subscribeToRoom', () => {
     const [roomRef, onNext] = onSnapshotMock.mock.calls[0]!
     expect(roomRef).toEqual({ path: 'rooms/AB2C' })
 
-    onNext({ exists: () => true, data: () => ({ hostUid: 'host-1', status: 'waiting' }) })
-    expect(onChange).toHaveBeenCalledWith({ hostUid: 'host-1', status: 'waiting' })
+    onNext({
+      exists: () => true,
+      data: () => ({
+        hostUid: 'host-1',
+        status: 'waiting',
+        assignmentRound: 1,
+        gameMode: 'staff-chase',
+      }),
+    })
+    expect(onChange).toHaveBeenCalledWith({
+      hostUid: 'host-1',
+      status: 'waiting',
+      assignmentRound: 1,
+      gameMode: 'staff-chase',
+    })
 
     onNext({ exists: () => false })
     expect(onChange).toHaveBeenLastCalledWith(null)
@@ -312,5 +384,24 @@ describe('setReady', () => {
       { path: 'rooms/AB2C/participants/u1' },
       { isReady: true },
     )
+  })
+})
+
+/**
+ * firestore.rules의 roomCode 정규식은 클라 ROOM_CODE_PATTERN의 이중 정의다(rules는 클라
+ * 코드를 import 불가). 한쪽만 바꾸면 방 생성이 전면 거부되므로, rules 파일을 직접 읽어
+ * 패턴 문자열이 동일한지 여기서 잡는다. 파생값(길이)의 정합도 함께 고정한다.
+ */
+describe('firestore.rules 방 코드 규칙 동기화 가드', () => {
+  it('rules의 roomCode 정규식이 ROOM_CODE_PATTERN과 문자열까지 동일하다', () => {
+    const rules = readFileSync(resolve(process.cwd(), 'firestore.rules'), 'utf8')
+
+    const match = rules.match(/roomCode\.matches\('([^']+)'\)/)
+    expect(match).not.toBeNull()
+    expect(match![1]).toBe(ROOM_CODE_PATTERN)
+  })
+
+  it('패턴에서 파생한 ROOM_CODE_LENGTH가 4다(파생 파싱 회귀 가드)', () => {
+    expect(ROOM_CODE_LENGTH).toBe(4)
   })
 })
