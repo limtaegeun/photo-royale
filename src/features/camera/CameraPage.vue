@@ -1,12 +1,40 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import BaseButton from '@/shared/components/BaseButton.vue'
+import { normalizeRoomCode, subscribeToRoom, type RoomInfo } from '@/features/waiting-room'
+import { useToast } from '@/shared/composables/useToast'
 import { useCameraStream } from './composables/useCameraStream'
 import { usePhotoCapture } from './composables/usePhotoCapture'
 
+const route = useRoute()
+const router = useRouter()
+const { toast } = useToast()
 const { status, stream, start } = useCameraStream()
 const { photo, failed, capture, clear } = usePhotoCapture()
 const videoRef = ref<HTMLVideoElement | null>(null)
+
+/** 콕핏은 방에 매여 있다 — 경로의 코드가 어느 방의 라운드를 뛰는 중인지 가리킨다 */
+const roomCode = normalizeRoomCode(String(route.params.roomCode))
+
+/**
+ * 방 문서 구독 — 콕핏이 스스로 나갈 시점을 알기 위한 최소한의 연결이다.
+ * 호스트가 게임을 종료하면(status가 waiting으로 돌아가거나 round가 사라지면) 플레이어는
+ * 뛰는 것을 멈추고 대기실로 돌아가야 하는데, 구독이 없으면 카메라 화면에 갇힌다.
+ * (라운드 타이머·공지 수신 UI는 이 구독 위에 후속으로 얹는다)
+ */
+let unsubscribeRoom: (() => void) | null = null
+
+function leaveCockpit(room: RoomInfo | null) {
+  if (room === null) {
+    toast({ title: '방을 찾을 수 없어요.', tone: 'danger' })
+    router.replace({ name: 'entry' })
+    return
+  }
+  if (room.status !== 'playing' || room.round === null) {
+    router.replace({ name: 'waiting-room', params: { roomCode } })
+  }
+}
 
 watch([stream, videoRef], ([media, video]) => {
   if (!video) return
@@ -23,7 +51,14 @@ async function shoot() {
   await capture(videoRef.value)
 }
 
-onMounted(start)
+onMounted(() => {
+  start()
+  unsubscribeRoom = subscribeToRoom(roomCode, leaveCockpit)
+})
+onUnmounted(() => {
+  unsubscribeRoom?.()
+  unsubscribeRoom = null
+})
 </script>
 
 <template>

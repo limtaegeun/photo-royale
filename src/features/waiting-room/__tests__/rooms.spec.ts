@@ -39,6 +39,7 @@ vi.mock('firebase/firestore', () => ({
     fn: (transaction: { get: typeof transactionGetMock; set: typeof transactionSetMock }) => Promise<T>,
   ) => fn({ get: transactionGetMock, set: transactionSetMock }),
   serverTimestamp: () => 'server-timestamp',
+  deleteField: () => 'delete-field',
   updateDoc: (ref: FakeRef, data: Record<string, unknown>) => updateDocMock(ref, data),
 }))
 
@@ -47,6 +48,7 @@ import {
   ROOM_CODE_PATTERN,
   RoomNotFoundError,
   createRoom,
+  endGame,
   fetchMyRooms,
   getRoom,
   joinRoom,
@@ -455,6 +457,29 @@ describe('startGame', () => {
       { path: 'rooms/AB2C' },
       { status: 'playing' },
     )
+  })
+})
+
+describe('endGame', () => {
+  it('status를 waiting으로 되돌리며 round를 같은 쓰기에서 지운다', async () => {
+    updateDocMock.mockResolvedValue(undefined)
+
+    await endGame('AB2C')
+
+    // 두 필드를 나눠 쓰면 "대기 중인데 라운드가 살아 있는" 중간 상태가 참가자에게 보인다
+    expect(updateDocMock).toHaveBeenCalledExactlyOnceWith(
+      { path: 'rooms/AB2C' },
+      { status: 'waiting', round: 'delete-field' },
+    )
+  })
+
+  it('배정 이력(assignmentRound·완장)은 건드리지 않는다', async () => {
+    updateDocMock.mockResolvedValue(undefined)
+
+    await endGame('AB2C')
+
+    const [, payload] = updateDocMock.mock.calls[0]!
+    expect(Object.keys(payload).sort()).toEqual(['round', 'status'])
   })
 })
 

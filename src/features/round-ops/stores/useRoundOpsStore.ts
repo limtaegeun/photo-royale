@@ -2,6 +2,7 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { useAuthStore } from '@/features/auth'
 import {
+  endGame,
   isAssignedInRound,
   subscribeToParticipants,
   subscribeToRoom,
@@ -182,6 +183,23 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
   }
 
   /**
+   * 게임 종료 — 방을 대기 상태로 되돌리고 진행 중인 라운드를 지운다. 전원이 대기실로 돌아가는
+   * 되돌릴 수 없는 액션이라, 확인 절차는 화면(다이얼로그)이 책임지고 여기서는 가드만 본다.
+   * 라운드가 아직 시작되지 않았어도(round null) 게임 자체는 종료할 수 있다.
+   */
+  async function finishGame() {
+    if (
+      roomCode.value === null ||
+      !isHost.value ||
+      gameStatus.value !== 'playing' ||
+      isActionPending.value
+    ) {
+      return false
+    }
+    return runAction(() => endGame(roomCode.value!))
+  }
+
+  /**
    * 공지 전송 — 성공 여부를 돌려준다(화면이 시트를 닫고 토스트를 띄우는 판단에 쓴다).
    * 빈 문자열·상한 초과는 서버(rules)도 막지만, 왕복 없이 여기서 먼저 거른다.
    */
@@ -232,6 +250,7 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     resume,
     adjustBy,
     applyAdjust,
+    finishGame,
     submitNotice,
   }
 })

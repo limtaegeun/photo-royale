@@ -23,7 +23,10 @@ const subscribeParticipantsMock =
 const subscribeNoticeMock =
   vi.fn<(code: string, onChange: (notice: Notice | null) => void) => () => void>()
 
+const endGameMock = vi.fn<(code: string) => Promise<void>>()
+
 vi.mock('@/features/waiting-room', () => ({
+  endGame: (code: string) => endGameMock(code),
   // 순수 판정 함수 — firebase에 의존하지 않으므로 실제와 같은 로직을 그대로 쓴다
   isAssignedInRound: (participant: Participant, assignmentRound: number) =>
     assignmentRound > 0 &&
@@ -141,6 +144,7 @@ describe('useRoundOpsStore', () => {
       resumeRoundMock,
       adjustRoundMock,
       sendNoticeMock,
+      endGameMock,
     ]) {
       mock.mockReset().mockResolvedValue(undefined)
     }
@@ -375,6 +379,56 @@ describe('useRoundOpsStore', () => {
 
       expect(store.pendingAdjustMinutes).toBe(1)
       expect(store.actionError).not.toBeNull()
+    })
+  })
+
+  describe('게임 종료', () => {
+    it('호스트가 진행 중인 방을 종료하면 endGame을 호출하고 성공을 알린다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room({ round: RUNNING }))
+
+      await expect(store.finishGame()).resolves.toBe(true)
+
+      expect(endGameMock).toHaveBeenCalledExactlyOnceWith('AB2C')
+    })
+
+    it('라운드 시작 전에도 게임 자체는 종료할 수 있다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room({ round: null }))
+
+      await store.finishGame()
+
+      expect(endGameMock).toHaveBeenCalledExactlyOnceWith('AB2C')
+    })
+
+    it('게스트와 이미 대기 중인 방에서는 종료하지 않는다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+
+      deliver.room(room({ hostUid: 'host9' }))
+      await expect(store.finishGame()).resolves.toBe(false)
+
+      deliver.room(room({ status: 'waiting' }))
+      await expect(store.finishGame()).resolves.toBe(false)
+
+      expect(endGameMock).not.toHaveBeenCalled()
+    })
+
+    it('실패하면 false와 안내를 남긴다 — 화면이 다이얼로그를 닫아도 상태는 그대로다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room({ round: RUNNING }))
+
+      endGameMock.mockRejectedValueOnce(new Error('permission denied'))
+
+      await expect(store.finishGame()).resolves.toBe(false)
+      expect(store.actionError).toBe('요청을 처리하지 못했어요. 다시 시도해 주세요.')
     })
   })
 

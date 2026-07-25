@@ -16,6 +16,7 @@ vi.mock('@/features/auth', () => ({
 }))
 
 const unsubscribeMock = vi.fn<() => void>()
+const endGameMock = vi.fn<(code: string) => Promise<void>>()
 const subscribeRoomMock =
   vi.fn<(code: string, onChange: (room: RoomInfo | null) => void) => () => void>()
 const subscribeParticipantsMock =
@@ -26,6 +27,7 @@ vi.mock('@/features/waiting-room', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/features/waiting-room')>()
   return {
     ...actual,
+    endGame: (code: string) => endGameMock(code),
     subscribeToRoom: (code: string, onChange: (room: RoomInfo | null) => void) =>
       subscribeRoomMock(code, onChange),
     subscribeToParticipants: (code: string, onChange: (participants: Participant[]) => void) =>
@@ -176,6 +178,7 @@ describe('RoundOpsPage', () => {
       mock.mockReset().mockResolvedValue(undefined)
     }
     sendNoticeMock.mockReset().mockResolvedValue(undefined)
+    endGameMock.mockReset().mockResolvedValue(undefined)
   })
   afterEach(() => {
     while (mounted.length > 0) mounted.pop()!.unmount()
@@ -407,15 +410,119 @@ describe('RoundOpsPage', () => {
     })
   })
 
+  describe('게임 종료', () => {
+    it('버튼은 확인 다이얼로그를 열 뿐 바로 종료하지 않는다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      deliver.room(hostRoom({ round: running() }))
+      await flushPromises()
+
+      await findButton(wrapper, '게임 종료')!.trigger('click')
+      await flushPromises()
+
+      expect(document.body.textContent).toContain('게임을 종료할까요?')
+      expect(document.body.textContent).toContain('참가자 전원이 대기실로 돌아가고')
+      expect(endGameMock).not.toHaveBeenCalled()
+    })
+
+    it('다이얼로그에서 계속 진행을 누르면 아무 일도 일어나지 않는다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      deliver.room(hostRoom({ round: running() }))
+      await flushPromises()
+
+      await findButton(wrapper, '게임 종료')!.trigger('click')
+      await flushPromises()
+      const keep = [...document.body.querySelectorAll('button')].find(
+        (b) => b.textContent?.trim() === '계속 진행',
+      )!
+      keep.click()
+      await flushPromises()
+
+      expect(endGameMock).not.toHaveBeenCalled()
+      expect(document.body.textContent).not.toContain('게임을 종료할까요?')
+    })
+
+    it('확인하면 게임을 종료하고 성공을 알린다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      deliver.room(hostRoom({ round: running() }))
+      await flushPromises()
+
+      await findButton(wrapper, '게임 종료')!.trigger('click')
+      await flushPromises()
+      const confirm = [...document.body.querySelectorAll('button')].filter(
+        (b) => b.textContent?.trim() === '게임 종료',
+      ).pop()!
+      confirm.click()
+      await flushPromises()
+
+      expect(endGameMock).toHaveBeenCalledExactlyOnceWith('AB2C')
+      expect(toastMock).toHaveBeenCalledWith({ title: '게임을 종료했어요.', tone: 'success' })
+    })
+
+    /** 종료 스냅샷이 오면 종료를 누른 창뿐 아니라 같은 계정의 다른 기기도 함께 돌아가야 한다 */
+    it('playing → waiting 스냅샷이 오면 호스트를 대기실로 보낸다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      mountPage()
+      deliver.room(hostRoom({ round: running() }))
+      await flushPromises()
+      expect(replaceMock).not.toHaveBeenCalled()
+
+      deliver.room(hostRoom({ status: 'waiting', round: null }))
+      await flushPromises()
+
+      expect(replaceMock).toHaveBeenCalledWith({
+        name: 'waiting-room',
+        params: { roomCode: 'AB2C' },
+      })
+    })
+
+    it('처음부터 waiting인 방에 딥링크로 들어온 호스트는 안내 카드에 머문다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+
+      deliver.room(hostRoom({ status: 'waiting', round: null }))
+      await flushPromises()
+
+      expect(replaceMock).not.toHaveBeenCalled()
+      expect(wrapper.text()).toContain('게임이 아직 시작되지 않았어요')
+    })
+
+    it('아직 시작되지 않은 방에는 게임 종료 버튼이 없다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+
+      deliver.room(hostRoom({ status: 'waiting', round: null }))
+      await flushPromises()
+
+      expect(findButton(wrapper, '게임 종료')).toBeUndefined()
+    })
+  })
+
   describe('호스트 가드', () => {
-    it('게스트가 URL로 들어오면 진행 중인 방에서는 카메라로 보낸다', async () => {
+    it('라운드가 시작된 방이면 게스트를 방 코드가 담긴 콕핏으로 보낸다', async () => {
       const deliver = captureSnapshotCallbacks()
       mountPage()
 
-      deliver.room(hostRoom({ hostUid: 'host9' }))
+      deliver.room(hostRoom({ hostUid: 'host9', round: running() }))
       await flushPromises()
 
-      expect(replaceMock).toHaveBeenCalledWith({ name: 'camera' })
+      expect(replaceMock).toHaveBeenCalledWith({ name: 'camera', params: { roomCode: 'AB2C' } })
+    })
+
+    /** 대기실의 전이 규칙과 같아야 한다 — URL을 직접 연 게스트만 카메라가 켜지면 안 된다 */
+    it('게임은 시작됐지만 라운드 시작 전이면 게스트를 대기실로 돌려보낸다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      mountPage()
+
+      deliver.room(hostRoom({ hostUid: 'host9', round: null }))
+      await flushPromises()
+
+      expect(replaceMock).toHaveBeenCalledWith({
+        name: 'waiting-room',
+        params: { roomCode: 'AB2C' },
+      })
     })
 
     it('아직 시작 전인 방이면 게스트를 대기실로 돌려보낸다', async () => {
@@ -460,7 +567,10 @@ describe('RoundOpsPage', () => {
         name: 'login',
         query: { redirect: '/round-ops/ab2c' },
       })
-      expect(replaceMock).not.toHaveBeenCalledWith({ name: 'camera' })
+      expect(replaceMock).not.toHaveBeenCalledWith({
+        name: 'camera',
+        params: { roomCode: 'AB2C' },
+      })
     })
 
     it('호스트는 어디로도 보내지 않는다', async () => {

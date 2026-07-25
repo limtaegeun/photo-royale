@@ -1,5 +1,6 @@
 import {
   collection,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -303,6 +304,18 @@ export function subscribeToRoom(
  */
 export async function startGame(code: string): Promise<void> {
   await updateDoc(doc(db, 'rooms', code), { status: 'playing' })
+}
+
+/**
+ * 게임 종료 — playing을 waiting으로 되돌리고 진행 중인 라운드를 지운다(호스트 전용).
+ * 두 필드를 한 번에 써야 한다: 나눠 쓰면 "대기 중인데 라운드가 살아 있는" 중간 상태가
+ * 참가자 화면에 잠깐 보이고, firestore.rules도 두 키를 함께 바꾸는 갈래만 허용한다.
+ *
+ * 배정 이력(assignmentRound·완장·짝꿍)은 그대로 둔다 — 대기실로 돌아가 다음 차수를 배정하면
+ * 그 시점에 레디가 리셋되므로, 종료가 라운드 루프를 끊지 않고 한 바퀴를 닫아 준다.
+ */
+export async function endGame(code: string): Promise<void> {
+  await updateDoc(doc(db, 'rooms', code), { status: 'waiting', round: deleteField() })
 }
 
 /** 참가자 명단 실시간 구독 — 입장 순서(joinedAt)로 정렬해 전달한다 */

@@ -3,5 +3,5 @@ export { default as WaitingRoomPage } from './WaitingRoomPage.vue'
 export { default as MyRoomList } from './components/MyRoomList.vue'
 export { ROOM_CODE_LENGTH, createRoom, normalizeRoomCode, roomExists } from './api/rooms'
 // 라운드 운영(H04)이 방 문서·명단을 구독한다 — 방 데이터의 소유자는 여기다
-export { isAssignedInRound, subscribeToParticipants, subscribeToRoom } from './api/rooms'
+export { endGame, isAssignedInRound, subscribeToParticipants, subscribeToRoom } from './api/rooms'
 export type { Participant, RoomInfo, RoomStatus, RoundState } from './api/rooms'

@@ -52,6 +52,12 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
   const myId = computed(() => authStore.user?.uid ?? null)
   const isHost = computed(() => room.value !== null && room.value.hostUid === myId.value)
   const gameStatus = computed(() => room.value?.status ?? null)
+  /**
+   * 호스트가 라운드를 실제로 시작했는가(round 필드 존재) — 게임 시작(playing)과 다르다.
+   * 게임 시작은 "배정이 끝나고 진행자가 운영 화면으로 갔다"는 뜻일 뿐이라, 이 값이 false인 동안
+   * 플레이어는 아직 뛰지 않는다. 콕핏 전환 기준은 playing이 아니라 이 값이다.
+   */
+  const isRoundStarted = computed(() => room.value?.round != null)
   /** 확정된 팀편성 차수 — 0이면 아직 배정 전 */
   const assignmentRound = computed(() => room.value?.assignmentRound ?? 0)
 
@@ -222,6 +228,7 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
     myId,
     isHost,
     gameStatus,
+    isRoundStarted,
     assignmentRound,
     roster,
     myAssignment,

@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import BaseBadge from '@/shared/components/BaseBadge.vue'
 import BaseButton from '@/shared/components/BaseButton.vue'
 import BaseCard from '@/shared/components/BaseCard.vue'
+import BaseDialog from '@/shared/components/BaseDialog.vue'
 import BaseSegmented from '@/shared/components/BaseSegmented.vue'
 import { normalizeRoomCode } from '@/features/waiting-room'
 import { useToast } from '@/shared/composables/useToast'
@@ -58,6 +59,7 @@ const TABS = [
 
 const activeTab = ref<string>('ops')
 const isNoticeSheetOpen = ref(false)
+const isEndGameDialogOpen = ref(false)
 
 /** 라운드 컨트롤은 게임이 실제로 진행 중일 때만 의미가 있다(rules도 playing에서만 쓰기를 허용한다) */
 const isPlaying = computed(() => gameStatus.value === 'playing')
@@ -74,7 +76,7 @@ const canControlTimer = computed(
  * false가 되는데, 이때 게스트 분기를 타면 진행자가 카메라 콕핏으로 튕긴다 — 이 화면이 막으려던
  * 바로 그 상황이다(QA O-01). 세션 없음은 로그인 화면으로 보내고 돌아올 목적지를 보존한다.
  */
-watch([phase, isHost, gameStatus, myId], () => {
+watch([phase, isHost, gameStatus, myId, round], () => {
   if (phase.value === 'not-found') {
     toast({ title: '방을 찾을 수 없어요.', tone: 'danger' })
     router.replace({ name: 'entry' })
@@ -85,17 +87,42 @@ watch([phase, isHost, gameStatus, myId], () => {
     return
   }
   if (phase.value !== 'ready' || isHost.value) return
+  // 게스트의 목적지는 대기실의 전이 규칙과 같아야 한다 — 라운드가 시작되기 전이면 콕핏이 아니라
+  // 대기실(배정 카드)이다. 두 화면이 다른 기준을 쓰면 URL을 직접 연 게스트만 카메라가 켜진다.
   router.replace(
-    isPlaying.value
-      ? { name: 'camera' }
+    isPlaying.value && round.value !== null
+      ? { name: 'camera', params: { roomCode: routeRoomCode.value } }
       : { name: 'waiting-room', params: { roomCode: routeRoomCode.value } },
   )
+})
+
+/**
+ * 게임이 끝나면(playing → waiting) 호스트를 대기실로 돌려보낸다. 스냅샷 기준이라 종료를 누른
+ * 창뿐 아니라 같은 계정으로 열어 둔 다른 기기도 함께 돌아간다.
+ *
+ * 전이(playing이었다가 waiting)일 때만 움직인다 — 처음부터 waiting인 방에 딥링크로 들어온
+ * 호스트는 안내 카드를 보고 스스로 판단하게 둔다(그 화면에 '대기실로' 버튼이 있다).
+ */
+watch(gameStatus, (status, previous) => {
+  if (!isHost.value || previous !== 'playing' || status !== 'waiting') return
+  router.replace({ name: 'waiting-room', params: { roomCode: routeRoomCode.value } })
 })
 
 // 액션 실패는 화면을 되돌리지 않고 토스트로만 알린다 — 마지막 스냅샷을 유지한 채 재시도할 수 있게
 watch(actionError, (message) => {
   if (message !== null) toast({ title: message, tone: 'danger' })
 })
+
+/**
+ * 게임 종료 — 성공하면 방 status가 waiting이 되고, 대기실 복귀는 아래 watch(스냅샷)가 맡는다.
+ * 여기서 직접 라우팅하지 않는 이유: 호스트가 기기를 두 대 열어 둔 경우 한쪽에서 종료해도
+ * 두 창이 모두 대기실로 돌아가야 하기 때문이다.
+ */
+async function endGame() {
+  const ended = await store.finishGame()
+  isEndGameDialogOpen.value = false
+  if (ended) toast({ title: '게임을 종료했어요.', tone: 'success' })
+}
 
 /** 전송에 성공했을 때만 시트를 닫는다 — 실패하면 입력을 남겨 둔 채 재시도할 수 있어야 한다 */
 async function sendNotice(text: string) {
@@ -187,6 +214,18 @@ onUnmounted(() => {
             :now-ms="nowMs"
             @open="isNoticeSheetOpen = true"
           />
+
+          <!-- 게임 종료 — 전원을 대기실로 되돌리는 파괴적 액션이라 진행 컨트롤과 멀리 떨어뜨리고
+               ghost로 낮춘다. 실제 실행은 확인 다이얼로그를 거친다 -->
+          <BaseButton
+            variant="ghost"
+            size="md"
+            class="w-full text-danger"
+            :disabled="isActionPending"
+            @click="isEndGameDialogOpen = true"
+          >
+            게임 종료
+          </BaseButton>
         </template>
 
         <!-- 아직 시작하지 않은 방 — rules도 playing에서만 라운드 쓰기를 허용한다 -->
@@ -248,5 +287,32 @@ onUnmounted(() => {
       :sending="isSendingNotice"
       @send="sendNotice"
     />
+
+    <!-- 되돌릴 수 없는 액션이라 무엇이 사라지는지 문장으로 밝힌다 -->
+    <BaseDialog
+      v-model:open="isEndGameDialogOpen"
+      title="게임을 종료할까요?"
+      description="참가자 전원이 대기실로 돌아가고 진행 중인 라운드는 사라져요. 팀 배정은 그대로 남아 다음 라운드를 이어서 준비할 수 있어요."
+    >
+      <div class="flex flex-col gap-3">
+        <BaseButton
+          variant="danger"
+          size="lg"
+          class="w-full"
+          :loading="isActionPending"
+          @click="endGame"
+        >
+          게임 종료
+        </BaseButton>
+        <BaseButton
+          variant="ghost"
+          size="md"
+          class="w-full"
+          @click="isEndGameDialogOpen = false"
+        >
+          계속 진행
+        </BaseButton>
+      </div>
+    </BaseDialog>
   </section>
 </template>

@@ -43,6 +43,7 @@ const {
   startGameError,
   myId,
   gameStatus,
+  isRoundStarted,
 } = storeToRefs(store)
 
 // 호스트 팀 배정 보드 — 드래프트는 로컬 스토어에만 쌓이고 "배정 확정"만 서버에 쓴다
@@ -151,15 +152,22 @@ onUnmounted(() => {
   clearHeader()
 })
 
-// 호스트가 시작하면 status 스냅샷으로 전원이 동시에 게임 화면으로 넘어간다. 다만 호스트는
-// 플레이어가 아니라 진행자이므로 카메라 콕핏이 아니라 라운드 운영 화면으로 간다 —
-// 진행자에게 카메라 권한 프롬프트가 뜨는 것 자체가 잘못된 진입이다.
-watch(gameStatus, (status) => {
+// 호스트가 시작하면 status 스냅샷으로 화면이 넘어가는데, 목적지와 시점이 역할별로 다르다.
+//
+// 호스트(진행자)는 playing 전이 즉시 라운드 운영 화면으로 간다 — 거기서 '라운드 시작'을 눌러야
+// 하므로 더 기다릴 것이 없다. 카메라 콕핏으로 보내면 진행자에게 권한 프롬프트가 뜬다.
+//
+// 게스트는 **호스트가 라운드를 실제로 시작할 때까지** 대기실(배정 카드)에 머문다. playing만으로
+// 넘기면 진행자가 인원을 세고 공지하는 동안 플레이어들은 켜진 뷰파인더만 보며 기다리게 되고,
+// 그 사이 배정된 완장·팀원을 다시 확인할 방법도 사라진다.
+watch([gameStatus, isRoundStarted], ([status, roundStarted]) => {
   if (status !== 'playing') return
   if (isHost.value) {
     router.replace({ name: 'round-ops', params: { roomCode: roomCode.value } })
-  } else {
-    router.replace({ name: 'camera' })
+    return
+  }
+  if (roundStarted) {
+    router.replace({ name: 'camera', params: { roomCode: roomCode.value } })
   }
 })
 
