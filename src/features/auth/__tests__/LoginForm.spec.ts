@@ -57,4 +57,24 @@ describe('LoginForm', () => {
     expect(wrapper.text()).toContain('비밀번호를 입력해주세요.')
     expect(loginMock).not.toHaveBeenCalled()
   })
+
+  it('제출 중에는 라벨을 바꾸지 않고 버튼에 스피너를 띄운다', async () => {
+    let resolveLogin!: () => void
+    loginMock.mockReturnValue(new Promise<void>((resolve) => (resolveLogin = resolve)))
+    const wrapper = mount(LoginForm)
+    const button = () => wrapper.find('button[type="submit"]')
+
+    await wrapper.find('#login-email').setValue('user@example.com')
+    await wrapper.find('#login-password').setValue('secret1')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(button().attributes('data-loading')).toBe('true')
+    expect(button().text()).toBe('로그인')
+
+    resolveLogin()
+    await flushPromises()
+
+    expect(button().attributes('data-loading')).toBeUndefined()
+  })
 })

@@ -168,4 +168,23 @@ describe('EntryPage', () => {
     await findButton(wrapper, '로그인')!.trigger('click')
     expect(pushMock).toHaveBeenCalledWith({ name: 'login', query: undefined })
   })
+
+  it('진행 중인 CTA에만 스피너를 띄우고 다른 CTA는 비활성화한다', async () => {
+    let resolveCreate!: (code: string) => void
+    createRoomMock.mockReturnValue(new Promise<string>((resolve) => (resolveCreate = resolve)))
+    const wrapper = mount(EntryPage)
+
+    await findButton(wrapper, '새로운 방 만들기')!.trigger('click')
+    await flushPromises()
+
+    // 라벨은 그대로 유지되므로 진행 중에도 같은 텍스트로 버튼을 찾을 수 있다
+    expect(findButton(wrapper, '새로운 방 만들기')!.attributes('data-loading')).toBe('true')
+    expect(findButton(wrapper, '입장하기')!.attributes('data-loading')).toBeUndefined()
+    expect(findButton(wrapper, '입장하기')!.attributes('disabled')).toBeDefined()
+
+    resolveCreate('ABCD')
+    await flushPromises()
+
+    expect(findButton(wrapper, '새로운 방 만들기')!.attributes('data-loading')).toBeUndefined()
+  })
 })
