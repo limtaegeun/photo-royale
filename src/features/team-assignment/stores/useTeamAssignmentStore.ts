@@ -3,7 +3,7 @@ import { defineStore } from 'pinia'
 import type { Gender } from '@/features/auth'
 import { DEFAULT_GAME_MODE, GAME_MODES, type GameModeId } from '@/features/game-mode'
 import { assignTeams, deriveCarryover } from '../teamAssignment'
-import { ARMBAND_LABELS, armbandForTeamIndex } from '../armbands'
+import { ARMBAND_LABELS, armbandForTeamIndex, groupForArmband } from '../armbands'
 import { pickXTeams } from '../xRole'
 import { confirmAssignment, type ConfirmedTeamWrite } from '../api/assignment'
 
@@ -75,6 +75,31 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
     )
     for (const team of draftTeams.value) {
       team.isXTeam = selected.has(team.armband)
+    }
+  }
+
+  /**
+   * "그룹마다 한 팀이 X를 겸한다" 불변식을 수동 편집 후에 복구한다.
+   *
+   * 멤버 이동으로 X 팀이 비면 X가 해제되는데(빈 팀은 X를 가질 수 없다), 그대로 두면 그 그룹에
+   * X가 하나도 없는 상태로 확정될 수 있었다. 반대로 비어 있던 팀에 멤버가 들어와 그룹의 후보가
+   * 새로 생기는 경우도 같다. 이미 X가 있는 그룹은 건드리지 않는다 — 칩 하나를 옮겼는데 전 그룹의
+   * X가 새로 뽑히면 호스트가 편성을 예측할 수 없으므로, 비어 버린 그룹만 채운다.
+   */
+  function repairXModule(random: () => number = Math.random) {
+    const teamsByGroup = new Map<string, DraftTeam[]>()
+    for (const team of draftTeams.value) {
+      if (team.members.length === 0) continue
+      const group = groupForArmband(team.armband)
+      if (group === null) continue
+      const bucket = teamsByGroup.get(group)
+      if (bucket) bucket.push(team)
+      else teamsByGroup.set(group, [team])
+    }
+
+    for (const candidates of teamsByGroup.values()) {
+      if (candidates.some((team) => team.isXTeam)) continue
+      candidates[Math.floor(random() * candidates.length)]!.isXTeam = true
     }
   }
 
@@ -153,7 +178,11 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
    * 1인 팀도 X를 겸할 수 있다(2026-07-24 결정, xRole.ts 참조). 빈 팀은 이동 타겟으로 필요하므로 유지한다.
    * 선택(selectedMemberId)은 이 액션에서 건드리지 않는다 — 선택 해제는 moveSelectedTo의 책임이다.
    */
-  function moveMember(memberId: string, targetArmband: string | null) {
+  function moveMember(
+    memberId: string,
+    targetArmband: string | null,
+    random: () => number = Math.random,
+  ) {
     // 이미 목적지(대상 팀 또는 대기열)에 있는 멤버면 아무것도 하지 않는다 — 드래그 앤 드롭이
     // 같은 소속으로 재-드롭되는 경우 등에서 splice→push로 인한 중복 삽입/무의미한 재정렬을 막는다.
     if (targetArmband === null) {
@@ -189,6 +218,8 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
     for (const team of draftTeams.value) {
       if (team.members.length === 0) team.isXTeam = false
     }
+    // 빈 팀이 되어 X가 풀린 그룹을 다시 채운다 — X 모듈이 켜져 있을 때만
+    if (xModuleEnabled.value) repairXModule(random)
   }
 
   /**
@@ -202,7 +233,11 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
     selectedMemberId.value = null
   }
 
-  /** 사용 중이지 않은 첫 완장으로 빈 팀을 추가한다. 완장을 모두 쓰면 안내를 세팅한다 */
+  /**
+   * 사용 중이지 않은 첫 완장으로 빈 팀을 추가한다. 완장을 모두 쓰면 안내를 세팅한다.
+   * 안내 슬롯은 확정 실패(confirmError)와 공유하므로, 팀 추가가 성공하면 직전 안내를 비운다 —
+   * 그러지 않으면 완장 소진 안내가 이후 화면에 계속 남는다.
+   */
   function addTeam() {
     const used = new Set(draftTeams.value.map((team) => team.armband))
     const next = ARMBAND_LABELS.find((label) => !used.has(label))
@@ -210,6 +245,7 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
       confirmError.value = '완장을 모두 사용했어요. 더 이상 팀을 추가할 수 없어요.'
       return
     }
+    confirmError.value = null
     draftTeams.value.push({ armband: next, members: [], isXTeam: false })
   }
 

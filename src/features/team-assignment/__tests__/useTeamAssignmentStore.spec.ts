@@ -16,6 +16,7 @@ import {
   type DraftMember,
 } from '../stores/useTeamAssignmentStore'
 import { DEFAULT_GAME_MODE } from '@/features/game-mode'
+import { ARMBAND_LABELS } from '../armbands'
 
 /**
  * 셔플을 항등(no-op)으로 만드는 rng — assignTeams의 배정 순서가 입력 순서와 같아진다.
@@ -506,6 +507,75 @@ describe('useTeamAssignmentStore', () => {
 
       store.startDraft(mixedFour(), 1, 'normal', identityRandom)
       expect(store.canConfirm).toBe(true)
+    })
+  })
+  describe('X 모듈 불변식 복구(수동 편집 후)', () => {
+    /** 10명 → 5팀(A~E). A와 E가 같은 blue 그룹이라 "그룹당 1팀" 복구를 검증할 수 있다 */
+    function tenMembers(): DraftMember[] {
+      return Array.from({ length: 10 }, (_, i) =>
+        member(`p${i}`, `이름${i}`, i % 2 === 0 ? 'male' : 'female'),
+      )
+    }
+
+    it('X 팀이 비면 같은 그룹의 다른 팀이 X를 이어받는다', () => {
+      const store = useTeamAssignmentStore()
+      store.startDraft(tenMembers(), 1, 'normal', identityRandom)
+      store.setXModule(true, () => 0) // 그룹별 첫 후보 선정 → blue 그룹은 A
+
+      const teamA = store.draftTeams.find((team) => team.armband === 'A')!
+      expect(teamA.isXTeam).toBe(true)
+
+      // A의 멤버 전원을 B로 옮겨 A를 빈 팀으로 만든다 — A의 X는 풀린다.
+      // moveMember가 members를 splice하므로 id를 먼저 떠 놓고 순회한다
+      const movedIds = teamA.members.map((moved) => moved.id)
+      for (const id of movedIds) store.moveMember(id, 'B', () => 0)
+
+      expect(teamA.isXTeam).toBe(false)
+      // blue 그룹(A·E)에 X가 하나도 없이 남지 않는다 — E가 이어받는다
+      const blue = store.draftTeams.filter((team) => ['A', 'E'].includes(team.armband))
+      expect(blue.filter((team) => team.isXTeam).map((team) => team.armband)).toEqual(['E'])
+    })
+
+    it('이미 X가 있는 그룹은 이동 때마다 다시 뽑지 않는다(호스트가 편성을 예측할 수 있어야 한다)', () => {
+      const store = useTeamAssignmentStore()
+      store.startDraft(tenMembers(), 1, 'normal', identityRandom)
+      store.setXModule(true, () => 0)
+      const before = store.draftTeams.filter((team) => team.isXTeam).map((team) => team.armband)
+
+      // 빈 팀을 만들지 않는 이동(팀 C의 한 명을 D로) — 어느 그룹도 X를 잃지 않는다
+      const teamC = store.draftTeams.find((team) => team.armband === 'C')!
+      store.moveMember(teamC.members[0]!.id, 'D', () => 0.99)
+
+      expect(store.draftTeams.filter((team) => team.isXTeam).map((team) => team.armband)).toEqual(
+        before,
+      )
+    })
+
+    it('X 모듈이 꺼져 있으면 이동 후에도 X를 새로 만들지 않는다', () => {
+      const store = useTeamAssignmentStore()
+      store.startDraft(tenMembers(), 1, 'normal', identityRandom)
+
+      const teamA = store.draftTeams.find((team) => team.armband === 'A')!
+      const movedIds = teamA.members.map((moved) => moved.id)
+      for (const id of movedIds) store.moveMember(id, 'B')
+
+      expect(store.draftTeams.some((team) => team.isXTeam)).toBe(false)
+    })
+  })
+
+  describe('팀 추가 안내', () => {
+    it('완장 소진 안내는 이후 팀 추가가 성공하면 지워진다', () => {
+      const store = useTeamAssignmentStore()
+      store.startDraft([member('m1', '지후', 'male')], 1, 'normal', identityRandom)
+      // 완장 25개를 모두 채운다(팀A는 배정으로 이미 존재)
+      for (let i = 1; i < ARMBAND_LABELS.length; i++) store.addTeam()
+      store.addTeam()
+      expect(store.confirmError).toBe('완장을 모두 사용했어요. 더 이상 팀을 추가할 수 없어요.')
+
+      // 한 팀을 비워 완장을 되돌리면(재배정) 다시 추가할 수 있고 안내는 사라진다
+      store.startDraft([member('m1', '지후', 'male')], 1, 'normal', identityRandom)
+      store.addTeam()
+      expect(store.confirmError).toBeNull()
     })
   })
 })
