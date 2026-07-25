@@ -90,6 +90,8 @@ src/shared/components/
 | `text-label` | 15px/600 | 버튼, 뱃지, 입력 라벨 |
 | `text-caption` | 13px/400 | 타임스탬프, 보조 설명 (최소 크기 — 이보다 작게 금지) |
 
+**한국어 줄바꿈**: 두 줄 이상으로 접힐 수 있는 문장(모달·시트 설명, 안내 문구, 카드 본문)에는 `break-keep`을 붙인다. 브라우저 기본값은 한국어를 글자 단위로 끊어 `라운드 / 는`처럼 어절이 갈라지고, 그 지점에서 읽는 속도가 눈에 띄게 떨어진다. 여기에 제목은 `text-balance`(줄 길이 균등), 본문은 `text-pretty`(끝줄 한 단어 방지)를 더한다. 방 코드·URL처럼 끊겨도 되는 값에는 쓰지 않는다.
+
 ### 스페이싱·radius·기타
 - 스페이싱: Tailwind 기본 4px 그리드 그대로 — `p-1`=4px, `p-2`=8px, `p-4`=16px, `p-5`=20px, `p-6`=24px, `gap-*`/`m-*` 동일.
 - radius: `rounded-sm`(6) / `rounded-md`(10) / `rounded-lg`(16) / `rounded-xl`(24) / `rounded-full`.

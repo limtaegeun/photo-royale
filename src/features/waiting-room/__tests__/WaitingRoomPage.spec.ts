@@ -96,12 +96,14 @@ const GUEST_ROOM: RoomInfo = {
   status: 'waiting',
   assignmentRound: 0,
   gameMode: 'normal',
+  round: null,
 }
 const MY_ROOM: RoomInfo = {
   hostUid: 'me',
   status: 'waiting',
   assignmentRound: 0,
   gameMode: 'normal',
+  round: null,
 }
 
 const ROSTER: Participant[] = [
@@ -288,15 +290,50 @@ describe('WaitingRoomPage', () => {
     expect(wrapper.text()).not.toContain('오리')
   })
 
-  it('게스트: 방 status가 playing이 되면 카메라 화면으로 replace 이동한다', async () => {
+  /** 진행자가 인원을 세고 공지하는 동안 플레이어가 켜진 뷰파인더만 보게 두지 않는다 */
+  it('게스트: playing 전이만으로는 카메라로 가지 않고 배정 카드에 머문다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    const wrapper = mountPage()
+    await flushPromises()
+
+    deliver.room({
+      hostUid: 'host9',
+      status: 'playing',
+      assignmentRound: 1,
+      gameMode: 'normal',
+      round: null,
+    })
+    deliver.participants([{ ...ROSTER[0]!, team: 'A', assignedRound: 1, isReady: true }])
+    await flushPromises()
+
+    expect(replaceMock).not.toHaveBeenCalled()
+    // 라운드 배정 카드가 그대로 보인다
+    expect(wrapper.text()).toContain('완장')
+  })
+
+  it('게스트: 호스트가 라운드를 시작하면 그때 방 코드를 담아 카메라로 이동한다', async () => {
     const deliver = captureSnapshotCallbacks()
     mountPage()
     await flushPromises()
 
-    deliver.room({ hostUid: 'host9', status: 'playing', assignmentRound: 0, gameMode: 'normal' })
+    const playing = {
+      hostUid: 'host9',
+      status: 'playing' as const,
+      assignmentRound: 1,
+      gameMode: 'normal' as const,
+      round: null,
+    }
+    deliver.room(playing)
+    await flushPromises()
+    expect(replaceMock).not.toHaveBeenCalled()
+
+    deliver.room({
+      ...playing,
+      round: { status: 'running', startedAtMs: Date.now(), durationMs: 1_200_000, pausedRemainingMs: null },
+    })
     await flushPromises()
 
-    expect(replaceMock).toHaveBeenCalledWith({ name: 'camera' })
+    expect(replaceMock).toHaveBeenCalledWith({ name: 'camera', params: { roomCode: 'AB2C' } })
   })
 
   it('호스트(진행자): playing 전이 시 카메라가 아니라 라운드 운영 화면으로 replace 이동한다', async () => {
@@ -305,14 +342,17 @@ describe('WaitingRoomPage', () => {
     mountPage()
     await flushPromises()
 
-    deliver.room({ hostUid: 'me', status: 'playing', assignmentRound: 1, gameMode: 'normal' })
+    deliver.room({ hostUid: 'me', status: 'playing', assignmentRound: 1, gameMode: 'normal', round: null })
     await flushPromises()
 
     expect(replaceMock).toHaveBeenCalledWith({
       name: 'round-ops',
       params: { roomCode: 'AB2C' },
     })
-    expect(replaceMock).not.toHaveBeenCalledWith({ name: 'camera' })
+    expect(replaceMock).not.toHaveBeenCalledWith({
+      name: 'camera',
+      params: { roomCode: 'AB2C' },
+    })
   })
 
   it('화면을 떠나면 방·명단 구독을 해제한다', async () => {
@@ -410,6 +450,7 @@ describe('WaitingRoomPage', () => {
       status: 'waiting',
       assignmentRound: 1,
       gameMode: 'normal',
+      round: null,
     })
     const wrapper = mountPage()
     await flushPromises()
@@ -440,6 +481,7 @@ describe('WaitingRoomPage', () => {
       status: 'waiting',
       assignmentRound: 2,
       gameMode: 'group',
+      round: null,
     })
     // mountPage 대신 명시적 pinia로 마운트해 같은 인스턴스의 팀 배정 스토어를 조회한다
     const pinia = createPinia()
@@ -458,7 +500,7 @@ describe('WaitingRoomPage', () => {
     expect(taStore.draftGameMode).toBe('group')
 
     // 다른 탭이 확정해 room 스냅샷의 assignmentRound가 올라가도(3) 드래프트 차수는 그대로 3
-    deliver.room({ hostUid: 'me', status: 'waiting', assignmentRound: 3, gameMode: 'group' })
+    deliver.room({ hostUid: 'me', status: 'waiting', assignmentRound: 3, gameMode: 'group', round: null })
     await flushPromises()
     expect(taStore.draftRound).toBe(3)
   })
@@ -495,6 +537,7 @@ describe('WaitingRoomPage', () => {
       status: 'waiting',
       assignmentRound: 1,
       gameMode: 'normal',
+      round: null,
     }
     getRoomMock.mockResolvedValue(hostRound1)
     const wrapper = mountPage()

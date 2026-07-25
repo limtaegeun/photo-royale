@@ -51,9 +51,15 @@ const open = defineModel<boolean>('open', { default: false })
         <VisuallyHidden v-if="hideTitle">
           <DialogTitle>{{ title }}</DialogTitle>
         </VisuallyHidden>
-        <DialogTitle v-else class="text-subheading text-content">{{ title }}</DialogTitle>
+        <!-- pr-8: 닫기 버튼(right-4 + size-8) 자리를 비워 제목이 아이콘 밑으로 파고들지 않게 한다 -->
+        <DialogTitle v-else class="pr-8 text-subheading text-balance break-keep text-content">
+          {{ title }}
+        </DialogTitle>
 
-        <DialogDescription v-if="description" class="mt-2 text-body text-content-secondary">
+        <DialogDescription
+          v-if="description"
+          class="mt-2 text-body text-pretty break-keep text-content-secondary"
+        >
           {{ description }}
         </DialogDescription>
 

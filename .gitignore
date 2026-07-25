@@ -40,3 +40,6 @@ __screenshots__/
 
 # oh-my-claudecode session state
 .omc/
+
+# live-qa 스크린샷(검증 증거 — 저장소에 넣지 않는다)
+.qa-shots/

@@ -77,12 +77,14 @@ const GUEST_ROOM: RoomInfo = {
   status: 'waiting',
   assignmentRound: 0,
   gameMode: 'normal',
+  round: null,
 }
 const MY_ROOM: RoomInfo = {
   hostUid: 'me',
   status: 'waiting',
   assignmentRound: 0,
   gameMode: 'normal',
+  round: null,
 }
 
 const ME_WAITING: Participant = {
@@ -301,6 +303,7 @@ describe('useWaitingRoomStore', () => {
       status: 'waiting',
       assignmentRound: 2,
       gameMode: 'normal',
+      round: null,
     }
 
     function assigned(id: string, name: string, team: string, round: number): Participant {
@@ -412,6 +415,7 @@ describe('useWaitingRoomStore', () => {
       status: 'waiting',
       assignmentRound: 1,
       gameMode: 'normal',
+      round: null,
     }
 
     it('호스트가 배정 확정 후 호출하면 status를 playing으로 전이한다', async () => {

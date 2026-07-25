@@ -54,11 +54,19 @@ const router = createRouter({
       },
     },
     {
-      // 풀스크린 카메라 콕핏 — 앱 셸 공용 헤더를 숨긴다
-      path: '/camera',
+      // 풀스크린 카메라 콕핏 — 앱 셸 공용 헤더를 숨긴다.
+      // 방 코드를 경로에 두어 새로고침·딥링크에도 어느 방의 콕핏인지 유지한다(대기실·운영과 같은 규칙).
+      // 콕핏이 라운드 타이머·공지를 수신하려면 방 코드가 필요하므로 화면보다 경로가 먼저 준비된다.
+      path: '/camera/:roomCode',
       name: 'camera',
       component: CameraPage,
-      meta: { hideAppHeader: true },
+      // 콕핏이 방 문서를 구독하므로(게임 종료 시 스스로 나가기 위해) 인증이 전제다
+      meta: { hideAppHeader: true, requiresAuth: true },
+    },
+    {
+      // 방 코드 없는 구 경로 — 매칭되는 라우트가 없어 빈 화면이 되는 대신 입장 화면으로 돌려보낸다
+      path: '/camera',
+      redirect: { name: 'entry' },
     },
     {
       path: '/login',

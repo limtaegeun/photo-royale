@@ -49,13 +49,25 @@ const open = defineModel<boolean>('open', { default: false })
         <VisuallyHidden v-if="hideTitle">
           <DialogTitle>{{ title }}</DialogTitle>
         </VisuallyHidden>
-        <DialogTitle v-else class="text-heading text-content">{{ title }}</DialogTitle>
+        <!-- pr-8: 닫기 버튼(right-4 + size-8) 자리를 비워 제목이 아이콘 밑으로 파고들지 않게 한다 -->
+        <DialogTitle v-else class="pr-8 text-heading text-balance break-keep text-content">
+          {{ title }}
+        </DialogTitle>
 
-        <DialogDescription v-if="description" class="mt-2 text-body text-content-secondary">
+        <!-- 여러 줄로 접히는 문장이라 행간을 relaxed로 넓힌다(본문 기본 1.45 → 1.5).
+             제목과의 간격도 8px는 붙어 보여 12px로 띄운다.
+             모달 설명은 두세 줄짜리 짧은 문장이라 text-pretty(끝줄만 보정)보다 balance가 낫다 —
+             줄 길이를 고르게 맞추면 쉼표·어절 경계에서 끊겨 한 호흡으로 읽힌다 -->
+        <DialogDescription
+          v-if="description"
+          class="mt-3 text-body leading-(--pr-line-height-relaxed) text-balance break-keep
+                 text-content-secondary"
+        >
           {{ description }}
         </DialogDescription>
 
-        <div class="mt-4">
+        <!-- 읽는 영역과 행동 영역을 확실히 갈라 놓는다 — 붙어 있으면 문장을 다 읽기 전에 누른다 -->
+        <div class="mt-6">
           <slot />
         </div>
 
@@ -85,38 +97,31 @@ const open = defineModel<boolean>('open', { default: false })
 /* 진입/이탈 애니메이션 — Reka가 data-state=closed에서 애니메이션 종료까지 언마운트를 지연한다.
    값은 전부 토큰 참조(DESIGN_SYSTEM: 애니메이션은 scoped style 허용). */
 .overlay[data-state='open'] {
-  animation: overlay-in var(--pr-duration-base) var(--pr-easing-decelerate);
+  animation: fade-in var(--pr-duration-base) var(--pr-easing-decelerate);
 }
 .overlay[data-state='closed'] {
-  animation: overlay-out var(--pr-duration-fast) var(--pr-easing-standard);
+  animation: fade-out var(--pr-duration-fast) var(--pr-easing-standard);
 }
+/* 모달 본체는 **페이드만** 한다. 확대·이동을 섞으면 화면 한가운데에서 크기가 튀어
+   시선이 따라가야 하고, 판단을 요구하는 내용(삭제·종료 확인)이 흔들려 보인다.
+   위치는 유틸리티(-translate-x-1/2 -translate-y-1/2)가 잡으므로 keyframes는 transform을
+   건드리지 않는다 — 건드리면 애니메이션 동안 그 정렬을 덮어써 중앙이 어긋난다. */
 .content[data-state='open'] {
-  animation: content-in var(--pr-duration-base) var(--pr-easing-decelerate);
+  animation: fade-in var(--pr-duration-base) var(--pr-easing-decelerate);
 }
 .content[data-state='closed'] {
-  animation: content-out var(--pr-duration-fast) var(--pr-easing-standard);
+  animation: fade-out var(--pr-duration-fast) var(--pr-easing-standard);
 }
 
-@keyframes overlay-in {
+/* 스크림과 본체가 같은 페이드를 공유한다 — 둘이 다른 곡선으로 움직이면 한 겹처럼 보이지 않는다 */
+@keyframes fade-in {
   from {
     opacity: 0;
   }
 }
-@keyframes overlay-out {
+@keyframes fade-out {
   to {
     opacity: 0;
-  }
-}
-@keyframes content-in {
-  from {
-    opacity: 0;
-    transform: translate(-50%, -48%) scale(0.96);
-  }
-}
-@keyframes content-out {
-  to {
-    opacity: 0;
-    transform: translate(-50%, -48%) scale(0.96);
   }
 }
 

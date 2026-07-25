@@ -39,6 +39,7 @@ vi.mock('firebase/firestore', () => ({
     fn: (transaction: { get: typeof transactionGetMock; set: typeof transactionSetMock }) => Promise<T>,
   ) => fn({ get: transactionGetMock, set: transactionSetMock }),
   serverTimestamp: () => 'server-timestamp',
+  deleteField: () => 'delete-field',
   updateDoc: (ref: FakeRef, data: Record<string, unknown>) => updateDocMock(ref, data),
 }))
 
@@ -47,6 +48,7 @@ import {
   ROOM_CODE_PATTERN,
   RoomNotFoundError,
   createRoom,
+  endGame,
   fetchMyRooms,
   getRoom,
   joinRoom,
@@ -67,9 +69,9 @@ beforeEach(() => {
   onSnapshotMock.mockReset()
 })
 
-/** Firestore Timestamp 흉내 — toDate()만 쓰인다 */
+/** Firestore Timestamp 흉내 — 방 목록은 toDate(), 라운드 앵커는 toMillis()를 쓴다 */
 function fakeTimestamp(iso: string) {
-  return { toDate: () => new Date(iso) }
+  return { toDate: () => new Date(iso), toMillis: () => new Date(iso).getTime() }
 }
 
 describe('normalizeRoomCode', () => {
@@ -139,11 +141,94 @@ describe('getRoom', () => {
       status: 'waiting',
       assignmentRound: 2,
       gameMode: 'king-hunt',
+      round: null,
     })
     expect(getDocMock).toHaveBeenCalledWith({ path: 'rooms/AB2C' })
 
     getDocMock.mockResolvedValueOnce({ exists: () => false })
     await expect(getRoom('ZZZZ')).resolves.toBeNull()
+  })
+
+  it('round 맵을 RoundState로 매핑한다 — 앵커는 ms로, 정지 중이면 남은 시간까지', async () => {
+    getDocMock.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({
+        hostUid: 'host-1',
+        status: 'playing',
+        assignmentRound: 1,
+        gameMode: 'normal',
+        round: {
+          status: 'running',
+          startedAt: fakeTimestamp('2026-07-25T10:00:00Z'),
+          durationMs: 1_200_000,
+        },
+      }),
+    })
+
+    await expect(getRoom('AB2C')).resolves.toMatchObject({
+      round: {
+        status: 'running',
+        startedAtMs: new Date('2026-07-25T10:00:00Z').getTime(),
+        durationMs: 1_200_000,
+        // running에는 이 필드가 없어야 한다(rules도 부재를 강제한다)
+        pausedRemainingMs: null,
+      },
+    })
+
+    getDocMock.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({
+        hostUid: 'host-1',
+        status: 'playing',
+        assignmentRound: 1,
+        gameMode: 'normal',
+        round: {
+          status: 'paused',
+          startedAt: fakeTimestamp('2026-07-25T10:00:00Z'),
+          durationMs: 300_000,
+          pausedRemainingMs: 300_000,
+        },
+      }),
+    })
+
+    await expect(getRoom('AB2C')).resolves.toMatchObject({
+      round: { status: 'paused', pausedRemainingMs: 300_000 },
+    })
+  })
+
+  it('round가 없거나 status가 알 수 없는 값이면 라운드 시작 전(null)으로 수렴시킨다', async () => {
+    getDocMock.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ hostUid: 'host-1', status: 'playing', assignmentRound: 1 }),
+    })
+    await expect(getRoom('AB2C')).resolves.toMatchObject({ round: null })
+
+    getDocMock.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({
+        hostUid: 'host-1',
+        status: 'playing',
+        assignmentRound: 1,
+        round: { status: 'bogus', durationMs: 1 },
+      }),
+    })
+    await expect(getRoom('AB2C')).resolves.toMatchObject({ round: null })
+  })
+
+  it('serverTimestamp가 반영되기 전(startedAt 없음) 스냅샷은 앵커를 null로 둔다', async () => {
+    getDocMock.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({
+        hostUid: 'host-1',
+        status: 'playing',
+        assignmentRound: 1,
+        round: { status: 'running', startedAt: null, durationMs: 1_200_000 },
+      }),
+    })
+
+    await expect(getRoom('AB2C')).resolves.toMatchObject({
+      round: { status: 'running', startedAtMs: null, durationMs: 1_200_000 },
+    })
   })
 
   it('gameMode 필드가 없거나 알 수 없는 값이면 일반전(normal)으로 채운다', async () => {
@@ -353,6 +438,7 @@ describe('subscribeToRoom', () => {
       status: 'waiting',
       assignmentRound: 1,
       gameMode: 'staff-chase',
+      round: null,
     })
 
     onNext({ exists: () => false })
@@ -371,6 +457,29 @@ describe('startGame', () => {
       { path: 'rooms/AB2C' },
       { status: 'playing' },
     )
+  })
+})
+
+describe('endGame', () => {
+  it('status를 waiting으로 되돌리며 round를 같은 쓰기에서 지운다', async () => {
+    updateDocMock.mockResolvedValue(undefined)
+
+    await endGame('AB2C')
+
+    // 두 필드를 나눠 쓰면 "대기 중인데 라운드가 살아 있는" 중간 상태가 참가자에게 보인다
+    expect(updateDocMock).toHaveBeenCalledExactlyOnceWith(
+      { path: 'rooms/AB2C' },
+      { status: 'waiting', round: 'delete-field' },
+    )
+  })
+
+  it('배정 이력(assignmentRound·완장)은 건드리지 않는다', async () => {
+    updateDocMock.mockResolvedValue(undefined)
+
+    await endGame('AB2C')
+
+    const [, payload] = updateDocMock.mock.calls[0]!
+    expect(Object.keys(payload).sort()).toEqual(['round', 'status'])
   })
 })
 
