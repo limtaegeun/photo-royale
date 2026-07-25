@@ -9,7 +9,11 @@ import { Primitive, type PrimitiveProps } from 'reka-ui'
 interface Props extends PrimitiveProps {
   /** 버튼 역할별 색상 톤 (primary=브랜드 블루, accent=라임) */
   variant?: 'primary' | 'accent' | 'neutral' | 'danger' | 'ghost'
-  /** 버튼 크기 — md/lg는 최소 터치 타겟(48px) 충족 */
+  /**
+   * 버튼 크기 — md(48)/lg(56)는 시각 높이로 최소 터치 타겟을 충족한다.
+   * sm(36)은 리스트 행 안의 인라인 액션용으로, 시각 높이는 낮추되 히트 영역은
+   * ::before로 48px까지 확장해 터치 타겟 규칙을 지킨다(DESIGN_SYSTEM §3-5).
+   */
   size?: 'sm' | 'md' | 'lg'
   disabled?: boolean
   /** 비동기 작업 진행 중 표기 — 라벨은 유지한 채 스피너만 겹쳐 보이고, disabled와 동일하게 클릭을 막는다 */
@@ -81,3 +85,18 @@ const isBlocked = computed(() => props.disabled || props.loading)
     />
   </Primitive>
 </template>
+
+<style scoped>
+/* sm(36px) 히트 영역 확장 — 시각 높이가 최소 터치 타겟(48px)보다 낮으므로 루트의 ::before로
+   수직 48px 탭 영역을 덧댄다(폭은 버튼 폭으로 충분). 루트가 relative라 absolute 기준이 되고,
+   레이아웃에는 영향이 없다. 루트가 버튼이므로 ::before 위의 탭도 그대로 버튼 클릭이 된다. */
+[data-size='sm']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: var(--pr-size-tap-minimum);
+  transform: translateY(-50%);
+}
+</style>
