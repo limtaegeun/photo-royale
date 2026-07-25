@@ -24,6 +24,28 @@ service cloud.firestore {
         && data.createdAt == request.time; // serverTimestamp()는 rules에서 request.time과 같다
     }
 
+    // 라운드 타이머(rooms/{code}.round) 스키마 검증 — 필드 화이트리스트 + 타입/값 제약.
+    // 남은 시간은 저장하지 않고 앵커(startedAt) + 총량(durationMs)으로만 표현한다
+    // (src/features/round-ops/api/round.ts writeRound과 같은 규칙).
+    // durationMs 상한(3시간=10800000)은 클라의 ROUND_DURATION_MAX_MS와 **숫자까지 동일**해야
+    // 하며 round.spec이 이 파일을 읽어 대조 검증한다 — 변경 시 양쪽을 함께 갱신·배포할 것.
+    function isValidRound(round) {
+      return round.keys().hasAll(['status', 'startedAt', 'durationMs'])
+        && round.keys().hasOnly(['status', 'startedAt', 'durationMs', 'pausedRemainingMs'])
+        && round.status in ['running', 'paused']
+        && round.startedAt is timestamp
+        && round.durationMs is int
+        && round.durationMs >= 0
+        && round.durationMs <= 10800000
+        // 정지 중에만 남은 시간을 고정한다. 진행 중에 이 필드가 남아 있으면 어느 값이 정본인지
+        // 모호해지므로 부재를 강제한다.
+        && (round.status == 'paused'
+          ? (round.pausedRemainingMs is int
+            && round.pausedRemainingMs >= 0
+            && round.pausedRemainingMs <= 10800000)
+          : !('pausedRemainingMs' in round));
+    }
+
     // 닉네임 유니크 인덱스. 문서 ID = 정규화 키(trim → NFC → lowercase,
     // src/features/auth/api/signup.ts toNicknameKey와 동일 규칙), 내용은 소유자 uid뿐.
     match /nicknames/{nickname} {
@@ -100,6 +122,12 @@ service cloud.firestore {
             && request.resource.data.assignmentRound ==
               (('assignmentRound' in resource.data) ? resource.data.assignmentRound + 1 : 1)
             && request.resource.data.gameMode in ['normal', 'tail-chase', 'group', 'king-hunt', 'staff-chase', 'bomb-plant', 'kkomkkomi', 'fast-survival'])
+          // 3) 라운드 운영(H04) — 게임이 진행 중일 때만 round 맵을 통째로 갱신한다.
+          //    시작·정지·재개·시간 반영이 모두 같은 갈래를 탄다(전이 종류는 클라가 결정하고,
+          //    서버는 결과 문서가 유효한 라운드 상태인지만 본다).
+          || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['round'])
+            && resource.data.status == 'playing'
+            && isValidRound(request.resource.data.round))
         );
 
       // 방 정리(삭제) 플로우 도입 전까지 불변이다.
@@ -156,6 +184,26 @@ service cloud.firestore {
 
         // 퇴장(문서 삭제) 처리 도입 전까지 참가 기록은 불변이다.
         allow delete: if false;
+      }
+
+      // 진행자 공지. append-only 히스토리 — 운영 탭은 최신 1건을 구독하고,
+      // 기록 탭(후속)이 같은 컬렉션을 전체 이력으로 읽는다.
+      match /notices/{noticeId} {
+        // 참가자가 같은 방 경로로 구독한다(participants와 동일 정책 — 경로 접근에 초대 코드 필요).
+        allow read: if request.auth != null;
+
+        // 호스트 본인만 발행한다. 길이 상한(100)은 src/features/round-ops/api/notices.ts의
+        // NOTICE_TEXT_MAX_LENGTH와 같아야 한다(notices.spec이 대조 검증).
+        allow create: if request.auth != null
+          && get(/databases/$(database)/documents/rooms/$(roomCode)).data.hostUid == request.auth.uid
+          && request.resource.data.keys().hasOnly(['text', 'createdAt'])
+          && request.resource.data.text is string
+          && request.resource.data.text.size() >= 1
+          && request.resource.data.text.size() <= 100
+          && request.resource.data.createdAt == request.time;
+
+        // 보낸 공지는 정정하지 않고 새 공지로 덮는다(이력 보존).
+        allow update, delete: if false;
       }
     }
   }
