@@ -4,10 +4,13 @@ import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 import BaseBadge from '@/shared/components/BaseBadge.vue'
 import BaseButton from '@/shared/components/BaseButton.vue'
+import BaseCard from '@/shared/components/BaseCard.vue'
+import BaseSectionHeader from '@/shared/components/BaseSectionHeader.vue'
 import PlayerChip from '@/shared/components/PlayerChip.vue'
 import { DEFAULT_GAME_MODE } from '@/features/game-mode'
 import {
   AssignmentBoard,
+  MAX_ASSIGNABLE_MEMBERS,
   RoundAssignmentCard,
   useTeamAssignmentStore,
   type DraftMember,
@@ -27,12 +30,17 @@ const {
   phase,
   room,
   participants,
+  roster,
+  myAssignment,
+  assignmentRound,
   participantCount,
   readyCount,
   isReadyConfirmed,
   isConfirmingReady,
   readyError,
   isHost,
+  isStartingGame,
+  startGameError,
   myId,
   gameStatus,
 } = storeToRefs(store)
@@ -52,27 +60,21 @@ function toDraftMember(participant: Participant): DraftMember {
   }
 }
 
-/** 내 참가자 문서 — 게스트 배정 카드 렌더에 쓴다 */
-const myParticipant = computed(
-  () => participants.value.find((participant) => participant.id === myId.value) ?? null,
-)
-/** 게스트: 배정이 한 번이라도 확정됐고(assignmentRound>0) 내 완장이 있으면 라운드 배정 카드를 본다 */
-const showGuestAssignment = computed(
-  () => !isHost.value && (room.value?.assignmentRound ?? 0) > 0 && !!myParticipant.value?.team,
-)
-/** 같은 완장(팀) 멤버 — 표시용 id·name만 */
-const myTeamMembers = computed(() => {
-  const team = myParticipant.value?.team
-  if (!team) return []
-  return participants.value
-    .filter((participant) => participant.team === team)
-    .map((participant) => ({ id: participant.id, name: participant.name }))
-})
+/**
+ * 게스트: **이번 라운드에** 배정된 완장이 있을 때만 라운드 배정 카드를 본다(store.myAssignment).
+ * 직전 라운드 완장이 문서에 남아 있는 것만으로는 카드를 띄우지 않는다 — 이번 라운드에 대기자로
+ * 내려간 참가자가 유령 완장 카드를 보고 팀원 목록까지 오염시키던 문제의 수정.
+ */
+const showGuestAssignment = computed(() => !isHost.value && myAssignment.value !== null)
 
-/** 게스트 CTA 문구 — 배정 카드 뷰에서는 '준비 완료'(안전 수칙 동의는 배정 전 라운드에서 끝났다) */
+/**
+ * 게스트 CTA 문구 — 확정된 상태는 어느 뷰에서나 '준비 완료' 하나로 통일하고, 누를 수 있는
+ * 상태는 뷰별 행동 문구를 쓴다(배정 카드 뷰는 안전 수칙 동의가 이미 끝났으므로 라운드 준비만).
+ * 두 상태가 같은 문구였을 때는 눌린 뒤에도 문구가 그대로여서 반영 여부를 알 수 없었다.
+ */
 const guestCtaLabel = computed(() => {
-  if (showGuestAssignment.value) return '준비 완료'
-  return isReadyConfirmed.value ? '준비 완료' : '확인하고 준비 완료'
+  if (isReadyConfirmed.value) return '준비 완료'
+  return showGuestAssignment.value ? '라운드 준비 완료' : '확인하고 준비 완료'
 })
 
 /**
@@ -86,6 +88,15 @@ function startAssignment() {
   }
   if (readyCount.value < participantCount.value) {
     toast({ title: '모든 참가자가 준비를 완료해야 시작할 수 있어요.', tone: 'danger' })
+    return
+  }
+  // 완장 실물 수(25개 × 2인)를 넘으면 완장을 부여할 수 없어 배정 자체가 성립하지 않는다.
+  // 가드가 없으면 armbandForTeamIndex가 throw해 안내 없이 클릭이 먹지 않는다.
+  if (participantCount.value > MAX_ASSIGNABLE_MEMBERS) {
+    toast({
+      title: `배정 가능한 인원은 최대 ${MAX_ASSIGNABLE_MEMBERS}명이에요.`,
+      tone: 'danger',
+    })
     return
   }
   // 이번에 확정할 차수는 클릭 시점의 assignmentRound + 1로 고정한다 — 이후 다른 탭이
@@ -113,9 +124,9 @@ function onAssignmentConfirmed() {
 // 제목을 헤더 한 곳에만 노출한다(이중 타이틀 방지). 기본 대기실 뷰는 라우트 meta로 되돌린다.
 watchEffect(() => {
   if (showAssignmentBoard.value) {
-    setHeader('배정 편집', '멤버 칩을 터치한 뒤 이동할 팀을 누릅니다')
+    setHeader('배정 편집', '칩을 터치하거나 끌어서 팀을 바꿉니다')
   } else if (showGuestAssignment.value) {
-    setHeader(`라운드 ${room.value!.assignmentRound} 배정`, '라운드마다 팀과 완장이 바뀝니다')
+    setHeader(`라운드 ${assignmentRound.value} 배정`, '라운드마다 팀과 완장이 바뀝니다')
   } else {
     clearHeader()
   }
@@ -167,12 +178,13 @@ async function copyInviteLink() {
        항상 세로 스크롤이 생긴다. 스크롤은 명단이 실제로 넘칠 때만 생기는 게 정상이다 -->
   <!-- 타이틀·설명 헤더는 앱 셸 공용 헤더(AppHeader)가 route meta로 담당한다 -->
   <section class="flex flex-1 flex-col bg-canvas px-6 pt-3 pb-(--pr-inset-bottom-safe)">
-    <div class="flex-1">
+    <!-- 콘텐츠 영역은 flex 컨테이너여야 한다 — 블록이면 자식(배정 보드)의 flex-1·mt-auto가 죽어
+         보드의 액션 영역이 화면 하단에 붙지 않는다. 세 뷰의 상단 여백은 여기서 한 번만 준다 -->
+    <div class="flex flex-1 flex-col pt-3">
       <template v-if="phase === 'joined'">
         <!-- 호스트: 팀 배정 보드(대기실 콘텐츠·하단 CTA를 대체) -->
         <AssignmentBoard
           v-if="showAssignmentBoard"
-          class="mt-6"
           :room-code="roomCode!"
           @confirmed="onAssignmentConfirmed"
         />
@@ -180,72 +192,70 @@ async function copyInviteLink() {
         <!-- 게스트: 배정 확정 후 라운드 배정 카드(룸 카드·명단·안전수칙을 대체) -->
         <RoundAssignmentCard
           v-else-if="showGuestAssignment"
-          class="mt-6"
-          :armband="myParticipant!.team!"
-          :members="myTeamMembers"
+          :armband="myAssignment!.armband"
+          :members="myAssignment!.members"
           :my-id="myId!"
-          :is-x-team="myParticipant!.isXTeam"
+          :is-x-team="myAssignment!.isXTeam"
           :game-mode="room!.gameMode"
         />
 
-        <template v-else>
-        <!-- 룸 정보 카드 — 초대 수단(링크 복사)을 상시 노출한다.
-             코드는 카드 내 주요 정보(text-heading)로, display(카운트다운용)는 과하다 -->
-        <div class="mt-3 rounded-lg border border-stroke bg-elevated p-4">
-          <div class="flex items-center justify-between gap-3">
-            <p class="text-heading text-content">ROOM {{ roomCode }}</p>
-            <BaseBadge tone="info" appearance="outline" size="sm">대기 중</BaseBadge>
-          </div>
-          <p class="mt-1 text-caption text-content-secondary">
-            참가자 {{ participantCount }}명 · 준비 {{ readyCount }}명
-          </p>
-          <BaseButton variant="ghost" size="md" class="mt-3 w-full" @click="copyInviteLink">
-            초대 링크 복사
-          </BaseButton>
-        </div>
+        <!-- 기본 대기실 뷰 — 블록 사이 여백은 mt-* 체인이 아니라 컨테이너 gap으로 준다
+             (조건부 렌더에서 첫 블록의 마진이 남는 문제를 없앤다) -->
+        <div v-else class="flex flex-col gap-6">
+          <!-- 룸 정보 카드 — 초대 수단(링크 복사)을 상시 노출한다. 인원 수는 아래 명단 헤더가
+               담당하므로 이 카드는 코드·상태·초대에만 집중한다(같은 숫자를 두 번 보여주지 않는다).
+               코드는 카드 내 주요 정보(text-heading)로, display(카운트다운용)는 과하다 -->
+          <BaseCard>
+            <div class="flex items-center justify-between gap-3">
+              <!-- 방 코드는 받아 적어 입력하는 값이라 mono + 자간으로 0/O·1/I 오독을 줄인다 -->
+              <p class="text-heading text-content">
+                ROOM <span class="font-mono tracking-widest">{{ roomCode }}</span>
+              </p>
+              <BaseBadge tone="info" appearance="outline" size="sm">대기 중</BaseBadge>
+            </div>
+            <BaseButton variant="ghost" size="md" class="mt-4 w-full" @click="copyInviteLink">
+              초대 링크 복사
+            </BaseButton>
+          </BaseCard>
 
-        <!-- 입장 명단 -->
-        <div class="mt-6">
-          <div class="flex items-baseline justify-between gap-3">
-            <h2 class="text-label text-content">입장 명단</h2>
-            <p class="text-caption text-content-secondary">
-              {{ participantCount }}명 입장 · {{ readyCount }}명 레디
+          <!-- 입장 명단 -->
+          <div class="flex flex-col gap-3">
+            <BaseSectionHeader
+              title="입장 명단"
+              :summary="`${participantCount}명 입장 · ${readyCount}명 준비`"
+            />
+            <!-- roster는 이번 라운드 배정이 아닌 완장을 숨긴 명단이다(유령 완장 방지) -->
+            <ul v-if="participantCount > 0" class="grid grid-cols-3 gap-2">
+              <li v-for="participant in roster" :key="participant.id">
+                <PlayerChip
+                  :name="participant.name"
+                  :team="participant.team"
+                  :gender="participant.gender"
+                  :is-ready="participant.isReady"
+                />
+              </li>
+            </ul>
+            <p v-else class="text-caption text-content-secondary">
+              아직 입장한 참가자가 없어요. 초대 링크를 공유해 보세요.
             </p>
           </div>
-          <ul v-if="participantCount > 0" class="mt-3 grid grid-cols-3 gap-2">
-            <li v-for="participant in participants" :key="participant.id">
-              <PlayerChip
-                :name="participant.name"
-                :team="participant.team"
-                :gender="participant.gender"
-                :is-ready="participant.isReady"
-              />
-            </li>
-          </ul>
-          <p v-else class="mt-3 text-caption text-content-secondary">
-            아직 입장한 참가자가 없어요. 초대 링크를 공유해 보세요.
-          </p>
-        </div>
 
-        <!-- 안전 수칙 카드 — 보조 정보라 라벨+캡션으로 낮춰 CTA·명단에 시선을 양보한다 -->
-        <div class="mt-6 rounded-lg border border-stroke bg-elevated p-4">
-          <h2 class="text-label text-content">안전 수칙 확인</h2>
-          <p class="mt-2 text-caption text-content-secondary">
-            무리한 추격, 도로 진입, 촬영 중 충돌을 피하고 진행자 안내를 우선합니다.
-          </p>
-          <!-- 동의 버튼은 게스트에게만 있으므로 안내문도 게스트에게만 보여준다 -->
-          <p v-if="!isHost" class="mt-2 text-caption font-semibold text-warning">
-            아래 확인 버튼을 누르면 안전 수칙과 개인 책임에 동의합니다.
-          </p>
+          <!-- 안전 수칙 카드 — 보조 정보라 라벨+캡션으로 낮춰 CTA·명단에 시선을 양보한다 -->
+          <BaseCard>
+            <h2 class="text-label text-content">안전 수칙 확인</h2>
+            <p class="mt-2 text-caption text-content-secondary">
+              무리한 추격, 도로 진입, 촬영 중 충돌을 피하고 진행자 안내를 우선합니다.
+            </p>
+            <!-- 동의 버튼은 게스트에게만 있으므로 안내문도 게스트에게만 보여준다 -->
+            <p v-if="!isHost" class="mt-2 text-caption font-semibold text-warning">
+              아래 확인 버튼을 누르면 안전 수칙과 개인 책임에 동의합니다.
+            </p>
+          </BaseCard>
         </div>
-        </template>
       </template>
 
       <!-- 입장 실패 — 잘못된 초대 코드 또는 네트워크·권한 문제 -->
-      <div
-        v-else-if="phase === 'not-found' || phase === 'error'"
-        class="mt-3 rounded-lg border border-stroke bg-elevated p-5"
-      >
+      <BaseCard v-else-if="phase === 'not-found' || phase === 'error'" padding="lg">
         <h2 class="text-subheading text-content">
           {{ phase === 'not-found' ? '방을 찾을 수 없어요' : '입장에 실패했어요' }}
         </h2>
@@ -264,28 +274,51 @@ async function copyInviteLink() {
         >
           입장 화면으로
         </BaseButton>
-      </div>
+      </BaseCard>
 
       <!-- 참가 등록 중 로딩 -->
-      <p v-else class="mt-3 text-body text-content-secondary" role="status">
-        대기실에 입장하는 중…
-      </p>
+      <p v-else class="text-body text-content-secondary" role="status">대기실에 입장하는 중…</p>
     </div>
 
     <!-- 하단 고정 CTA — 게스트: 안전 수칙 동의/라운드 준비 / 호스트(진행자): 팀 배정 시작.
          배정 보드가 열려 있는 동안엔 보드가 자체 액션을 가지므로 이 CTA를 숨긴다. -->
-    <div v-if="phase === 'joined' && !showAssignmentBoard" class="pt-5 pb-6">
-      <BaseButton v-if="isHost" variant="accent" size="md" class="w-full" @click="startAssignment">
-        팀 배정 시작
-      </BaseButton>
+    <!-- 하단 여백은 pb-4 + section의 safe-area 인셋으로 만든다(둘을 합쳐 24px 이상 확보).
+         버튼 사이 간격도 마진 대신 gap으로 준다 — 에러 문구가 끼어도 리듬이 유지된다 -->
+    <div v-if="phase === 'joined' && !showAssignmentBoard" class="flex flex-col gap-3 pt-6 pb-4">
+      <!-- 호스트(진행자): 배정 확정 전에는 배정 시작만, 확정 후에는 게임 시작을 주 액션으로
+           올려 라운드 루프(배정 → 게임)를 끝까지 진행할 수 있게 한다.
+           주 CTA는 lg(56px), 보조로 내려간 재배정은 md(48px)로 높이 차이로 위계를 만든다 -->
+      <template v-if="isHost">
+        <p v-if="startGameError" class="text-caption text-danger" role="alert">
+          {{ startGameError }}
+        </p>
+        <BaseButton
+          v-if="assignmentRound > 0"
+          variant="accent"
+          size="lg"
+          class="w-full"
+          :loading="isStartingGame"
+          @click="store.startPlaying()"
+        >
+          게임 시작
+        </BaseButton>
+        <BaseButton
+          :variant="assignmentRound > 0 ? 'ghost' : 'accent'"
+          :size="assignmentRound > 0 ? 'md' : 'lg'"
+          class="w-full"
+          @click="startAssignment"
+        >
+          {{ assignmentRound > 0 ? `${assignmentRound + 1}차 팀 배정` : '팀 배정 시작' }}
+        </BaseButton>
+      </template>
 
       <template v-else>
-        <p v-if="readyError" class="mb-2 text-caption text-danger" role="alert">
+        <p v-if="readyError" class="text-caption text-danger" role="alert">
           {{ readyError }}
         </p>
         <BaseButton
           variant="accent"
-          size="md"
+          size="lg"
           class="w-full"
           :disabled="isReadyConfirmed || isConfirmingReady"
           @click="store.confirmReady()"

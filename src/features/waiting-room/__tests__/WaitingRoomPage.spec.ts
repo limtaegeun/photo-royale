@@ -19,6 +19,7 @@ const getRoomMock = vi.fn<(code: string) => Promise<RoomInfo | null>>()
 const joinRoomMock =
   vi.fn<(code: string, member: { uid: string; nickname: string }) => Promise<void>>()
 const setReadyMock = vi.fn<(code: string, uid: string) => Promise<void>>()
+const startGameMock = vi.fn<(code: string) => Promise<void>>()
 const unsubscribeParticipantsMock = vi.fn<() => void>()
 const unsubscribeRoomMock = vi.fn<() => void>()
 const subscribeParticipantsMock =
@@ -31,10 +32,13 @@ vi.mock('../api/rooms', async (importOriginal) => {
   return {
     normalizeRoomCode: actual.normalizeRoomCode,
     RoomNotFoundError: actual.RoomNotFoundError,
+    // 이번 라운드 배정 판정은 순수 함수라 실제 구현을 그대로 쓴다(명단·배정 카드의 단일 기준)
+    isAssignedInRound: actual.isAssignedInRound,
     getRoom: (code: string) => getRoomMock(code),
     joinRoom: (code: string, member: { uid: string; nickname: string }) =>
       joinRoomMock(code, member),
     setReady: (code: string, uid: string) => setReadyMock(code, uid),
+    startGame: (code: string) => startGameMock(code),
     subscribeToParticipants: (code: string, onChange: (participants: Participant[]) => void) =>
       subscribeParticipantsMock(code, onChange),
     subscribeToRoom: (code: string, onChange: (room: RoomInfo | null) => void) =>
@@ -105,6 +109,7 @@ const ROSTER: Participant[] = [
     id: 'me',
     name: '오리',
     team: null,
+    assignedRound: 0,
     gender: 'male',
     isXTeam: false,
     sameGenderStreak: 0,
@@ -115,6 +120,7 @@ const ROSTER: Participant[] = [
     id: 'u2',
     name: '하린',
     team: 'D',
+    assignedRound: 0,
     gender: 'female',
     isXTeam: false,
     sameGenderStreak: 0,
@@ -125,6 +131,7 @@ const ROSTER: Participant[] = [
     id: 'u3',
     name: '도윤',
     team: null,
+    assignedRound: 0,
     gender: 'male',
     isXTeam: false,
     sameGenderStreak: 0,
@@ -140,6 +147,7 @@ describe('WaitingRoomPage', () => {
     getRoomMock.mockReset().mockResolvedValue(GUEST_ROOM)
     joinRoomMock.mockReset().mockResolvedValue(undefined)
     setReadyMock.mockReset().mockResolvedValue(undefined)
+    startGameMock.mockReset().mockResolvedValue(undefined)
     subscribeParticipantsMock.mockReset().mockReturnValue(unsubscribeParticipantsMock)
     subscribeRoomMock.mockReset().mockReturnValue(unsubscribeRoomMock)
     unsubscribeParticipantsMock.mockReset()
@@ -168,8 +176,9 @@ describe('WaitingRoomPage', () => {
     await flushPromises()
 
     expect(wrapper.findAllComponents(PlayerChip)).toHaveLength(3)
-    expect(wrapper.text()).toContain('참가자 3명 · 준비 2명')
-    expect(wrapper.text()).toContain('3명 입장 · 2명 레디')
+    // 인원 수는 명단 헤더 한 곳에서만 노출한다(룸 카드의 중복 캡션 제거) — 용어도 '준비'로 통일
+    expect(wrapper.text()).toContain('3명 입장 · 2명 준비')
+    expect(wrapper.text()).not.toContain('참가자 3명')
   })
 
   it('참가자가 없으면 명단 대신 초대 안내 문구를 보여준다', async () => {
@@ -255,7 +264,7 @@ describe('WaitingRoomPage', () => {
     deliver.participants([{ ...ROSTER[0]!, isReady: true }, ...ROSTER.slice(1)])
     await flushPromises()
 
-    expect(wrapper.text()).toContain('참가자 3명 · 준비 3명')
+    expect(wrapper.text()).toContain('3명 입장 · 3명 준비')
     expect(cta.text()).toBe('준비 완료')
     expect(cta.attributes('disabled')).toBeDefined()
   })
@@ -275,7 +284,7 @@ describe('WaitingRoomPage', () => {
     expect(findButton(wrapper, '게임 시작')).toBeUndefined()
     expect(wrapper.text()).not.toContain('아래 확인 버튼을 누르면')
     expect(wrapper.findAllComponents(PlayerChip)).toHaveLength(2)
-    expect(wrapper.text()).toContain('참가자 2명 · 준비 2명')
+    expect(wrapper.text()).toContain('2명 입장 · 2명 준비')
     expect(wrapper.text()).not.toContain('오리')
   })
 
@@ -389,9 +398,9 @@ describe('WaitingRoomPage', () => {
     const wrapper = mountPage()
     await flushPromises()
     deliver.participants([
-      { ...ROSTER[0]!, team: 'A', isReady: false }, // me, 완장 A
-      { ...ROSTER[1]!, team: 'A' }, // 같은 팀
-      { ...ROSTER[2]!, team: 'B' }, // 다른 팀
+      { ...ROSTER[0]!, team: 'A', assignedRound: 1, isReady: false }, // me, 완장 A
+      { ...ROSTER[1]!, team: 'A', assignedRound: 1 }, // 같은 팀
+      { ...ROSTER[2]!, team: 'B', assignedRound: 1 }, // 다른 팀
     ])
     await flushPromises()
 
@@ -403,8 +412,8 @@ describe('WaitingRoomPage', () => {
     // 페이지 본문에는 '대기실'도 '라운드 1 배정'도 직접 렌더되지 않고, 헤더 오버라이드로만 노출된다
     expect(wrapper.text()).not.toContain('대기실')
     expect(useAppHeader().title.value).toBe('라운드 1 배정')
-    // 배정 카드 뷰에서는 준비 CTA 문구가 '준비 완료'다
-    expect(findButton(wrapper, '준비 완료')).toBeDefined()
+    // 배정 카드 뷰의 준비 CTA — 아직 확정 전이라 행동 문구다(확정되면 '준비 완료'로 바뀐다)
+    expect(findButton(wrapper, '라운드 준비 완료')).toBeDefined()
   })
 
   it('호스트: 보드 진입 후 room 스냅샷 라운드가 올라가도 드래프트 차수는 고정된다(QA N-02)', async () => {
@@ -425,7 +434,8 @@ describe('WaitingRoomPage', () => {
     deliver.participants([{ ...ROSTER[1]! }, { ...ROSTER[2]! }]) // u2·u3 모두 ready
     await flushPromises()
 
-    await findButton(wrapper, '팀 배정 시작')!.trigger('click')
+    // 2차까지 확정된 방이라 배정 CTA는 다음 차수를 표기한다(주 액션은 '게임 시작')
+    await findButton(wrapper, '3차 팀 배정')!.trigger('click')
     await flushPromises()
     expect(taStore.draftRound).toBe(3) // 진입 시점 2 + 1로 고정
     // 직전 확정 모드(room.gameMode)가 다음 드래프트 기본값으로 세팅된다
@@ -435,5 +445,54 @@ describe('WaitingRoomPage', () => {
     deliver.room({ hostUid: 'me', status: 'waiting', assignmentRound: 3, gameMode: 'group' })
     await flushPromises()
     expect(taStore.draftRound).toBe(3)
+  })
+  it('호스트: 배정 가능 인원(완장 25개 × 2인)을 넘으면 토스트로 막고 보드를 열지 않는다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    getRoomMock.mockResolvedValue(MY_ROOM)
+    const wrapper = mountPage()
+    await flushPromises()
+    // 51명 전원 레디 — 26팀이 되어 완장이 부족하다(가드가 없으면 완장 부여가 throw한다)
+    deliver.participants(
+      Array.from({ length: 51 }, (_, i) => ({
+        ...ROSTER[2]!,
+        id: `p${i}`,
+        name: `이름${i}`,
+        isReady: true,
+      })),
+    )
+    await flushPromises()
+
+    await findButton(wrapper, '팀 배정 시작')!.trigger('click')
+    await flushPromises()
+
+    expect(toastMock).toHaveBeenCalledWith({
+      title: '배정 가능한 인원은 최대 50명이에요.',
+      tone: 'danger',
+    })
+    expect(wrapper.text()).not.toContain('팀 편성')
+  })
+
+  it('호스트: 배정 확정 후 게임 시작 CTA가 노출되고 클릭하면 status를 playing으로 전이한다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    const hostRound1: RoomInfo = {
+      hostUid: 'me',
+      status: 'waiting',
+      assignmentRound: 1,
+      gameMode: 'normal',
+    }
+    getRoomMock.mockResolvedValue(hostRound1)
+    const wrapper = mountPage()
+    await flushPromises()
+    deliver.room(hostRound1)
+    deliver.participants([{ ...ROSTER[1]!, team: 'A', assignedRound: 1 }])
+    await flushPromises()
+
+    // 확정 후에는 게임 시작이 주 액션이고, 배정은 다음 차수로 강등된다
+    expect(findButton(wrapper, '2차 팀 배정')).toBeDefined()
+
+    await findButton(wrapper, '게임 시작')!.trigger('click')
+    await flushPromises()
+
+    expect(startGameMock).toHaveBeenCalledExactlyOnceWith('AB2C')
   })
 })
