@@ -118,6 +118,16 @@ const PAUSED: RoundState = {
   pausedRemainingMs: 300_000,
 }
 
+function deferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
 function assigned(id: string, team: string, assignedRound: number): Participant {
   return {
     id,
@@ -325,6 +335,32 @@ describe('useRoundOpsStore', () => {
       expect(store.actionError).toBeNull()
       expect(startRoundMock).toHaveBeenCalledTimes(2)
     })
+
+    it('이전 화면의 늦은 요청 완료가 새 세션의 액션 상태를 덮지 않는다', async () => {
+      const firstRequest = deferred()
+      const secondRequest = deferred()
+      startRoundMock.mockReturnValueOnce(firstRequest.promise).mockReturnValueOnce(secondRequest.promise)
+
+      const firstDeliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      firstDeliver.room(room())
+      const firstAction = store.start()
+
+      const secondDeliver = captureSnapshotCallbacks()
+      store.enter('CD3E')
+      secondDeliver.room(room())
+      const secondAction = store.start()
+      expect(store.pendingAction).toBe('start')
+
+      firstRequest.resolve()
+      await firstAction
+      expect(store.pendingAction).toBe('start')
+
+      secondRequest.resolve()
+      await secondAction
+      expect(store.pendingAction).toBeNull()
+    })
   })
 
   describe('시간 조정', () => {
@@ -354,6 +390,26 @@ describe('useRoundOpsStore', () => {
 
       expect(adjustRoundMock).toHaveBeenCalledExactlyOnceWith('AB2C', 'running', 1_140_000, 120_000)
       expect(store.pendingAdjustMinutes).toBe(0)
+    })
+
+    it('반영 요청 중 추가한 조정값은 다음 반영 대상으로 남긴다', async () => {
+      const request = deferred()
+      adjustRoundMock.mockReturnValueOnce(request.promise)
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room({ round: RUNNING }))
+      store.adjustBy(1)
+
+      const applying = store.applyAdjust()
+      store.adjustBy(1)
+      expect(store.pendingAdjustMinutes).toBe(2)
+
+      request.resolve()
+      await applying
+
+      expect(adjustRoundMock).toHaveBeenCalledExactlyOnceWith('AB2C', 'running', 1_200_000, 60_000)
+      expect(store.pendingAdjustMinutes).toBe(1)
     })
 
     it('대기값이 0이면 반영하지 않는다', async () => {

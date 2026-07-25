@@ -66,6 +66,8 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
   let unsubscribeRoom: (() => void) | null = null
   let unsubscribeParticipants: (() => void) | null = null
   let unsubscribeNotice: (() => void) | null = null
+  /** leave/enter를 거친 이전 화면의 비동기 완료가 현재 화면 상태를 덮지 못하게 하는 세대값 */
+  let sessionGeneration = 0
 
   const myId = computed(() => authStore.user?.uid ?? null)
   const isHost = computed(() => room.value !== null && room.value.hostUid === myId.value)
@@ -113,6 +115,7 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
 
   /** 화면 이탈 시 구독 해제 + 로컬 대기값 폐기(다음 진입에 이전 조정이 남지 않게) */
   function leave() {
+    sessionGeneration += 1
     unsubscribeRoom?.()
     unsubscribeParticipants?.()
     unsubscribeNotice?.()
@@ -141,16 +144,17 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
 
   /** 실패해도 화면은 마지막 스냅샷을 유지하고 안내만 세운다(오프라인 큐는 SDK가 처리한다) */
   async function runAction(action: RoundOpsAction, write: () => Promise<void>) {
+    const actionGeneration = sessionGeneration
     pendingAction.value = action
     actionError.value = null
     try {
       await write()
       return true
     } catch {
-      actionError.value = ACTION_ERROR_MESSAGE
+      if (actionGeneration === sessionGeneration) actionError.value = ACTION_ERROR_MESSAGE
       return false
     } finally {
-      pendingAction.value = null
+      if (actionGeneration === sessionGeneration) pendingAction.value = null
     }
   }
 
@@ -184,11 +188,13 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     const currentRound = round.value
     if (!canWriteRound() || currentRound === null || pendingAdjustMinutes.value === 0) return
     const remainingMs = computeRemainingMs(currentRound, Date.now())
-    const deltaMs = pendingAdjustMinutes.value * ROUND_ADJUST_STEP_MS
+    const appliedMinutes = pendingAdjustMinutes.value
+    const deltaMs = appliedMinutes * ROUND_ADJUST_STEP_MS
     const applied = await runAction('adjust', () =>
       adjustRound(roomCode.value!, currentRound.status, remainingMs, deltaMs),
     )
-    if (applied) pendingAdjustMinutes.value = 0
+    // 요청 중 새로 누른 조정값은 다음 반영 대상으로 남긴다. 전체를 0으로 만들면 입력이 유실된다.
+    if (applied) pendingAdjustMinutes.value -= appliedMinutes
   }
 
   /**

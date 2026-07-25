@@ -20,7 +20,8 @@ export function computeRemainingMs(round: RoundState | null, nowMs: number): num
     return Math.max(0, round.pausedRemainingMs ?? round.durationMs)
   }
   // serverTimestamp 반영 전(startedAtMs null)은 방금 시작한 순간이라 총량이 곧 남은 시간이다
-  const elapsedMs = round.startedAtMs === null ? 0 : nowMs - round.startedAtMs
+  // 서버 시각이 로컬 시각보다 조금 앞서도 남은 시간이 총량을 초과해 20:01로 보이지 않게 한다.
+  const elapsedMs = round.startedAtMs === null ? 0 : Math.max(0, nowMs - round.startedAtMs)
   return Math.max(0, round.durationMs - elapsedMs)
 }
 

@@ -24,6 +24,13 @@ describe('computeRemainingMs', () => {
     expect(computeRemainingMs(runningRound(NOW, 1_200_000), NOW + 60_000)).toBe(1_140_000)
   })
 
+  it('서버 앵커가 로컬 시각보다 미래여도 남은 시간이 총량을 넘지 않는다', () => {
+    const remainingMs = computeRemainingMs(runningRound(NOW + 500, 1_200_000), NOW)
+
+    expect(remainingMs).toBe(1_200_000)
+    expect(formatRemaining(remainingMs)).toBe('20:00')
+  })
+
   it('정지 중이면 고정해 둔 남은 시간을 그대로 쓴다(시간이 흘러도 불변)', () => {
     const round = pausedRound(300_000)
     expect(computeRemainingMs(round, NOW)).toBe(300_000)
