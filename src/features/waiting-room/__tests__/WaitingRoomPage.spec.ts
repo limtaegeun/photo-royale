@@ -96,12 +96,14 @@ const GUEST_ROOM: RoomInfo = {
   status: 'waiting',
   assignmentRound: 0,
   gameMode: 'normal',
+  round: null,
 }
 const MY_ROOM: RoomInfo = {
   hostUid: 'me',
   status: 'waiting',
   assignmentRound: 0,
   gameMode: 'normal',
+  round: null,
 }
 
 const ROSTER: Participant[] = [
@@ -293,7 +295,7 @@ describe('WaitingRoomPage', () => {
     mountPage()
     await flushPromises()
 
-    deliver.room({ hostUid: 'host9', status: 'playing', assignmentRound: 0, gameMode: 'normal' })
+    deliver.room({ hostUid: 'host9', status: 'playing', assignmentRound: 0, gameMode: 'normal', round: null })
     await flushPromises()
 
     expect(replaceMock).toHaveBeenCalledWith({ name: 'camera' })
@@ -305,7 +307,7 @@ describe('WaitingRoomPage', () => {
     mountPage()
     await flushPromises()
 
-    deliver.room({ hostUid: 'me', status: 'playing', assignmentRound: 1, gameMode: 'normal' })
+    deliver.room({ hostUid: 'me', status: 'playing', assignmentRound: 1, gameMode: 'normal', round: null })
     await flushPromises()
 
     expect(replaceMock).toHaveBeenCalledWith({
@@ -410,6 +412,7 @@ describe('WaitingRoomPage', () => {
       status: 'waiting',
       assignmentRound: 1,
       gameMode: 'normal',
+      round: null,
     })
     const wrapper = mountPage()
     await flushPromises()
@@ -440,6 +443,7 @@ describe('WaitingRoomPage', () => {
       status: 'waiting',
       assignmentRound: 2,
       gameMode: 'group',
+      round: null,
     })
     // mountPage 대신 명시적 pinia로 마운트해 같은 인스턴스의 팀 배정 스토어를 조회한다
     const pinia = createPinia()
@@ -458,7 +462,7 @@ describe('WaitingRoomPage', () => {
     expect(taStore.draftGameMode).toBe('group')
 
     // 다른 탭이 확정해 room 스냅샷의 assignmentRound가 올라가도(3) 드래프트 차수는 그대로 3
-    deliver.room({ hostUid: 'me', status: 'waiting', assignmentRound: 3, gameMode: 'group' })
+    deliver.room({ hostUid: 'me', status: 'waiting', assignmentRound: 3, gameMode: 'group', round: null })
     await flushPromises()
     expect(taStore.draftRound).toBe(3)
   })
@@ -495,6 +499,7 @@ describe('WaitingRoomPage', () => {
       status: 'waiting',
       assignmentRound: 1,
       gameMode: 'normal',
+      round: null,
     }
     getRoomMock.mockResolvedValue(hostRound1)
     const wrapper = mountPage()

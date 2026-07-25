@@ -20,6 +20,25 @@ import { DEFAULT_GAME_MODE, isGameModeId, type GameModeId } from '@/features/gam
 
 export type RoomStatus = 'waiting' | 'playing'
 
+/**
+ * 진행 중인 라운드 타이머의 서버 정본(rooms/{code}.round). 호스트 기기가 아니라 방 문서가
+ * 정본이라 새로고침·기기 교체에도 복원되고, 향후 게스트 화면도 같은 데이터를 구독하면 된다.
+ *
+ * 남은 시간은 저장하지 않고 **앵커(startedAt) + 총량(durationMs)** 으로 표현한다:
+ * 남은 ms = durationMs - (now - startedAt). 앵커가 서버 시각이라 호스트 기기의 시계 오차가
+ * 참가자에게 전파되지 않는다(각 뷰어 본인 시계 오차만 남는 것은 알려진 한계).
+ */
+export interface RoundState {
+  /** running: 카운트다운 중 / paused: 올스탑. 필드(round) 자체가 없으면 라운드 시작 전이다 */
+  status: 'running' | 'paused'
+  /** running 구간의 시작 시각(ms). serverTimestamp가 서버에 반영되기 전 스냅샷은 null */
+  startedAtMs: number | null
+  /** running 구간의 총량(ms) — 시작·재개·시간 반영 때마다 남은 시간으로 다시 앵커된다 */
+  durationMs: number
+  /** paused일 때만 존재하는 정지 순간의 남은 ms. running이면 null */
+  pausedRemainingMs: number | null
+}
+
 export interface RoomInfo {
   hostUid: string
   status: RoomStatus
@@ -27,6 +46,8 @@ export interface RoomInfo {
   assignmentRound: number
   /** 확정된 이번 라운드 게임 모드. 필드가 없으면(기존 방·배정 전) 일반전(normal) */
   gameMode: GameModeId
+  /** 진행 중인 라운드 타이머. 필드가 없으면(라운드 시작 전) null */
+  round: RoundState | null
 }
 
 export interface Participant {
@@ -69,6 +90,38 @@ export function isAssignedInRound(participant: Participant, assignmentRound: num
     participant.team !== null &&
     participant.assignedRound === assignmentRound
   )
+}
+
+/**
+ * 방 문서의 round 맵 → RoundState. 필드가 없거나 status가 알 수 없는 값이면 "라운드 시작 전"
+ * (null)으로 수렴시킨다 — 화면은 시작 전과 손상된 값을 같게 다루면 되고, 호스트는 '라운드 시작'
+ * 으로 언제든 정상 상태를 다시 쓸 수 있다.
+ */
+function toRoundState(raw: unknown): RoundState | null {
+  if (raw === null || typeof raw !== 'object') return null
+  const data = raw as Record<string, unknown>
+  if (data.status !== 'running' && data.status !== 'paused') return null
+  const startedAt = data.startedAt as Timestamp | null | undefined
+  return {
+    status: data.status,
+    // serverTimestamp는 로컬 스냅샷에 즉시 반영되지 않는다(쓰기 직후 한 틱은 null)
+    startedAtMs: startedAt?.toMillis() ?? null,
+    durationMs: (data.durationMs as number | undefined) ?? 0,
+    pausedRemainingMs: (data.pausedRemainingMs as number | undefined) ?? null,
+  }
+}
+
+/** 방 문서 데이터 → RoomInfo. 단건 조회와 실시간 구독이 같은 매핑을 쓰도록 한 곳에 둔다 */
+function toRoomInfo(data: Record<string, unknown>): RoomInfo {
+  const gameMode = data.gameMode
+  return {
+    hostUid: data.hostUid as string,
+    status: data.status as RoomStatus,
+    assignmentRound: (data.assignmentRound as number | undefined) ?? 0,
+    gameMode:
+      typeof gameMode === 'string' && isGameModeId(gameMode) ? gameMode : DEFAULT_GAME_MODE,
+    round: toRoundState(data.round ?? null),
+  }
 }
 
 /** 존재하지 않는 초대 코드로 입장을 시도한 경우. 호출부가 안내 문구로 매핑한다. */
@@ -195,13 +248,7 @@ export async function roomExists(code: string): Promise<boolean> {
 export async function getRoom(code: string): Promise<RoomInfo | null> {
   const snapshot = await getDoc(doc(db, 'rooms', code))
   if (!snapshot.exists()) return null
-  const data = snapshot.data()
-  return {
-    hostUid: data.hostUid as string,
-    status: data.status as RoomStatus,
-    assignmentRound: (data.assignmentRound as number | undefined) ?? 0,
-    gameMode: isGameModeId(data.gameMode) ? data.gameMode : DEFAULT_GAME_MODE,
-  }
+  return toRoomInfo(snapshot.data())
 }
 
 /**
@@ -244,13 +291,7 @@ export function subscribeToRoom(
       onChange(null)
       return
     }
-    const data = snapshot.data()
-    onChange({
-      hostUid: data.hostUid as string,
-      status: data.status as RoomStatus,
-      assignmentRound: (data.assignmentRound as number | undefined) ?? 0,
-      gameMode: isGameModeId(data.gameMode) ? data.gameMode : DEFAULT_GAME_MODE,
-    })
+    onChange(toRoomInfo(snapshot.data()))
   })
 }
 
