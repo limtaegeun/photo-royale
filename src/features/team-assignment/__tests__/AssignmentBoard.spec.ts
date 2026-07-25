@@ -80,8 +80,10 @@ describe('AssignmentBoard', () => {
     const teamB = wrapper.find('[data-team="B"]')
     expect(teamA.exists()).toBe(true)
     expect(teamA.text()).toContain('팀A')
-    expect(teamA.text()).toContain('BLUE A')
-    expect(teamB.text()).toContain('ORANGE B')
+    // 완장 알파벳은 좌측 '팀A'가 이미 노출하므로 우측 그룹 표기는 그룹 이름만 쓴다(중복 제거)
+    expect(teamA.text()).toContain('BLUE')
+    expect(teamA.text()).not.toContain('BLUE A')
+    expect(teamB.text()).toContain('ORANGE')
     // 완장 그룹 색 텍스트(리터럴 맵)가 적용된다
     expect(teamA.find('.text-team-blue').exists()).toBe(true)
     expect(teamB.find('.text-team-orange').exists()).toBe(true)
@@ -125,7 +127,7 @@ describe('AssignmentBoard', () => {
     // 비선택 상태에도 힌트 영역 자체는 렌더돼 있어야 한다(v-if로 사라지지 않음)
     const hint = wrapper.find('[role="status"]')
     expect(hint.exists()).toBe(true)
-    expect(hint.text()).toBe('칩을 길게 눌러 끌면 이동할 수 있어요')
+    expect(hint.text()).toBe('칩을 눌러 선택하거나 길게 눌러 끌어 옮기세요')
 
     await wrapper.find('[data-member="m1"]').trigger('click')
 
@@ -140,6 +142,36 @@ describe('AssignmentBoard', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('×2')
+  })
+
+  it('×2 배지는 self-start로 고정된다 — flex-col 카드의 stretch로 카드 폭 전체까지 늘어나지 않는다', async () => {
+    const { wrapper, store } = mountBoard()
+    store.startDraft([member('solo', '혼자', 'male')], 1, 'normal', identityRandom)
+    await flushPromises()
+
+    const badge = wrapper
+      .findAll('[data-tone="warning"]')
+      .find((element) => element.text().includes('×2'))
+    expect(badge).toBeDefined()
+    expect(badge!.classes()).toContain('self-start')
+  })
+
+  it('팀 카드는 선택된 칩이 있을 때만 이동 버튼이 된다 — 평상시엔 role/tabindex를 갖지 않는다', async () => {
+    const { wrapper, store } = mountBoard()
+    store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+    await flushPromises()
+
+    // 평상시: 아무 일도 하지 않는 카드가 탭 순서를 차지하지 않고, 내부 칩 버튼과 중첩되지도 않는다
+    const idleCard = wrapper.find('[data-team="A"]')
+    expect(idleCard.attributes('role')).toBeUndefined()
+    expect(idleCard.attributes('tabindex')).toBeUndefined()
+
+    await wrapper.find('[data-member="m1"]').trigger('click')
+
+    const activeCard = wrapper.find('[data-team="A"]')
+    expect(activeCard.attributes('role')).toBe('button')
+    expect(activeCard.attributes('tabindex')).toBe('0')
+    expect(activeCard.attributes('aria-label')).toBe('팀 A로 이동')
   })
 
   it('X 모듈이 켜진 팀 카드 헤더에 X 배지를 병기한다', async () => {
@@ -212,12 +244,13 @@ describe('AssignmentBoard', () => {
     expect(store.waitingPool.map((m) => m.id)).toEqual(['w1', 'm1'])
   })
 
-  it('대기자가 없으면 미배정 대기자 섹션을 숨긴다', async () => {
+  it('대기자가 없어도 미배정 대기자 섹션을 유지한다(이동 타겟이 사라지면 제외가 불가능해진다)', async () => {
     const { wrapper, store } = mountBoard()
     store.startDraft(mixedFour(), 1, 'normal', identityRandom)
     await flushPromises()
 
-    expect(wrapper.find('[data-waiting-pool]').exists()).toBe(false)
+    expect(wrapper.find('[data-waiting-pool]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('미배정 대기자 0명')
   })
 
   it('배정 확정 버튼은 편성 전 비활성화되고, 성공 시 confirmed를 emit한다', async () => {
@@ -357,8 +390,8 @@ describe('AssignmentBoard', () => {
       store.addTeam() // A|B → A|B|C
       await flushPromises()
 
-      // 팀 A·B·C 컨테이너 3개(대기자 없음)에 붙는다
-      expect(createMock).toHaveBeenCalledTimes(3)
+      // 팀 A·B·C 컨테이너 3개 + 상시 존재하는 대기자 컨테이너 1개 = 4개에 붙는다
+      expect(createMock).toHaveBeenCalledTimes(4)
       for (const call of createMock.mock.calls) {
         expect(call[1]!.group).toBe('assignment-members')
         expect(call[1]!.draggable).toBe('[data-member]')
@@ -502,6 +535,32 @@ describe('AssignmentBoard', () => {
       expect(dropB.element.children).toHaveLength(3)
       expect(dropA.find('[data-member="m1"]').exists()).toBe(false)
       expect(dropB.find('[data-member="m1"]').exists()).toBe(true)
+    })
+  })
+  describe('미배정 대기자 영역', () => {
+    it('대기자가 없어도 이동 타겟을 렌더한다 — 호스트가 라운드에서 제외할 수단이 필요하다', async () => {
+      const { wrapper, store } = mountBoard()
+      store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+      await wrapper.vm.$nextTick()
+
+      expect(store.waitingPool).toHaveLength(0)
+      expect(wrapper.find('[data-waiting-pool]').exists()).toBe(true)
+      expect(wrapper.find('[data-drop-target="waiting"]').exists()).toBe(true)
+      expect(wrapper.text()).toContain('미배정 대기자 0명')
+      expect(wrapper.text()).toContain('이번 라운드에서 제외할 멤버를 여기로 옮기세요')
+    })
+
+    it('빈 대기열도 탭 이동 타겟으로 동작한다(칩 선택 → 대기자 영역 터치)', async () => {
+      const { wrapper, store } = mountBoard()
+      store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+      await wrapper.vm.$nextTick()
+
+      store.selectMember('m1')
+      await wrapper.vm.$nextTick()
+      await wrapper.find('[data-waiting-pool]').trigger('click')
+
+      expect(store.waitingPool.map((member) => member.id)).toEqual(['m1'])
+      expect(store.draftTeams.flatMap((team) => team.members.map((m) => m.id))).not.toContain('m1')
     })
   })
 })

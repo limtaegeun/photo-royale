@@ -3,3 +3,5 @@
 export { DEFAULT_GAME_MODE, GAME_MODE_IDS, GAME_MODES, isGameModeId } from './registry'
 export type { GameModeId, GameModeDefinition, GameModeRuleEntry } from './types'
 export { default as GameModeRulebook } from './components/GameModeRulebook.vue'
+// 모드 선택 UI도 이 기능이 소유한다 — 호출부(배정 보드)는 선택 결과만 받는다
+export { default as GameModePicker } from './components/GameModePicker.vue'

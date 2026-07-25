@@ -83,4 +83,18 @@ describe('RoundAssignmentCard', () => {
     expect(wrapper.text()).toContain('특수 완장 X')
     expect(wrapper.text()).toContain('X끼리만 서로 사냥할 수 있어요')
   })
+  it('수동 편집으로 3인 팀이 되면 인원수를 그대로 표기한다(2인 1조로 오표기하지 않는다)', () => {
+    const wrapper = mountCard({
+      members: [
+        { id: 'me', name: '오리' },
+        { id: 'u2', name: '하린' },
+        { id: 'u3', name: '도윤' },
+      ],
+    })
+
+    // 구성 요약 줄이 '3인 팀'이다(규칙서 본문의 '2인 1조' 문구와 구분해 검증한다)
+    expect(wrapper.text()).toContain('· 3인 팀')
+    expect(wrapper.text()).not.toContain('· 2인 1조')
+    expect(wrapper.text()).not.toContain('1인 팀 · 목숨과 포인트 2배')
+  })
 })

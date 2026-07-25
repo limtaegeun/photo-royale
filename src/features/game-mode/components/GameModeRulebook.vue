@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import BaseBadge from '@/shared/components/BaseBadge.vue'
+import BaseCard from '@/shared/components/BaseCard.vue'
 import { GAME_MODES } from '../registry'
 import type { GameModeId } from '../types'
 
@@ -66,7 +67,7 @@ const renderedRules = computed<RenderedRule[]>(() => {
 
 <template>
   <!-- 규칙서 카드 — 모드 정의(rules)를 배정 컨텍스트로 채워 번호 목록으로 렌더한다 -->
-  <div class="rounded-lg border border-stroke bg-elevated p-4">
+  <BaseCard>
     <div class="flex items-center justify-between gap-3">
       <h2 class="text-label text-content">이번 게임 규칙서</h2>
       <BaseBadge tone="brand" size="sm">{{ modeDefinition.label }}</BaseBadge>
@@ -78,7 +79,7 @@ const renderedRules = computed<RenderedRule[]>(() => {
           <p class="text-body text-content">{{ rule.text }}</p>
           <p
             v-if="rule.caption"
-            class="mt-0.5 text-caption"
+            class="mt-1 text-caption"
             :class="rule.captionColored ? [groupTextClass, 'font-semibold'] : 'text-content-secondary'"
           >
             {{ rule.caption }}
@@ -86,5 +87,5 @@ const renderedRules = computed<RenderedRule[]>(() => {
         </div>
       </li>
     </ol>
-  </div>
+  </BaseCard>
 </template>
