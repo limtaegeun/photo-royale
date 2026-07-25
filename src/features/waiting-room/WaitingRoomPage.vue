@@ -325,7 +325,8 @@ async function copyInviteLink() {
           variant="accent"
           size="lg"
           class="w-full"
-          :disabled="isReadyConfirmed || isConfirmingReady"
+          :loading="isConfirmingReady"
+          :disabled="isReadyConfirmed"
           @click="store.confirmReady()"
         >
           {{ guestCtaLabel }}

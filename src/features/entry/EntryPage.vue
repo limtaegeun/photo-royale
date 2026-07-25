@@ -11,7 +11,7 @@ import { useRoomEntry } from './composables/useRoomEntry'
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
-const { isSubmitting, actionError, createAndEnter, joinWithCode } = useRoomEntry()
+const { pendingAction, isSubmitting, actionError, createAndEnter, joinWithCode } = useRoomEntry()
 
 // 닉네임·성별은 가입 시 확정된다. displayName은 가입 시점에 닉네임으로 채워진다(auth/api/signup.ts)
 const nickname = computed(() => authStore.user?.displayName ?? '')
@@ -80,7 +80,8 @@ onMounted(() => {
           variant="primary"
           size="md"
           class="mt-3 w-full"
-          :disabled="isSubmitting"
+          :loading="pendingAction === 'join'"
+          :disabled="pendingAction === 'create'"
           @click="joinWithCode(inviteCodeInput)"
         >
           입장하기
@@ -99,7 +100,8 @@ onMounted(() => {
           variant="ghost"
           size="md"
           class="mt-5 w-full"
-          :disabled="isSubmitting"
+          :loading="pendingAction === 'create'"
+          :disabled="pendingAction === 'join'"
           @click="createAndEnter"
         >
           새로운 방 만들기

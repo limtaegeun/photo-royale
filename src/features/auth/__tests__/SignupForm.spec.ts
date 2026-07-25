@@ -65,4 +65,26 @@ describe('SignupForm', () => {
     expect(signupMock).toHaveBeenCalledOnce()
     expect(wrapper.emitted('success')?.[0]).toEqual([PROFILE])
   })
+
+  it('제출 중에는 라벨을 바꾸지 않고 버튼에 스피너를 띄운다', async () => {
+    let resolveSignup!: (profile: UserProfile) => void
+    signupMock.mockReturnValue(new Promise<UserProfile>((resolve) => (resolveSignup = resolve)))
+    const wrapper = mount(SignupForm)
+    const button = () => wrapper.find('button[type="submit"]')
+
+    await wrapper.find('#signup-email').setValue('a@b.com')
+    await wrapper.find('#signup-password').setValue('secret1')
+    await wrapper.find('#signup-nickname').setValue('오리')
+    await wrapper.findAll('[role="radio"]')[1]!.trigger('click') // 여성
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(button().attributes('data-loading')).toBe('true')
+    expect(button().text()).toBe('가입하고 시작하기')
+
+    resolveSignup(PROFILE)
+    await flushPromises()
+
+    expect(button().attributes('data-loading')).toBeUndefined()
+  })
 })

@@ -16,7 +16,12 @@ interface Props extends PrimitiveProps {
    */
   size?: 'sm' | 'md' | 'lg'
   disabled?: boolean
-  /** 비동기 작업 진행 중 표기 — 라벨은 유지한 채 스피너만 겹쳐 보이고, disabled와 동일하게 클릭을 막는다 */
+  /**
+   * 비동기 작업 진행 중 표기 — 라벨은 유지한 채 스피너만 겹쳐 보이고, disabled와 동일하게 클릭을 막는다.
+   * 사용처에서 라벨을 `'로그인 중…'`처럼 갈아끼우지 말고 이 prop을 쓴다(로딩 표기의 단일 진실원).
+   * 한 화면에 진행 가능한 액션이 둘 이상이면 제출 상태를 boolean으로 공유하지 말고 진행 중 액션의
+   * 종류로 들고 있어야 한다 — 누른 버튼에 loading, 나머지엔 disabled(DESIGN_SYSTEM §6.3).
+   */
   loading?: boolean
   type?: 'button' | 'submit'
 }

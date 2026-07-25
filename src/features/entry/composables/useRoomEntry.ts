@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/features/auth'
 import { createRoom, normalizeRoomCode, roomExists } from '@/features/waiting-room'
@@ -12,14 +12,19 @@ export function useRoomEntry() {
   const router = useRouter()
   const authStore = useAuthStore()
 
-  const isSubmitting = ref(false)
+  /**
+   * 진행 중인 액션 — 두 CTA가 제출 상태를 공유하므로, 누른 버튼에만 스피너를 띄울 수 있게
+   * boolean이 아니라 액션 종류로 들고 있는다.
+   */
+  const pendingAction = ref<'create' | 'join' | null>(null)
+  const isSubmitting = computed(() => pendingAction.value !== null)
   const actionError = ref<string | null>(null)
 
   /** 방 생성 후 곧바로 그 방의 대기실로 이동한다(호스트 플로우) */
   async function createAndEnter() {
     const uid = authStore.user?.uid
     if (!uid || isSubmitting.value) return
-    isSubmitting.value = true
+    pendingAction.value = 'create'
     actionError.value = null
     try {
       const code = await createRoom(uid)
@@ -27,7 +32,7 @@ export function useRoomEntry() {
     } catch {
       actionError.value = '방을 만들지 못했어요. 잠시 후 다시 시도해 주세요.'
     } finally {
-      isSubmitting.value = false
+      pendingAction.value = null
     }
   }
 
@@ -40,7 +45,7 @@ export function useRoomEntry() {
       actionError.value = '초대 코드를 입력해 주세요.'
       return
     }
-    isSubmitting.value = true
+    pendingAction.value = 'join'
     actionError.value = null
     try {
       // 대기실로 넘어가기 전에 코드 오타를 이 화면에서 걸러 빠른 피드백을 준다
@@ -52,9 +57,9 @@ export function useRoomEntry() {
     } catch {
       actionError.value = '입장에 실패했어요. 잠시 후 다시 시도해 주세요.'
     } finally {
-      isSubmitting.value = false
+      pendingAction.value = null
     }
   }
 
-  return { isSubmitting, actionError, createAndEnter, joinWithCode }
+  return { pendingAction, isSubmitting, actionError, createAndEnter, joinWithCode }
 }

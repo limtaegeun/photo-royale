@@ -119,7 +119,7 @@ src/shared/components/
 
 | 컴포넌트 | 역할 | 비고 |
 |---|---|---|
-| `BaseButton` | 버튼 | `variant` 5종 / `size` sm(36)·md(48)·lg(56). **하단 고정 주 CTA는 lg, 리스트 행 안의 인라인 액션은 sm** |
+| `BaseButton` | 버튼 | `variant` 5종 / `size` sm(36)·md(48)·lg(56). **하단 고정 주 CTA는 lg, 리스트 행 안의 인라인 액션은 sm**. 비동기 진행 표기는 `loading`(§6.3) |
 | `BaseBadge` | 상태·팀 표식 | `flex` 컨테이너 안에 둘 때는 `self-start` 필수(stretch로 폭이 늘어난다) |
 | `BaseInput` / `BaseSegmented` / `BaseSwitch` | 입력·선택·토글 | |
 | `BaseDialog` / `BaseBottomSheet` / `BaseToast`(+`useToast`) | 오버레이 | |
@@ -152,8 +152,38 @@ src/shared/components/
 - `BaseButton size="sm"`(36px) — `[data-size='sm']::before`로 확장.
 - `SelectableMemberChip`(칩 40px, team-assignment) — `.chip-hit::before`로 확장.
 
+### 6.3 비동기 액션 로딩 표기 (`BaseButton loading`)
+
+**버튼이 비동기 작업을 기다리는 동안 라벨 텍스트를 바꾸지 않는다.** `'로그인 중…'`처럼 라벨을 갈아끼우는 대신 `:loading`을 넘긴다 — 로딩 표기는 `BaseButton`이 단일 진실원이다.
+
+```vue
+<!-- ❌ Avoid — 라벨 교체 -->
+<BaseButton :disabled="isSubmitting">{{ isSubmitting ? '로그인 중…' : '로그인' }}</BaseButton>
+
+<!-- ✅ Correct — 라벨 고정 + loading -->
+<BaseButton :loading="isSubmitting">로그인</BaseButton>
+```
+
+`loading`이 한 번에 처리하는 것:
+
+- 라벨을 `invisible`로 숨겨 **자리(폭·높이)를 유지**한 채 스피너를 중앙에 겹친다 → 레이아웃 시프트 0.
+- `aria-busy="true"` + 네이티브 `disabled`로 **클릭을 물리적으로 차단**한다(중복 제출 가드는 composable/store에도 그대로 둔다 — 이중 방어).
+- 스타일 훅으로 `data-loading="true"`를 노출한다. 테스트·QA의 판정 기준은 버튼 텍스트가 아니라 이 속성이다.
+
+**한 화면에 진행 가능한 액션이 둘 이상이면** 제출 상태를 boolean 하나로 공유하지 말고 **진행 중 액션의 종류**로 들고 있는다. 그러지 않으면 버튼 두 개가 동시에 스피너를 돌린다. 누른 버튼에 `loading`, 나머지에 `disabled`를 준다(`useRoomEntry`의 `pendingAction`이 표준 예시).
+
+```vue
+<BaseButton :loading="pendingAction === 'join'" :disabled="pendingAction === 'create'">입장하기</BaseButton>
+<BaseButton :loading="pendingAction === 'create'" :disabled="pendingAction === 'join'">새로운 방 만들기</BaseButton>
+```
+
+화면 전체가 로딩인 경우(진입 대기 등)는 버튼이 아니라 `role="status"` 문구로 알린다 — 버튼 스피너는 "그 버튼이 누른 일을 처리 중"만 의미한다.
+
+> ⚠️ 현재 알려진 한계(2026-07-25 실측, `docs/qa/button-loading.md`): 로딩 중 네이티브 `disabled`가 붙어 `bg-disabled`가 적용되므로 **스피너가 배경과 2.02:1 대비**(비텍스트 3:1 미달)이고, 라벨의 `visibility:hidden` 때문에 **접근성 이름이 사라진다**. §7 후속 과제로 등록.
+
 ## 7. 미확정/후속 과제
 
 - **정확한 브랜드 hex는 v0 잠정값**이다. 와이어프레임 무드(Deep Navy + Cobalt + Lime)를 따르되 hex 준수 의무 없음이 확인된 상태로, 디자이너 확정 시 primitive 계층만 교체하면 된다.
 - Pretendard 웹폰트는 아직 미포함(현재 시스템 폰트 폴백). 도입 시 성능 예산 검토 후 self-host.
 - 팀 4색의 색약 시뮬레이션 검증(적록 색약에서 red vs orange 구별)은 라벨 병기 규칙으로 완화했으나, 디자이너 확정 팔레트에서 재검증 필요.
+- **`BaseButton loading`의 대비·접근성**(§6.3 한계): ① 로딩 중 스피너 대비 2.02:1 — 로딩 상태에서 variant 색을 유지하거나 스피너 색을 밝게 고정하는 방향 검토. ② 라벨 `invisible`로 접근성 이름이 사라짐 — `opacity-0` 또는 고정 `aria-label`로 대체. ③ `base.css`의 전역 `animation-duration: 0.01ms !important`가 `motion-reduce:animate-pulse`까지 무력화해 reduced-motion에서 스피너가 완전히 멈춘다 — 로딩 인디케이터를 전역 규칙에서 예외 처리할지 결정 필요.

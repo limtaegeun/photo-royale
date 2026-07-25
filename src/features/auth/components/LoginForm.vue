@@ -44,8 +44,8 @@ async function onSubmit() {
 
     <p v-if="submitError" class="text-caption text-danger" role="alert">{{ submitError }}</p>
 
-    <BaseButton type="submit" size="md" class="mt-2 w-full" :disabled="isSubmitting">
-      {{ isSubmitting ? '로그인 중…' : '로그인' }}
+    <BaseButton type="submit" size="md" class="mt-2 w-full" :loading="isSubmitting">
+      로그인
     </BaseButton>
   </form>
 </template>
