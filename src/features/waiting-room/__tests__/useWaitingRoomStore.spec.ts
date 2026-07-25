@@ -421,14 +421,30 @@ describe('useWaitingRoomStore', () => {
     it('호스트가 배정 확정 후 호출하면 status를 playing으로 전이한다', async () => {
       authState.user = { uid: 'me', displayName: '오리' }
       getRoomMock.mockResolvedValue(HOST_ROUND1)
-      captureSnapshotCallbacks()
+      const deliver = captureSnapshotCallbacks()
       const store = useWaitingRoomStore()
       await store.enter('AB2C')
+      deliver.participants([OTHER_READY])
 
       await store.startPlaying()
 
       expect(startGameMock).toHaveBeenCalledExactlyOnceWith('AB2C')
       expect(store.startGameError).toBeNull()
+    })
+
+    it('배정 이력이 있어도 참가자 전원이 준비하지 않았으면 시작하지 않는다', async () => {
+      authState.user = { uid: 'me', displayName: '오리' }
+      getRoomMock.mockResolvedValue(HOST_ROUND1)
+      const deliver = captureSnapshotCallbacks()
+      const store = useWaitingRoomStore()
+      await store.enter('AB2C')
+      deliver.participants([{ ...OTHER_READY, isReady: false }])
+
+      await store.startPlaying()
+
+      expect(store.canStartGame).toBe(false)
+      expect(startGameMock).not.toHaveBeenCalled()
+      expect(store.startGameError).toBe('모든 참가자가 준비를 완료해야 시작할 수 있어요.')
     })
 
     it('배정 확정 전(0차)에는 시작하지 않고 안내를 세팅한다', async () => {
@@ -458,9 +474,10 @@ describe('useWaitingRoomStore', () => {
     it('실패하면 안내를 세팅하고 재시도할 수 있다', async () => {
       authState.user = { uid: 'me', displayName: '오리' }
       getRoomMock.mockResolvedValue(HOST_ROUND1)
-      captureSnapshotCallbacks()
+      const deliver = captureSnapshotCallbacks()
       const store = useWaitingRoomStore()
       await store.enter('AB2C')
+      deliver.participants([OTHER_READY])
 
       startGameMock.mockRejectedValueOnce(new Error('permission denied'))
       await store.startPlaying()

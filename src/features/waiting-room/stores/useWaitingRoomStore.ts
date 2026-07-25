@@ -70,6 +70,13 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
   )
   const participantCount = computed(() => participants.value.length)
   const readyCount = computed(() => participants.value.filter((p) => p.isReady).length)
+  /** 배정 완료 후 참가자가 한 명 이상 있고 전원이 이번 라운드 준비를 마쳐야 시작할 수 있다. */
+  const canStartGame = computed(
+    () =>
+      assignmentRound.value > 0 &&
+      participantCount.value > 0 &&
+      readyCount.value === participantCount.value,
+  )
   const isReadyConfirmed = computed(
     () => participants.value.find((p) => p.id === myId.value)?.isReady ?? false,
   )
@@ -209,6 +216,10 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
       startGameError.value = '팀 배정을 먼저 확정해 주세요.'
       return
     }
+    if (!canStartGame.value) {
+      startGameError.value = '모든 참가자가 준비를 완료해야 시작할 수 있어요.'
+      return
+    }
     isStartingGame.value = true
     startGameError.value = null
     try {
@@ -234,6 +245,7 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
     myAssignment,
     participantCount,
     readyCount,
+    canStartGame,
     isReadyConfirmed,
     isConfirmingReady,
     readyError,

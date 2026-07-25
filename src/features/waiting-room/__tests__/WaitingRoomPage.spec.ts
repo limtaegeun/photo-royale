@@ -548,10 +548,35 @@ describe('WaitingRoomPage', () => {
 
     // 확정 후에는 게임 시작이 주 액션이고, 배정은 다음 차수로 강등된다
     expect(findButton(wrapper, '2차 팀 배정')).toBeDefined()
+    expect(findButton(wrapper, '게임 시작')!.attributes('disabled')).toBeUndefined()
 
     await findButton(wrapper, '게임 시작')!.trigger('click')
     await flushPromises()
 
     expect(startGameMock).toHaveBeenCalledExactlyOnceWith('AB2C')
+  })
+
+  it('호스트: 배정 이력이 남아 있어도 전원이 대기 상태면 게임 시작을 비활성화한다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    const hostRound1: RoomInfo = {
+      hostUid: 'me',
+      status: 'waiting',
+      assignmentRound: 1,
+      gameMode: 'normal',
+      round: null,
+    }
+    getRoomMock.mockResolvedValue(hostRound1)
+    const wrapper = mountPage()
+    await flushPromises()
+    deliver.room(hostRound1)
+    deliver.participants([{ ...ROSTER[1]!, team: 'A', assignedRound: 1, isReady: false }])
+    await flushPromises()
+
+    const startButton = findButton(wrapper, '게임 시작')!
+    expect(startButton.attributes('disabled')).toBeDefined()
+    await startButton.trigger('click')
+    await flushPromises()
+
+    expect(startGameMock).not.toHaveBeenCalled()
   })
 })
