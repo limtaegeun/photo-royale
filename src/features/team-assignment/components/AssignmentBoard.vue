@@ -8,7 +8,7 @@ import BaseBottomSheet from '@/shared/components/BaseBottomSheet.vue'
 import BaseSwitch from '@/shared/components/BaseSwitch.vue'
 import PlayerChip from '@/shared/components/PlayerChip.vue'
 import { GAME_MODE_IDS, GAME_MODES, type GameModeId } from '@/features/game-mode'
-import { groupForArmband, type TeamGroup } from '../armbands'
+import { GROUP_LABELS, groupForArmband, type TeamGroup } from '../armbands'
 import { useTeamAssignmentStore } from '../stores/useTeamAssignmentStore'
 
 interface Props {
@@ -71,14 +71,6 @@ const GROUP_TEXT = {
   red: 'text-team-red',
 } as const
 
-/** 그룹 영문 라벨 — 색약 대응(색+텍스트 병기) */
-const GROUP_LABEL_EN = {
-  blue: 'BLUE',
-  orange: 'ORANGE',
-  green: 'GREEN',
-  red: 'RED',
-} as const
-
 /** 완장 알파벳 → 그룹. 방어적으로 A~Z 한 글자가 아니면 null(중립 처리) */
 function groupOf(armband: string): TeamGroup | null {
   return /^[A-Z]$/.test(armband) ? groupForArmband(armband) : null
@@ -89,7 +81,7 @@ function groupTextClass(armband: string): string {
 }
 function groupEnLabel(armband: string): string {
   const group = groupOf(armband)
-  return group === null ? '' : GROUP_LABEL_EN[group]
+  return group === null ? '' : GROUP_LABELS[group].en
 }
 
 function isSelected(id: string): boolean {

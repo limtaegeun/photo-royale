@@ -10,6 +10,18 @@ export type TeamGroup = 'blue' | 'orange' | 'green' | 'red'
 export const TEAM_GROUP_ORDER: readonly TeamGroup[] = ['blue', 'orange', 'green', 'red']
 
 /**
+ * 그룹 표기 라벨 — 색약 대응으로 색과 항상 병기하는 한글/영문 텍스트의 단일 소스.
+ * 그룹 색을 추가·변경할 때 컴포넌트별 라벨 맵을 일일이 고치지 않도록 여기서만 관리한다
+ * (Tailwind 클래스 맵은 스캐너 대응 때문에 각 컴포넌트의 리터럴 맵으로 남긴다).
+ */
+export const GROUP_LABELS = {
+  blue: { ko: '파랑', en: 'BLUE' },
+  orange: { ko: '주황', en: 'ORANGE' },
+  green: { ko: '초록', en: 'GREEN' },
+  red: { ko: '빨강', en: 'RED' },
+} as const satisfies Record<TeamGroup, { ko: string; en: string }>
+
+/**
  * 자동 배정에 쓰는 일반 완장 — X를 제외한 알파벳 전체 25개(A~W, Y, Z).
  * 기존엔 제작 완료된 A~P 16개만 노출했으나, 기획이 40인(20팀) 지원을 확정해
  * X(특수 완장)를 제외한 전체 알파벳으로 확장했다 — Q 이후는 완장 추가 제작을 전제한다.

@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import BaseBadge from '@/shared/components/BaseBadge.vue'
 import { GameModeRulebook, type GameModeId } from '@/features/game-mode'
-import { groupForArmband, type TeamGroup } from '../armbands'
+import { GROUP_LABELS, groupForArmband, type TeamGroup } from '../armbands'
 
 interface Props {
   /** 내 완장 알파벳 — 그룹 색은 완장에서 파생 */
@@ -38,19 +38,6 @@ const GROUP_BORDER = {
   green: 'border-team-green',
   red: 'border-team-red',
 } as const
-const GROUP_LABEL_KO = {
-  blue: '파랑',
-  orange: '주황',
-  green: '초록',
-  red: '빨강',
-} as const
-const GROUP_LABEL_EN = {
-  blue: 'BLUE',
-  orange: 'ORANGE',
-  green: 'GREEN',
-  red: 'RED',
-} as const
-
 /** 완장 알파벳 → 그룹. A~Z 한 글자가 아니면(방어) null → 중립 처리 */
 const group = computed<TeamGroup | null>(() =>
   /^[A-Z]$/.test(props.armband) ? groupForArmband(props.armband) : null,
@@ -66,8 +53,8 @@ const groupBarClass = computed(() =>
 const groupBorderClass = computed(() =>
   group.value === null ? 'border-stroke-strong' : GROUP_BORDER[group.value],
 )
-const groupLabelKo = computed(() => (group.value === null ? '' : GROUP_LABEL_KO[group.value]))
-const groupLabelEn = computed(() => (group.value === null ? '' : GROUP_LABEL_EN[group.value]))
+const groupLabelKo = computed(() => (group.value === null ? '' : GROUP_LABELS[group.value].ko))
+const groupLabelEn = computed(() => (group.value === null ? '' : GROUP_LABELS[group.value].en))
 
 /** 팀 구성 요약 — 2인 1조 / 1인 팀 */
 const compositionLabel = computed(() => (isSolo.value ? '1인 팀' : '2인 1조'))

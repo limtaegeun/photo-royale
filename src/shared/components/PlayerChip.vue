@@ -6,7 +6,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Gender } from '@/features/auth'
-import { groupForArmband, type TeamGroup } from '@/features/team-assignment'
+import { GROUP_LABELS, groupForArmband, type TeamGroup } from '@/features/team-assignment'
 
 interface Props {
   name: string
@@ -33,13 +33,6 @@ const TEAM_BORDER = {
   orange: 'border-team-orange-solid',
 } as const
 
-const TEAM_LABEL = {
-  red: '빨강',
-  blue: '파랑',
-  green: '초록',
-  orange: '주황',
-} as const
-
 /**
  * 완장 알파벳에서 그룹 색을 파생한다. 알파벳 한 글자가 아니면(방어) 미배정과 같이 중립 처리한다.
  * groupForArmband는 X에 대해 null을 반환한다 — X는 참가자 team으로 저장되지 않지만 방어적으로 다룬다.
@@ -62,7 +55,7 @@ const teamBorderClass = computed(() =>
   group.value === null ? 'border-stroke' : TEAM_BORDER[group.value],
 )
 const teamLabel = computed(() =>
-  group.value === null ? '팀 미배정' : `완장 ${props.team} · ${TEAM_LABEL[group.value]}`,
+  group.value === null ? '팀 미배정' : `완장 ${props.team} · ${GROUP_LABELS[group.value].ko}`,
 )
 
 const nameTextClass = computed(() =>

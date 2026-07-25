@@ -5,6 +5,7 @@ export {
   TEAM_GROUP_ORDER,
   ARMBAND_LABELS,
   SPECIAL_ARMBAND,
+  GROUP_LABELS,
   armbandForTeamIndex,
   groupForArmband,
 } from './armbands'
