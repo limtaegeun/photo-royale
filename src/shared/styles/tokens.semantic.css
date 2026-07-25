@@ -127,7 +127,7 @@
   --pr-size-control-sm: 36px;
   --pr-size-control-md: 48px;
   --pr-size-control-lg: 56px;
-  /* 하단 중심 UI — iOS 홈 인디케이터 등 safe area */
+  /* 화면 가장자리 UI — 노치·iOS 홈 인디케이터 등 safe area */
   --pr-inset-bottom-safe: env(safe-area-inset-bottom, 0px);
   --pr-inset-top-safe: env(safe-area-inset-top, 0px);
 

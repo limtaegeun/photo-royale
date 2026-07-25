@@ -14,7 +14,7 @@ describe('useToast', () => {
     toast({ title: '저장 완료' })
 
     expect(toasts.value).toHaveLength(1)
-    expect(toasts.value[0]).toMatchObject({ title: '저장 완료', tone: 'neutral', duration: 4000 })
+    expect(toasts.value[0]).toMatchObject({ title: '저장 완료', tone: 'neutral', duration: 3000 })
   })
 
   it('여러 토스트는 고유하게 증가하는 id를 갖는다', () => {
