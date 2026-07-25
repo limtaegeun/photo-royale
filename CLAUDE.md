@@ -87,7 +87,10 @@ path alias: `@` → `src/` (예: `@/features/photo-upload`)
 - 기술 유형별 최상위 폴더(`src/components/`, `src/services/`) 생성 금지 → 기능 폴더 안에 만들 것
 - 컴포넌트 안에서 직접 `fetch` 호출 금지 → 해당 기능의 `api/`에 함수로 만든다. 로딩·에러 상태나 검증이 끼는 플로우는 composable(`useXxx`)로 추출하고(예: `useLogin`, `useRoomEntry`), 단순 1회 조회는 컴포넌트에서 api 함수를 직접 호출해도 된다
 - default export 금지 (컴포넌트 .vue 제외) → named export
-- 재사용 가능성 있는 UI 요소를 생 HTML 태그(`<input>`·`<button>` 등)로 화면에 직접 마크업 금지 → `shared/components/Base*.vue` 컴포넌트로 만들어 재사용 (원자 단위 UI는 DS 컴포넌트가 단일 진실원. 현재: `BaseButton`/`BaseBadge`/`BaseInput`/`BaseSegmented`/`BaseSwitch`/`BaseDialog`/`BaseBottomSheet`/`BaseToast`, docs/DESIGN_SYSTEM.md §6)
+- 재사용 가능성 있는 UI 요소를 생 HTML 태그(`<input>`·`<button>` 등)로 화면에 직접 마크업 금지 → `shared/components/Base*.vue` 컴포넌트로 만들어 재사용 (원자 단위 UI는 DS 컴포넌트가 단일 진실원. 현재: `BaseButton`/`BaseBadge`/`BaseInput`/`BaseSegmented`/`BaseSwitch`/`BaseDialog`/`BaseBottomSheet`/`BaseToast` + 레이아웃 `BaseCard`/`BaseSectionHeader`/`BaseListRow`, docs/DESIGN_SYSTEM.md §6)
+- 카드 서피스(`rounded-lg border border-stroke bg-elevated p-4`)·섹션 제목 행·설정 행을 화면마다 직접 조합 금지 → `BaseCard`/`BaseSectionHeader`/`BaseListRow` 사용. 섹션 헤딩은 `text-subheading`, 카드 내부 타이틀은 `text-label`로 위계를 통일한다
+- 블록 사이 여백을 `mt-*` 체인으로 쌓지 말 것 → 컨테이너의 `flex flex-col gap-*`으로 준다(조건부 렌더에서 첫 블록 마진이 남는 문제 방지)
+- Tailwind 기본 스케일이라도 `0.5`/`1.5`(2px/6px)는 4px 그리드 위반 → `gap-1`/`gap-2`, `mt-1`처럼 정수 단계만 쓴다
 - **Base 컴포넌트는 Reka UI(headless) 기반으로 만든다** → 접근성·상호작용 행동(focus trap·roving tabindex·ARIA live region·포털 등)은 Reka primitive에 위임하고, 스타일은 프로젝트 시맨틱 유틸리티로만 작성한다. 원자는 `Primitive`(as/asChild), 행동형은 전용 primitive(Dialog/RadioGroup/Toast 등)를 쓴다.
 - 라이브러리 추가 전 반드시 사용자에게 확인 → 현재 런타임 의존성은 vue/pinia/vue-router/**reka-ui**/**sortablejs** + firebase(Auth/Firestore, 인증·세션 유지용) 6개다. reka-ui는 headless UI 기반으로 승인된 의존성, sortablejs는 배정 보드 드래그 앤 드롭용으로 승인된 의존성이며, 이 목록을 늘리지 않는 것이 기본값 (Tailwind v4는 빌드타임 devDependency라 런타임 의존성 아님)
 
