@@ -35,6 +35,7 @@ const {
   assignmentRound,
   participantCount,
   readyCount,
+  canStartGame,
   isReadyConfirmed,
   isConfirmingReady,
   readyError,
@@ -311,6 +312,7 @@ async function copyInviteLink() {
           size="lg"
           class="w-full"
           :loading="isStartingGame"
+          :disabled="!canStartGame"
           @click="store.startPlaying()"
         >
           게임 시작
