@@ -77,6 +77,8 @@ const approveSubmissionMock =
     ) => Promise<void>
   >()
 const rejectSubmissionMock = vi.fn<(code: string, submissionId: string) => Promise<void>>()
+const getSubmissionStatusFromServerMock =
+  vi.fn<(code: string, submissionId: string) => Promise<'pending' | 'approved' | 'rejected' | null>>()
 const subscribeSubmissionsMock =
   vi.fn<
     (
@@ -98,6 +100,8 @@ vi.mock('../api/submissions', async (importOriginal) => {
     ) => approveSubmissionMock(code, submissionId, target),
     rejectSubmission: (code: string, submissionId: string) =>
       rejectSubmissionMock(code, submissionId),
+    getSubmissionStatusFromServer: (code: string, submissionId: string) =>
+      getSubmissionStatusFromServerMock(code, submissionId),
     subscribeToPendingSubmissions: (
       code: string,
       round: number,
@@ -126,6 +130,7 @@ function captureSnapshotCallbacks() {
   let deliverParticipants: (participants: Participant[]) => void = () => {}
   let deliverNotice: (notice: Notice | null) => void = () => {}
   let deliverSubmissions: (submissions: Submission[]) => void = () => {}
+  let failSubmissions: (error: Error) => void = () => {}
   subscribeRoomMock.mockImplementation((_code, onChange) => {
     deliverRoom = onChange
     return unsubscribeMock
@@ -138,8 +143,9 @@ function captureSnapshotCallbacks() {
     deliverNotice = onChange
     return unsubscribeMock
   })
-  subscribeSubmissionsMock.mockImplementation((_code, _round, onChange) => {
+  subscribeSubmissionsMock.mockImplementation((_code, _round, onChange, onError) => {
     deliverSubmissions = onChange
+    failSubmissions = onError ?? (() => {})
     return unsubscribeMock
   })
   return {
@@ -147,6 +153,7 @@ function captureSnapshotCallbacks() {
     participants: (participants: Participant[]) => deliverParticipants(participants),
     notice: (notice: Notice | null) => deliverNotice(notice),
     submissions: (submissions: Submission[]) => deliverSubmissions(submissions),
+    submissionsError: (error: Error) => failSubmissions(error),
   }
 }
 
@@ -237,6 +244,7 @@ describe('RoundOpsPage', () => {
     endGameMock.mockReset().mockResolvedValue(undefined)
     approveSubmissionMock.mockReset().mockResolvedValue(undefined)
     rejectSubmissionMock.mockReset().mockResolvedValue(undefined)
+    getSubmissionStatusFromServerMock.mockReset().mockResolvedValue('pending')
     subscribeSubmissionsMock.mockReset().mockReturnValue(unsubscribeMock)
   })
   afterEach(() => {
@@ -850,6 +858,7 @@ describe('RoundOpsPage', () => {
 
       deliver.submissions([])
       await flushPromises()
+      getSubmissionStatusFromServerMock.mockResolvedValueOnce('approved')
       request.reject(new Error('already judged'))
       await flushPromises()
 
@@ -857,9 +866,23 @@ describe('RoundOpsPage', () => {
       expect(document.body.textContent).not.toContain('잡힌 팀 선택')
     })
 
-    it('판정 실패 뒤 제거 스냅샷이 와도 같은 충돌을 두 번 알리지 않는다', async () => {
+    it('큐 Listen 오류가 나면 stale 행 대신 지속 오류 상태를 표시한다', async () => {
       const { deliver, wrapper } = await openJudgeTab()
-      approveSubmissionMock.mockRejectedValueOnce(new Error('permission denied'))
+      expect(wrapper.find('button[data-submission="s1"]').exists()).toBe(true)
+
+      deliver.submissionsError(new Error('permission-denied'))
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('판정 큐 연결 오류')
+      expect(wrapper.text()).toContain('연결이 복구되기 전에는 남아 있던 판정 항목을 사용할 수 없어요.')
+      expect(wrapper.find('button[data-submission="s1"]').exists()).toBe(false)
+    })
+
+    it('로컬 제거 뒤 판정이 거부되면 서버 pending을 확인하고 일반 오류로 유지한다', async () => {
+      const { deliver, wrapper } = await openJudgeTab()
+      const request = deferred()
+      void request.promise.catch(() => {})
+      approveSubmissionMock.mockReturnValueOnce(request.promise)
 
       await wrapper.find('button[data-submission="s1"]').trigger('click')
       await flushPromises()
@@ -868,13 +891,9 @@ describe('RoundOpsPage', () => {
       sheetButton('판정 확정')!.click()
       await flushPromises()
 
-      await vi.waitFor(() => {
-        expect(toastMock).toHaveBeenCalledWith({
-          title: '판정을 처리하지 못했어요. 다시 시도해 주세요.',
-          tone: 'danger',
-        })
-      })
       deliver.submissions([])
+      await flushPromises()
+      request.reject(new Error('permission denied'))
       await flushPromises()
 
       expect(toastMock).toHaveBeenCalledWith({
@@ -885,7 +904,31 @@ describe('RoundOpsPage', () => {
         title: '이미 판정된 킬샷이에요.',
         tone: 'neutral',
       })
-      expect(document.body.textContent).not.toContain('잡힌 팀 선택')
+      expect(document.body.textContent).toContain('잡힌 팀 선택')
+      expect(getSubmissionStatusFromServerMock).toHaveBeenCalledWith('AB2C', 's1')
+    })
+
+    it('판정 실패 뒤 서버 상태 확인도 실패하면 선판정으로 단정하지 않는다', async () => {
+      const { wrapper } = await openJudgeTab()
+      approveSubmissionMock.mockRejectedValueOnce(new Error('permission denied'))
+      getSubmissionStatusFromServerMock.mockRejectedValueOnce(new Error('offline'))
+
+      await wrapper.find('button[data-submission="s1"]').trigger('click')
+      await flushPromises()
+      document.body.querySelector<HTMLButtonElement>('button[data-team="A"]')!.click()
+      await flushPromises()
+      sheetButton('판정 확정')!.click()
+      await flushPromises()
+
+      expect(toastMock).toHaveBeenCalledWith({
+        title: '판정을 처리하지 못했어요. 다시 시도해 주세요.',
+        tone: 'danger',
+      })
+      expect(toastMock).not.toHaveBeenCalledWith({
+        title: '이미 판정된 킬샷이에요.',
+        tone: 'neutral',
+      })
+      expect(document.body.textContent).toContain('잡힌 팀 선택')
     })
   })
 

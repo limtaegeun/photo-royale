@@ -11,6 +11,7 @@ interface FakeRef {
 
 const addDocMock = vi.fn<(ref: FakeRef, data: Record<string, unknown>) => Promise<void>>()
 const updateDocMock = vi.fn<(ref: FakeRef, data: Record<string, unknown>) => Promise<void>>()
+const getDocFromServerMock = vi.fn<(ref: FakeRef) => Promise<unknown>>()
 const onSnapshotMock =
   vi.fn<
     (
@@ -33,12 +34,14 @@ vi.mock('firebase/firestore', () => ({
   serverTimestamp: () => 'server-timestamp',
   addDoc: (ref: FakeRef, data: Record<string, unknown>) => addDocMock(ref, data),
   updateDoc: (ref: FakeRef, data: Record<string, unknown>) => updateDocMock(ref, data),
+  getDocFromServer: (ref: FakeRef) => getDocFromServerMock(ref),
 }))
 
 import {
   SUBMISSION_PHOTO_MAX_LENGTH,
   SUBMISSION_PHOTO_PREFIX,
   approveSubmission,
+  getSubmissionStatusFromServer,
   rejectSubmission,
   submitKillshot,
   subscribeToPendingSubmissions,
@@ -48,6 +51,7 @@ beforeEach(() => {
   addDocMock.mockReset().mockResolvedValue(undefined)
   updateDocMock.mockReset().mockResolvedValue(undefined)
   onSnapshotMock.mockReset()
+  getDocFromServerMock.mockReset()
 })
 
 function pendingDoc(
@@ -168,6 +172,27 @@ describe('subscribeToPendingSubmissions', () => {
 })
 
 describe('판정 쓰기', () => {
+  it('판정 실패 확인은 캐시가 아닌 서버 문서 상태를 읽는다', async () => {
+    getDocFromServerMock.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ status: 'approved' }),
+    })
+
+    await expect(getSubmissionStatusFromServer('AB2C', 's1')).resolves.toBe('approved')
+    expect(getDocFromServerMock).toHaveBeenCalledExactlyOnceWith({
+      path: 'rooms/AB2C/submissions/s1',
+    })
+  })
+
+  it('서버 문서가 없거나 상태가 깨졌으면 선판정 상태로 단정하지 않는다', async () => {
+    getDocFromServerMock
+      .mockResolvedValueOnce({ exists: () => false })
+      .mockResolvedValueOnce({ exists: () => true, data: () => ({ status: 'broken' }) })
+
+    await expect(getSubmissionStatusFromServer('AB2C', 'missing')).resolves.toBeNull()
+    await expect(getSubmissionStatusFromServer('AB2C', 'broken')).resolves.toBeNull()
+  })
+
   it('확정은 approved 상태·대상 완장·서버 시각을 한 번에 쓴다', async () => {
     await approveSubmission('AB2C', 's1', { team: 'A', participantUid: 'u1' })
 

@@ -86,6 +86,8 @@ const approveSubmissionMock =
     ) => Promise<void>
   >()
 const rejectSubmissionMock = vi.fn<(code: string, submissionId: string) => Promise<void>>()
+const getSubmissionStatusFromServerMock =
+  vi.fn<(code: string, submissionId: string) => Promise<'pending' | 'approved' | 'rejected' | null>>()
 
 vi.mock('../api/submissions', () => ({
   approveSubmission: (
@@ -95,6 +97,8 @@ vi.mock('../api/submissions', () => ({
   ) => approveSubmissionMock(code, submissionId, target),
   rejectSubmission: (code: string, submissionId: string) =>
     rejectSubmissionMock(code, submissionId),
+  getSubmissionStatusFromServer: (code: string, submissionId: string) =>
+    getSubmissionStatusFromServerMock(code, submissionId),
   subscribeToPendingSubmissions: (
     code: string,
     round: number,
@@ -203,6 +207,7 @@ describe('useRoundOpsStore', () => {
     ]) {
       mock.mockReset().mockResolvedValue(undefined)
     }
+    getSubmissionStatusFromServerMock.mockReset().mockResolvedValue('pending')
     subscribeRoomMock.mockReset().mockReturnValue(unsubscribeRoomMock)
     subscribeParticipantsMock.mockReset().mockReturnValue(unsubscribeParticipantsMock)
     subscribeNoticeMock.mockReset().mockReturnValue(unsubscribeNoticeMock)
@@ -637,12 +642,23 @@ describe('useRoundOpsStore', () => {
       expect(store.pendingAction).toBeNull()
     })
 
-    it('큐 Listen 오류는 일반 액션에 덮이지 않고 다음 정상 스냅샷에서만 해제된다', async () => {
+    it('큐 Listen 오류는 stale 큐를 비우고 재진입 전까지 유지한다', async () => {
       const deliver = captureSnapshotCallbacks()
       const store = useRoundOpsStore()
       store.enter('AB2C')
       deliver.room(room({ round: RUNNING }))
 
+      deliver.submissions([
+        {
+          id: 's1',
+          uid: 'u1',
+          team: 'A',
+          round: 2,
+          photo: 'data:image/jpeg;base64,killshot',
+          status: 'pending',
+          createdAtMs: NOW,
+        },
+      ])
       const onError = subscribeSubmissionsMock.mock.calls[0]![3]!
       onError(new Error('permission-denied'))
 
@@ -650,14 +666,16 @@ describe('useRoundOpsStore', () => {
         '판정 큐 연결이 끊겼어요. 화면을 새로고침해 주세요.',
       )
       expect(store.actionError).toBeNull()
+      expect(store.pendingSubmissions).toEqual([])
 
       await store.pause()
       expect(store.submissionListenError).toBe(
         '판정 큐 연결이 끊겼어요. 화면을 새로고침해 주세요.',
       )
 
-      deliver.submissions([])
-      expect(store.submissionListenError).toBeNull()
+      expect(store.submissionListenError).toBe(
+        '판정 큐 연결이 끊겼어요. 화면을 새로고침해 주세요.',
+      )
     })
 
     it('판정 대기 스냅샷을 그대로 보관한다', () => {

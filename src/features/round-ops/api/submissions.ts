@@ -2,6 +2,7 @@ import {
   addDoc,
   collection,
   doc,
+  getDocFromServer,
   onSnapshot,
   query,
   serverTimestamp,
@@ -24,6 +25,17 @@ export const SUBMISSION_PHOTO_MAX_LENGTH = 900000
 
 /** pending: 판정 대기 → 호스트가 approved(확정) 또는 rejected(반려)로 한 번만 전이한다 */
 export type SubmissionStatus = 'pending' | 'approved' | 'rejected'
+
+/** 서버에 저장된 판정 상태. null은 문서 부재이며 캐시 상태는 사용하지 않는다. */
+export async function getSubmissionStatusFromServer(
+  code: string,
+  submissionId: string,
+): Promise<SubmissionStatus | null> {
+  const snapshot = await getDocFromServer(doc(db, 'rooms', code, 'submissions', submissionId))
+  if (!snapshot.exists()) return null
+  const status = snapshot.data().status
+  return status === 'pending' || status === 'approved' || status === 'rejected' ? status : null
+}
 
 /** 참가자가 제출한 킬샷 한 건 — team/round는 완장이 라운드마다 바뀌므로 제출 시점 스냅샷이다 */
 export interface Submission {

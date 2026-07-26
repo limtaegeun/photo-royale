@@ -24,6 +24,7 @@ import {
 } from '../api/round'
 import {
   approveSubmission as requestApproveSubmission,
+  getSubmissionStatusFromServer,
   rejectSubmission as requestRejectSubmission,
   subscribeToPendingSubmissions,
   type Submission,
@@ -121,6 +122,7 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
       },
       () => {
         if (subscribedSubmissionRound !== roundNumber) return
+        pendingSubmissions.value = []
         submissionListenError.value = SUBMISSIONS_LISTEN_ERROR_MESSAGE
       },
     )
@@ -293,6 +295,12 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     )
   }
 
+  /** 판정 실패가 실제 선판정 충돌인지 서버 정본으로 확인한다. 조회 실패는 호출부가 일반 오류로 처리한다. */
+  async function getSubmissionStatus(submissionId: string) {
+    if (roomCode.value === null) return null
+    return getSubmissionStatusFromServer(roomCode.value, submissionId)
+  }
+
   /**
    * 공지 전송 — 성공 여부를 돌려준다(화면이 시트를 닫고 토스트를 띄우는 판단에 쓴다).
    * 빈 문자열·상한 초과는 서버(rules)도 막지만, 왕복 없이 여기서 먼저 거른다.
@@ -350,6 +358,7 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     finishGame,
     approveSubmission,
     rejectSubmission,
+    getSubmissionStatus,
     submitNotice,
   }
 })

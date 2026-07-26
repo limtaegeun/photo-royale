@@ -78,8 +78,6 @@ const isEndGameDialogOpen = ref(false)
 const isJudgeSheetOpen = ref(false)
 /** 시트에서 판정 중인 킬샷 — 큐에서 고른 스냅샷을 들고 있는다(닫힌 뒤에도 애니메이션 동안 유지) */
 const judgingSubmission = ref<Submission | null>(null)
-/** 쓰기 실패를 이미 안내한 건 — 뒤늦은 큐 제거 스냅샷에서는 같은 상황을 다시 토스트하지 않는다 */
-const failedJudgeSubmissionId = ref<string | null>(null)
 
 /** 라운드 컨트롤은 게임이 실제로 진행 중일 때만 의미가 있다(rules도 playing에서만 쓰기를 허용한다) */
 const isPlaying = computed(() => gameStatus.value === 'playing')
@@ -157,19 +155,25 @@ async function sendNotice(text: string) {
 
 function openJudgeSheet(submission: Submission) {
   if (pendingAction.value === 'judge') return
-  failedJudgeSubmissionId.value = null
   judgingSubmission.value = submission
   isJudgeSheetOpen.value = true
 }
 
-/** 성공했을 때만 시트를 닫는다 — 실패(선판정 충돌 등)는 에러 토스트 후 재시도할 수 있게 */
-function closeAsAlreadyJudged(submissionId: string): boolean {
-  if (!isJudgeSheetOpen.value || judgingSubmission.value?.id !== submissionId) return false
-  if (pendingSubmissions.value.some((submission) => submission.id === submissionId)) return false
-  isJudgeSheetOpen.value = false
-  failedJudgeSubmissionId.value = null
-  toast({ title: '이미 판정된 킬샷이에요.', tone: 'neutral' })
-  return true
+/** 실패 원인을 큐의 로컬 상태로 추정하지 않고 서버 문서의 확정 상태로 판별한다. */
+async function handleJudgeFailure(submissionId: string) {
+  let status = null
+  try {
+    status = await store.getSubmissionStatus(submissionId)
+  } catch {
+    // 서버 확인까지 실패하면 선판정으로 단정하지 않고 재시도 가능한 일반 오류로 남긴다.
+  }
+  if (!isJudgeSheetOpen.value || judgingSubmission.value?.id !== submissionId) return
+  if (status === 'approved' || status === 'rejected') {
+    isJudgeSheetOpen.value = false
+    toast({ title: '이미 판정된 킬샷이에요.', tone: 'neutral' })
+    return
+  }
+  toast({ title: JUDGE_ERROR_MESSAGE, tone: 'danger' })
 }
 
 async function approveKillshot(target: SubmissionTarget) {
@@ -178,14 +182,10 @@ async function approveKillshot(target: SubmissionTarget) {
   const approved = await store.approveSubmission(current.id, target)
   if (judgingSubmission.value?.id !== current.id) return
   if (!approved) {
-    if (!closeAsAlreadyJudged(current.id)) {
-      failedJudgeSubmissionId.value = current.id
-      toast({ title: JUDGE_ERROR_MESSAGE, tone: 'danger' })
-    }
+    await handleJudgeFailure(current.id)
     return
   }
   isJudgeSheetOpen.value = false
-  failedJudgeSubmissionId.value = null
   toast({ title: `팀 ${target.team} 킬샷으로 판정했어요.`, tone: 'success' })
 }
 
@@ -195,14 +195,10 @@ async function rejectKillshot() {
   const rejected = await store.rejectSubmission(current.id)
   if (judgingSubmission.value?.id !== current.id) return
   if (!rejected) {
-    if (!closeAsAlreadyJudged(current.id)) {
-      failedJudgeSubmissionId.value = current.id
-      toast({ title: JUDGE_ERROR_MESSAGE, tone: 'danger' })
-    }
+    await handleJudgeFailure(current.id)
     return
   }
   isJudgeSheetOpen.value = false
-  failedJudgeSubmissionId.value = null
   toast({ title: '킬샷을 반려했어요.', tone: 'neutral' })
 }
 
@@ -213,10 +209,6 @@ watch(pendingSubmissions, (submissions) => {
   if (!isJudgeSheetOpen.value || current === null || pendingAction.value === 'judge') return
   if (submissions.some((submission) => submission.id === current.id)) return
   isJudgeSheetOpen.value = false
-  if (failedJudgeSubmissionId.value === current.id) {
-    failedJudgeSubmissionId.value = null
-    return
-  }
   toast({ title: '이미 판정된 킬샷이에요.', tone: 'neutral' })
 })
 
@@ -354,8 +346,14 @@ onUnmounted(() => {
       </template>
 
       <template v-else-if="activeTab === 'judge'">
+        <BaseCard v-if="submissionListenError !== null" padding="lg">
+          <h2 class="text-subheading text-danger">판정 큐 연결 오류</h2>
+          <p class="mt-3 text-body text-content-secondary">
+            {{ submissionListenError }} 연결이 복구되기 전에는 남아 있던 판정 항목을 사용할 수 없어요.
+          </p>
+        </BaseCard>
         <JudgeQueueList
-          v-if="phase === 'ready' && isPlaying"
+          v-else-if="phase === 'ready' && isPlaying"
           :submissions="pendingSubmissions"
           :participants="participants"
           :now-ms="nowMs"
