@@ -208,6 +208,12 @@ watch(pendingSubmissions, (submissions) => {
   const current = judgingSubmission.value
   if (!isJudgeSheetOpen.value || current === null || pendingAction.value === 'judge') return
   if (submissions.some((submission) => submission.id === current.id)) return
+  // Listen 자체가 종료되며 store가 stale 큐를 비운 경우는 다른 기기의 선판정이 아니다.
+  // 오류 카드를 가리는 stale 시트만 닫고, 원인을 오인시키는 "이미 판정" 안내는 내보내지 않는다.
+  if (submissionListenError.value !== null) {
+    isJudgeSheetOpen.value = false
+    return
+  }
   isJudgeSheetOpen.value = false
   toast({ title: '이미 판정된 킬샷이에요.', tone: 'neutral' })
 })

@@ -878,6 +878,28 @@ describe('RoundOpsPage', () => {
       expect(wrapper.find('button[data-submission="s1"]').exists()).toBe(false)
     })
 
+    it('판정 시트가 열린 중 큐 Listen 오류가 나도 선판정으로 오인하지 않는다', async () => {
+      const { deliver, wrapper } = await openJudgeTab()
+
+      await wrapper.find('button[data-submission="s1"]').trigger('click')
+      await flushPromises()
+      expect(document.body.textContent).toContain('잡힌 팀 선택')
+
+      deliver.submissionsError(new Error('permission-denied'))
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('판정 큐 연결 오류')
+      expect(document.body.textContent).not.toContain('잡힌 팀 선택')
+      expect(toastMock).not.toHaveBeenCalledWith({
+        title: '이미 판정된 킬샷이에요.',
+        tone: 'neutral',
+      })
+      expect(toastMock).toHaveBeenCalledWith({
+        title: '판정 큐 연결이 끊겼어요. 화면을 새로고침해 주세요.',
+        tone: 'danger',
+      })
+    })
+
     it('로컬 제거 뒤 판정이 거부되면 서버 pending을 확인하고 일반 오류로 유지한다', async () => {
       const { deliver, wrapper } = await openJudgeTab()
       const request = deferred()
