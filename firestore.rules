@@ -216,6 +216,70 @@ service cloud.firestore {
         // 보낸 공지는 정정하지 않고 새 공지로 덮는다(이력 보존).
         allow update, delete: if false;
       }
+
+      // 킬샷 제출·판정 큐. 참가자가 append하고 호스트가 pending → approved/rejected로
+      // 한 번만 판정한다(재판정·삭제 없음). 사진은 Storage 없이 JPEG 데이터 URL로 문서에
+      // 인라인 저장한다(문서 한도 1MiB 안에서 클라이언트가 다운스케일·압축한다).
+      match /submissions/{submissionId} {
+        // 사진 원문(data URL)은 민감하고 용량도 크다. 방 호스트 또는 실제 참가자만 열람한다.
+        // 초대 코드를 알기만 하는 다른 로그인 사용자의 단건 조회·전체 큐 구독은 거부한다.
+        allow read: if request.auth != null
+          && (get(/databases/$(database)/documents/rooms/$(roomCode)).data.hostUid == request.auth.uid
+            || exists(/databases/$(database)/documents/rooms/$(roomCode)/participants/$(request.auth.uid)));
+
+        // 이번 라운드에 배정된 참가자 본인만 제출한다. team/round는 위조를 막기 위해
+        // 본인 참가자 문서·방 문서와 대조한다(같은 문서 get은 평가 안에서 캐시된다).
+        // photo 길이 상한(900000)은 src/features/round-ops/api/submissions.ts의
+        // SUBMISSION_PHOTO_MAX_LENGTH와 **숫자까지 동일**해야 한다(submissions.spec이 대조 검증).
+        allow create: if request.auth != null
+          && request.resource.data.keys().hasAll(['uid', 'team', 'round', 'photo', 'status', 'createdAt'])
+          && request.resource.data.keys().hasOnly(['uid', 'team', 'round', 'photo', 'status', 'createdAt'])
+          && request.resource.data.uid == request.auth.uid
+          && get(/databases/$(database)/documents/rooms/$(roomCode)).data.status == 'playing'
+          && request.resource.data.round is int
+          && request.resource.data.round
+            == get(/databases/$(database)/documents/rooms/$(roomCode)).data.assignmentRound
+          && request.resource.data.team
+            == get(/databases/$(database)/documents/rooms/$(roomCode)/participants/$(request.auth.uid)).data.team
+          && request.resource.data.round
+            == get(/databases/$(database)/documents/rooms/$(roomCode)/participants/$(request.auth.uid)).data.assignedRound
+          && request.resource.data.photo is string
+          && request.resource.data.photo.size() >= 1
+          && request.resource.data.photo.size() <= 900000
+          && request.resource.data.photo.matches('^data:image/jpeg;base64,.*')
+          && request.resource.data.status == 'pending'
+          && request.resource.data.createdAt == request.time;
+
+        // 판정 — 호스트 본인이 pending에 한해 한 번만(단방향). approved(확정)면 잡힌 팀의
+        // 완장(targetTeam)이 필수이고, rejected(반려)는 사유 없이 상태만 남긴다.
+        allow update: if request.auth != null
+          && get(/databases/$(database)/documents/rooms/$(roomCode)).data.hostUid == request.auth.uid
+          && get(/databases/$(database)/documents/rooms/$(roomCode)).data.status == 'playing'
+          && resource.data.status == 'pending'
+          && resource.data.round
+            == get(/databases/$(database)/documents/rooms/$(roomCode)).data.assignmentRound
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'targetTeam', 'targetParticipantUid', 'judgedAt'])
+          && request.resource.data.judgedAt == request.time
+          && (
+            (request.resource.data.status == 'approved'
+              && request.resource.data.targetTeam is string
+              && request.resource.data.targetTeam.size() == 1
+              && request.resource.data.targetTeam.matches('^[A-Z]$')
+              && request.resource.data.targetTeam != resource.data.team
+              && request.resource.data.targetParticipantUid is string
+              && request.resource.data.targetTeam
+                == get(/databases/$(database)/documents/rooms/$(roomCode)/participants/$(request.resource.data.targetParticipantUid)).data.team
+              && resource.data.round
+                == get(/databases/$(database)/documents/rooms/$(roomCode)/participants/$(request.resource.data.targetParticipantUid)).data.assignedRound)
+            || (request.resource.data.status == 'rejected'
+              && !('targetTeam' in request.resource.data)
+              && !('targetParticipantUid' in request.resource.data))
+          );
+
+        // 판정 이력은 정정하지 않는다(재판정·삭제 플로우 없음).
+        allow delete: if false;
+      }
     }
   }
 }

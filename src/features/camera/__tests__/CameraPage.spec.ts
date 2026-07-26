@@ -21,10 +21,15 @@ const subscribeNoticeMock =
       onError?: (error: Error) => void,
     ) => () => void
   >()
+const submitKillshotMock = vi.fn<(code: string, input: Record<string, unknown>) => Promise<void>>()
 
 vi.mock('@/features/round-ops', async () => {
   const { computed } = await import('vue')
   return {
+    SUBMISSION_PHOTO_PREFIX: 'data:image/jpeg;base64,',
+    SUBMISSION_PHOTO_MAX_LENGTH: 900000,
+    submitKillshot: (code: string, input: Record<string, unknown>) =>
+      submitKillshotMock(code, input),
     subscribeToLatestNotice: (
       code: string,
       onChange: (notice: { id: string; text: string; createdAtMs: number | null } | null) => void,
@@ -153,6 +158,37 @@ function stubCanvas() {
   )
 }
 
+// jsdom에는 createImageBitmap이 없고 toDataURL도 JPEG을 인코딩하지 못하므로 함께 스텁한다
+function stubKillshotEncoding() {
+  vi.stubGlobal(
+    'createImageBitmap',
+    vi.fn(async () => ({ width: 640, height: 480, close: vi.fn<() => void>() })),
+  )
+  vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue(
+    'data:image/jpeg;base64,killshot',
+  )
+}
+
+/** player1이 팀 A로 배정된 명단을 전달한다 — 제출 흐름의 기본 전제 */
+function deliverAssignedParticipants() {
+  subscribeParticipantsMock.mockImplementation((_code, onChange) => {
+    onChange([
+      {
+        id: 'player1',
+        name: '민우',
+        team: 'A',
+        assignedRound: 1,
+        gender: 'male',
+        isXTeam: false,
+        sameGenderStreak: 0,
+        previousPartnerIds: [],
+        isReady: true,
+      },
+    ])
+    return unsubscribeParticipantsMock
+  })
+}
+
 /** 뷰파인더가 켜진 상태의 페이지를 만들고 비디오 해상도 메타데이터까지 채운다 */
 async function mountWithActiveCamera() {
   stubGetUserMedia(() => Promise.resolve(createFakeStream()))
@@ -187,10 +223,12 @@ beforeEach(() => {
     onChange(null)
     return unsubscribeNoticeMock
   })
+  submitKillshotMock.mockReset().mockResolvedValue(undefined)
 })
 
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
   Reflect.deleteProperty(navigator, 'mediaDevices')
 })
 
@@ -470,7 +508,72 @@ describe('CameraPage', () => {
     expect(preview.attributes('src')).toBe('blob:preview')
     expect(findShutter(wrapper).exists()).toBe(false)
     expect(wrapper.text()).toContain('킬샷 확인')
-    expect(wrapper.text()).toContain('제출 준비 중')
+    expect(wrapper.text()).toContain('킬샷 제출')
+  })
+
+  it('이번 라운드 미배정이면 제출 버튼을 비활성화하고 안내를 보여준다', async () => {
+    stubCanvas()
+    const wrapper = await mountWithActiveCamera()
+    await findShutter(wrapper).trigger('click')
+    await flushPromises()
+
+    const submitButton = findButtonByText(wrapper, '킬샷 제출')!
+    expect(submitButton.attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('이번 라운드 팀 배정을 확인하는 중이에요')
+    expect(submitKillshotMock).not.toHaveBeenCalled()
+  })
+
+  it('킬샷 제출에 성공하면 압축본을 전송하고 뷰파인더로 돌아간다', async () => {
+    stubCanvas()
+    stubKillshotEncoding()
+    deliverAssignedParticipants()
+    const deliverRoom = captureRoomSnapshot()
+    const wrapper = await mountWithActiveCamera()
+    deliverRoom(playingRoom())
+    await flushPromises()
+
+    await findShutter(wrapper).trigger('click')
+    await flushPromises()
+    await findButtonByText(wrapper, '킬샷 제출')!.trigger('click')
+    await flushPromises()
+
+    expect(submitKillshotMock).toHaveBeenCalledExactlyOnceWith('AB2C', {
+      uid: 'player1',
+      team: 'A',
+      round: 1,
+      photo: 'data:image/jpeg;base64,killshot',
+    })
+    expect(toastMock).toHaveBeenCalledWith({
+      title: '킬샷을 제출했어요. 호스트 판정을 기다려 주세요.',
+      tone: 'success',
+    })
+    // 미리보기가 닫히고 콕핏으로 돌아가 다음 킬샷을 이어서 찍을 수 있다
+    expect(findShutter(wrapper).exists()).toBe(true)
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:preview')
+  })
+
+  it('제출에 실패하면 사진을 보존한 채 다시 시도를 안내한다', async () => {
+    stubCanvas()
+    stubKillshotEncoding()
+    deliverAssignedParticipants()
+    submitKillshotMock.mockRejectedValue(new Error('permission-denied'))
+    const deliverRoom = captureRoomSnapshot()
+    const wrapper = await mountWithActiveCamera()
+    deliverRoom(playingRoom())
+    await flushPromises()
+
+    await findShutter(wrapper).trigger('click')
+    await flushPromises()
+    await findButtonByText(wrapper, '킬샷 제출')!.trigger('click')
+    await flushPromises()
+
+    expect(toastMock).toHaveBeenCalledWith({
+      title: '제출에 실패했어요. 다시 시도해 주세요.',
+      tone: 'danger',
+    })
+    // 현장에서 같은 장면을 다시 만들 수 없으므로 미리보기를 유지한다
+    expect(wrapper.text()).toContain('킬샷 확인')
+    expect(wrapper.find('img').exists()).toBe(true)
   })
 
   it('다시 찍기를 누르면 미리보기를 닫고 뷰파인더로 돌아간다', async () => {
