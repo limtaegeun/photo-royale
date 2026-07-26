@@ -408,34 +408,31 @@ onUnmounted(() => {
           class="h-full w-full rounded-lg border border-stroke object-contain"
         />
       </div>
-      <div
-        class="border-t border-stroke bg-elevated px-5 pt-4 pb-[calc(var(--pr-inset-bottom-safe)+1.25rem)]"
-      >
-        <div class="flex flex-col gap-3">
-          <p v-if="me === null" class="text-center text-caption break-keep text-content-secondary">
-            이번 라운드 팀 배정을 확인하는 중이에요. 배정이 확인되면 제출할 수 있어요.
-          </p>
-          <div class="grid grid-cols-2 gap-3">
-            <BaseButton
-              variant="ghost"
-              size="lg"
-              class="w-full"
-              :disabled="isSubmitting"
-              @click="clear"
-            >
-              다시 찍기
-            </BaseButton>
-            <BaseButton
-              variant="primary"
-              size="lg"
-              class="w-full"
-              :disabled="me === null"
-              :loading="isSubmitting"
-              @click="submitPhoto"
-            >
-              킬샷 제출
-            </BaseButton>
-          </div>
+      <!-- 화면 전체가 이미 canvas 서피스라 별도 밴드(bg-elevated) 없이 버튼을 바로 올린다 -->
+      <div class="flex flex-col gap-3 px-5 pt-4 pb-[calc(var(--pr-inset-bottom-safe)+1.25rem)]">
+        <p v-if="me === null" class="text-center text-caption break-keep text-content-secondary">
+          이번 라운드 팀 배정을 확인하는 중이에요. 배정이 확인되면 제출할 수 있어요.
+        </p>
+        <div class="grid grid-cols-2 gap-3">
+          <BaseButton
+            variant="ghost"
+            size="lg"
+            class="w-full"
+            :disabled="isSubmitting"
+            @click="clear"
+          >
+            다시 찍기
+          </BaseButton>
+          <BaseButton
+            variant="primary"
+            size="lg"
+            class="w-full"
+            :disabled="me === null"
+            :loading="isSubmitting"
+            @click="submitPhoto"
+          >
+            킬샷 제출
+          </BaseButton>
         </div>
       </div>
     </div>
