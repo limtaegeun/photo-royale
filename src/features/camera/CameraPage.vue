@@ -17,6 +17,7 @@ import { groupTextClass } from '@/features/team-assignment'
 import { useToast } from '@/shared/composables/useToast'
 import { subscribeToLatestNotice, type Notice, useRoundTimer } from '@/features/round-ops'
 import { useCameraStream } from './composables/useCameraStream'
+import { useKillshotSubmit } from './composables/useKillshotSubmit'
 import { usePhotoCapture } from './composables/usePhotoCapture'
 
 const route = useRoute()
@@ -25,6 +26,7 @@ const authStore = useAuthStore()
 const { toast } = useToast()
 const { status, stream, start } = useCameraStream()
 const { photo, failed, capture, clear } = usePhotoCapture()
+const { isSubmitting, submit } = useKillshotSubmit()
 const videoRef = ref<HTMLVideoElement | null>(null)
 const room = ref<RoomInfo | null>(null)
 const participants = ref<Participant[]>([])
@@ -171,6 +173,32 @@ watch([stream, videoRef], ([media, video]) => {
 async function shoot() {
   if (!videoRef.value) return
   await capture(videoRef.value)
+}
+
+/**
+ * 킬샷 제출 — 공격팀 선택은 없다(확정 스펙: 대상 팀 식별은 호스트가 판정 시 수행).
+ * 성공하면 미리보기를 비우고 콕핏으로 돌아가 다음 킬샷을 이어서 찍을 수 있게 한다.
+ */
+async function submitPhoto() {
+  const killshot = photo.value
+  const submitter = me.value
+  const currentRoom = room.value
+  if (killshot === null || submitter?.team == null || currentRoom === null) return
+
+  const submitted = await submit({
+    roomCode,
+    uid: submitter.id,
+    team: submitter.team,
+    round: currentRoom.assignmentRound,
+    photo: killshot,
+  })
+  if (!submitted) {
+    // 실패 시 사진을 보존한다 — 현장에서 같은 장면을 다시 만들 수 없다
+    toast({ title: '제출에 실패했어요. 다시 시도해 주세요.', tone: 'danger' })
+    return
+  }
+  clear()
+  toast({ title: '킬샷을 제출했어요. 호스트 판정을 기다려 주세요.', tone: 'success' })
 }
 
 onMounted(() => {
@@ -363,12 +391,14 @@ onUnmounted(() => {
       </div>
     </template>
 
-    <!-- 전송과 공격팀 선택은 후속 PR 범위다. 현재는 촬영 결과 확인 흐름만 제공한다. -->
+    <!-- 공격팀 선택은 없다 — 대상 팀 식별은 호스트가 판정 큐에서 수행한다(확정 스펙). -->
     <div v-if="photo" class="absolute inset-0 z-(--pr-z-hud) flex flex-col bg-canvas">
       <div class="px-5 pt-(--pr-inset-top-safe)">
         <div class="pt-5">
           <p class="text-title">킬샷 확인</p>
-          <p class="mt-1 text-caption text-content-secondary">사진을 확인한 뒤 제출해 주세요.</p>
+          <p class="mt-1 text-caption text-content-secondary">
+            사진을 확인한 뒤 제출해 주세요. 판정은 호스트가 진행해요.
+          </p>
         </div>
       </div>
       <div class="min-h-0 flex-1 px-5 py-5">
@@ -378,12 +408,31 @@ onUnmounted(() => {
           class="h-full w-full rounded-lg border border-stroke object-contain"
         />
       </div>
-      <div
-        class="border-t border-stroke bg-elevated px-5 pt-4 pb-[calc(var(--pr-inset-bottom-safe)+1.25rem)]"
-      >
+      <!-- 화면 전체가 이미 canvas 서피스라 별도 밴드(bg-elevated) 없이 버튼을 바로 올린다 -->
+      <div class="flex flex-col gap-3 px-5 pt-4 pb-[calc(var(--pr-inset-bottom-safe)+1.25rem)]">
+        <p v-if="me === null" class="text-center text-caption break-keep text-content-secondary">
+          이번 라운드 팀 배정을 확인하는 중이에요. 배정이 확인되면 제출할 수 있어요.
+        </p>
         <div class="grid grid-cols-2 gap-3">
-          <BaseButton variant="ghost" size="lg" class="w-full" @click="clear">다시 찍기</BaseButton>
-          <BaseButton variant="primary" size="lg" class="w-full" disabled>제출 준비 중</BaseButton>
+          <BaseButton
+            variant="ghost"
+            size="lg"
+            class="w-full"
+            :disabled="isSubmitting"
+            @click="clear"
+          >
+            다시 찍기
+          </BaseButton>
+          <BaseButton
+            variant="primary"
+            size="lg"
+            class="w-full"
+            :disabled="me === null"
+            :loading="isSubmitting"
+            @click="submitPhoto"
+          >
+            킬샷 제출
+          </BaseButton>
         </div>
       </div>
     </div>

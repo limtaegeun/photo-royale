@@ -9,6 +9,9 @@ import BaseDialog from '@/shared/components/BaseDialog.vue'
 import BaseSegmented from '@/shared/components/BaseSegmented.vue'
 import { normalizeRoomCode } from '@/features/waiting-room'
 import { useToast } from '@/shared/composables/useToast'
+import type { Submission, SubmissionTarget } from './api/submissions'
+import JudgeQueueList from './components/JudgeQueueList.vue'
+import JudgeSheet from './components/JudgeSheet.vue'
 import NoticeCard from './components/NoticeCard.vue'
 import NoticeSheet from './components/NoticeSheet.vue'
 import RoundTimerCard from './components/RoundTimerCard.vue'
@@ -22,7 +25,8 @@ import { useRoundOpsStore } from './stores/useRoundOpsStore'
  * 진행자이므로 카메라 콕핏이 아니라 이 화면으로 들어온다(대기실의 playing 전이 분기).
  *
  * 운영 탭은 방 문서(rooms/{code}.round)를 정본으로 삼아 실제 타이머·올스탑·시간 반영·공지를
- * 수행한다. 판정/기록 탭은 화면 자체가 후속 작업이라 자리만 알린다.
+ * 수행하고, 판정 탭은 참가자들이 제출한 킬샷(submissions)을 확정/반려한다.
+ * 기록 탭은 화면 자체가 후속 작업이라 자리만 알린다.
  */
 
 const route = useRoute()
@@ -37,10 +41,13 @@ const {
   isHost,
   myId,
   assignmentRound,
+  participants,
   latestNotice,
+  pendingSubmissions,
   pendingAdjustMinutes,
   pendingAction,
   actionError,
+  submissionListenError,
   isSendingNotice,
 } = storeToRefs(store)
 
@@ -48,17 +55,29 @@ const {
 const routeRoomCode = computed(() => normalizeRoomCode(String(route.params.roomCode)))
 
 const { nowMs, formatted, displayState } = useRoundTimer(round)
+const JUDGE_ERROR_MESSAGE = '판정을 처리하지 못했어요. 다시 시도해 주세요.'
 
-/** 하단 탭 — 판정/기록은 아직 화면이 없어 준비 중 안내만 보여준다 */
-const TABS = [
+/** 하단 탭 — 기록은 아직 화면이 없어 준비 중 안내만 보여준다.
+ * 판정 탭은 다른 탭에서도 킬샷 도착을 알 수 있게 대기 건수 배지를 단다(도착 시 펄스). */
+const tabs = computed(() => [
   { label: '운영', value: 'ops' },
-  { label: '판정', value: 'judge' },
+  {
+    label: '판정',
+    value: 'judge',
+    badge: {
+      count: pendingSubmissions.value.length,
+      ariaLabel: `${pendingSubmissions.value.length}건 판정 대기`,
+    },
+  },
   { label: '기록', value: 'log' },
-] as const
+])
 
 const activeTab = ref<string>('ops')
 const isNoticeSheetOpen = ref(false)
 const isEndGameDialogOpen = ref(false)
+const isJudgeSheetOpen = ref(false)
+/** 시트에서 판정 중인 킬샷 — 큐에서 고른 스냅샷을 들고 있는다(닫힌 뒤에도 애니메이션 동안 유지) */
+const judgingSubmission = ref<Submission | null>(null)
 
 /** 라운드 컨트롤은 게임이 실제로 진행 중일 때만 의미가 있다(rules도 playing에서만 쓰기를 허용한다) */
 const isPlaying = computed(() => gameStatus.value === 'playing')
@@ -111,6 +130,9 @@ watch(gameStatus, (status, previous) => {
 watch(actionError, (message) => {
   if (message !== null) toast({ title: message, tone: 'danger' })
 })
+watch(submissionListenError, (message) => {
+  if (message !== null) toast({ title: message, tone: 'danger' })
+})
 
 /**
  * 게임 종료 — 성공하면 방 status가 waiting이 되고, 대기실 복귀는 아래 watch(스냅샷)가 맡는다.
@@ -130,6 +152,71 @@ async function sendNotice(text: string) {
   isNoticeSheetOpen.value = false
   toast({ title: '공지를 보냈어요.', tone: 'success' })
 }
+
+function openJudgeSheet(submission: Submission) {
+  if (pendingAction.value === 'judge') return
+  judgingSubmission.value = submission
+  isJudgeSheetOpen.value = true
+}
+
+/** 실패 원인을 큐의 로컬 상태로 추정하지 않고 서버 문서의 확정 상태로 판별한다. */
+async function handleJudgeFailure(submissionId: string) {
+  let status = null
+  try {
+    status = await store.getSubmissionStatus(submissionId)
+  } catch {
+    // 서버 확인까지 실패하면 선판정으로 단정하지 않고 재시도 가능한 일반 오류로 남긴다.
+  }
+  if (!isJudgeSheetOpen.value || judgingSubmission.value?.id !== submissionId) return
+  if (status === 'approved' || status === 'rejected') {
+    isJudgeSheetOpen.value = false
+    toast({ title: '이미 판정된 킬샷이에요.', tone: 'neutral' })
+    return
+  }
+  toast({ title: JUDGE_ERROR_MESSAGE, tone: 'danger' })
+}
+
+async function approveKillshot(target: SubmissionTarget) {
+  const current = judgingSubmission.value
+  if (current === null) return
+  const approved = await store.approveSubmission(current.id, target)
+  if (judgingSubmission.value?.id !== current.id) return
+  if (!approved) {
+    await handleJudgeFailure(current.id)
+    return
+  }
+  isJudgeSheetOpen.value = false
+  toast({ title: `팀 ${target.team} 킬샷으로 판정했어요.`, tone: 'success' })
+}
+
+async function rejectKillshot() {
+  const current = judgingSubmission.value
+  if (current === null) return
+  const rejected = await store.rejectSubmission(current.id)
+  if (judgingSubmission.value?.id !== current.id) return
+  if (!rejected) {
+    await handleJudgeFailure(current.id)
+    return
+  }
+  isJudgeSheetOpen.value = false
+  toast({ title: '킬샷을 반려했어요.', tone: 'neutral' })
+}
+
+// 같은 계정 다른 기기에서 먼저 판정된 킬샷이 시트에 남아 이중 판정을 시도하지 않게 닫는다.
+// 내 판정 성공 직후의 스냅샷은 시트가 이미 닫혀 있어(open 가드) 토스트가 중복되지 않는다.
+watch(pendingSubmissions, (submissions) => {
+  const current = judgingSubmission.value
+  if (!isJudgeSheetOpen.value || current === null || pendingAction.value === 'judge') return
+  if (submissions.some((submission) => submission.id === current.id)) return
+  // Listen 자체가 종료되며 store가 stale 큐를 비운 경우는 다른 기기의 선판정이 아니다.
+  // 오류 카드를 가리는 stale 시트만 닫고, 원인을 오인시키는 "이미 판정" 안내는 내보내지 않는다.
+  if (submissionListenError.value !== null) {
+    isJudgeSheetOpen.value = false
+    return
+  }
+  isJudgeSheetOpen.value = false
+  toast({ title: '이미 판정된 킬샷이에요.', tone: 'neutral' })
+})
 
 onMounted(() => {
   store.enter(routeRoomCode.value)
@@ -264,13 +351,39 @@ onUnmounted(() => {
         </p>
       </template>
 
-      <!-- 판정·기록 탭은 화면 자체가 후속 작업이라 자리만 알린다 -->
+      <template v-else-if="activeTab === 'judge'">
+        <BaseCard v-if="submissionListenError !== null" padding="lg">
+          <h2 class="text-subheading text-danger">판정 큐 연결 오류</h2>
+          <p class="mt-3 text-body text-content-secondary">
+            {{ submissionListenError }} 연결이 복구되기 전에는 남아 있던 판정 항목을 사용할 수 없어요.
+          </p>
+        </BaseCard>
+        <JudgeQueueList
+          v-else-if="phase === 'ready' && isPlaying"
+          :submissions="pendingSubmissions"
+          :participants="participants"
+          :now-ms="nowMs"
+          @select="openJudgeSheet"
+        />
+
+        <!-- rules도 playing에서만 제출을 허용한다 — 시작 전에는 모일 킬샷이 없다 -->
+        <BaseCard v-else-if="phase === 'ready'" padding="lg">
+          <h2 class="text-subheading text-content">게임이 아직 시작되지 않았어요</h2>
+          <p class="mt-3 text-body text-content-secondary">
+            게임을 시작하면 참가자들이 제출한 킬샷이 이곳에 모여요.
+          </p>
+        </BaseCard>
+
+        <p v-else class="text-body text-content-secondary" role="status">
+          판정 큐를 불러오는 중…
+        </p>
+      </template>
+
+      <!-- 기록 탭은 화면 자체가 후속 작업이라 자리만 알린다 -->
       <BaseCard v-else padding="lg">
-        <h2 class="text-subheading text-content">
-          {{ activeTab === 'judge' ? '판정' : '기록' }} 화면 준비 중
-        </h2>
+        <h2 class="text-subheading text-content">기록 화면 준비 중</h2>
         <p class="mt-3 text-body text-content-secondary">
-          이 탭은 다음 단계에서 구현돼요. 지금은 운영 탭만 동작합니다.
+          이 탭은 다음 단계에서 구현돼요.
         </p>
       </BaseCard>
     </div>
@@ -278,13 +391,24 @@ onUnmounted(() => {
     <!-- 하단 고정 탭 — 목업이 하단 고정이고, 콘텐츠가 길어져도 탭이 화면 밖으로 밀리지 않아야 한다
          (QA B-06). 배경을 깔아 아래로 지나가는 카드가 비쳐 보이지 않게 한다 -->
     <div class="sticky bottom-0 bg-canvas pt-6 pb-[calc(var(--pr-inset-bottom-safe)+1rem)]">
-      <BaseSegmented v-model="activeTab" :options="[...TABS]" />
+      <BaseSegmented v-model="activeTab" :options="tabs" />
     </div>
 
     <NoticeSheet
       v-model:open="isNoticeSheetOpen"
       :sending="isSendingNotice"
       @send="sendNotice"
+    />
+
+    <JudgeSheet
+      v-model:open="isJudgeSheetOpen"
+      :submission="judgingSubmission"
+      :participants="participants"
+      :assignment-round="assignmentRound"
+      :judging="pendingAction === 'judge'"
+      :now-ms="nowMs"
+      @approve="approveKillshot"
+      @reject="rejectKillshot"
     />
 
     <!-- 되돌릴 수 없는 액션이라 무엇이 사라지는지 밝히되, 두 문장을 한 덩어리로 두면

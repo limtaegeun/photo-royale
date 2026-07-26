@@ -22,6 +22,14 @@ import {
   resumeRound,
   startRound,
 } from '../api/round'
+import {
+  approveSubmission as requestApproveSubmission,
+  getSubmissionStatusFromServer,
+  rejectSubmission as requestRejectSubmission,
+  subscribeToPendingSubmissions,
+  type Submission,
+  type SubmissionTarget,
+} from '../api/submissions'
 import { computeRemainingMs } from '../composables/useRoundTimer'
 
 /**
@@ -35,10 +43,17 @@ export type RoundOpsPhase = 'idle' | 'loading' | 'ready' | 'not-found' | 'error'
  * disabled에 물리게 되고, 왕복 한 번(로컬에서도 ~50ms)마다 관계없는 컨트롤까지 회색으로
  * 깜빡인다. 어떤 액션인지 남겨 두면 눌린 버튼에만 진행 표시를 줄 수 있다.
  */
-export type RoundOpsAction = 'start' | 'pause' | 'resume' | 'adjust' | 'end'
+export type RoundOpsAction = 'start' | 'pause' | 'resume' | 'adjust' | 'end' | 'judge'
 
 /** 액션 실패는 원인을 나눠 봐야 진행자가 할 일이 달라지지 않는다 — 한 문구로 모은다 */
 const ACTION_ERROR_MESSAGE = '요청을 처리하지 못했어요. 다시 시도해 주세요.'
+
+/**
+ * 판정 큐 Listen의 영구 오류 안내. 리스너는 한 번 죽으면 재연결하지 않아 큐가 조용히 빈
+ * 것처럼 보인다(실사례: rules 배포 전에 열려 있던 화면의 permission-denied) — 새로고침을
+ * 안내해 죽은 화면을 계속 믿지 않게 한다.
+ */
+const SUBMISSIONS_LISTEN_ERROR_MESSAGE = '판정 큐 연결이 끊겼어요. 화면을 새로고침해 주세요.'
 
 /**
  * H04 라운드 운영 상태 — 호스트(진행자) 전용. 방 문서(rooms/{code})의 round 맵이 타이머의
@@ -55,17 +70,22 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
   const room = ref<RoomInfo | null>(null)
   const participants = ref<Participant[]>([])
   const latestNotice = ref<Notice | null>(null)
+  /** 판정 대기 킬샷 — 오래된 순(api가 정렬). 판정되면 서버 필터(pending)로 자연 제거된다 */
+  const pendingSubmissions = ref<Submission[]>([])
   /** −1분/+1분으로 쌓는 로컬 대기값 — '반영'을 눌러야 서버(참가자 전원)에 커밋된다 */
   const pendingAdjustMinutes = ref(0)
   const pendingAction = ref<RoundOpsAction | null>(null)
   /** 쓰기 가드용 파생값 — 화면은 이 값 대신 pendingAction으로 "무엇이 실행 중인지"를 본다 */
   const isActionPending = computed(() => pendingAction.value !== null)
   const actionError = ref<string | null>(null)
+  const submissionListenError = ref<string | null>(null)
   const isSendingNotice = ref(false)
 
   let unsubscribeRoom: (() => void) | null = null
   let unsubscribeParticipants: (() => void) | null = null
   let unsubscribeNotice: (() => void) | null = null
+  let unsubscribeSubmissions: (() => void) | null = null
+  let subscribedSubmissionRound: number | null = null
   /** leave/enter를 거친 이전 화면의 비동기 완료가 현재 화면 상태를 덮지 못하게 하는 세대값 */
   let sessionGeneration = 0
 
@@ -86,10 +106,29 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     return armbands.size
   })
 
-  /**
-   * 운영 화면 진입 — 방 문서·명단·최근 공지 구독을 건다. 세 구독 모두 동기 호출이라
-   * 대기실(enter)의 세대 관리 같은 레이스 방어가 필요 없다(await 지점이 없다).
-   */
+  function subscribeToCurrentRoundSubmissions(code: string, roundNumber: number) {
+    if (subscribedSubmissionRound === roundNumber) return
+
+    unsubscribeSubmissions?.()
+    pendingSubmissions.value = []
+    subscribedSubmissionRound = roundNumber
+    unsubscribeSubmissions = subscribeToPendingSubmissions(
+      code,
+      roundNumber,
+      (submissions) => {
+        if (subscribedSubmissionRound !== roundNumber) return
+        submissionListenError.value = null
+        pendingSubmissions.value = submissions
+      },
+      () => {
+        if (subscribedSubmissionRound !== roundNumber) return
+        pendingSubmissions.value = []
+        submissionListenError.value = SUBMISSIONS_LISTEN_ERROR_MESSAGE
+      },
+    )
+  }
+
+  /** 운영 화면 진입 — 방 문서에서 현재 배정 차수를 확인한 뒤 그 차수의 판정 큐를 구독한다. */
   function enter(code: string) {
     leave()
     roomCode.value = code
@@ -104,6 +143,14 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     unsubscribeRoom = subscribeToRoom(code, (nextRoom) => {
       room.value = nextRoom
       phase.value = nextRoom === null ? 'not-found' : 'ready'
+      if (nextRoom === null) {
+        unsubscribeSubmissions?.()
+        unsubscribeSubmissions = null
+        subscribedSubmissionRound = null
+        pendingSubmissions.value = []
+        return
+      }
+      subscribeToCurrentRoundSubmissions(code, nextRoom.assignmentRound ?? 0)
     })
     unsubscribeParticipants = subscribeToParticipants(code, (nextParticipants) => {
       participants.value = nextParticipants
@@ -119,16 +166,21 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     unsubscribeRoom?.()
     unsubscribeParticipants?.()
     unsubscribeNotice?.()
+    unsubscribeSubmissions?.()
     unsubscribeRoom = null
     unsubscribeParticipants = null
     unsubscribeNotice = null
+    unsubscribeSubmissions = null
+    subscribedSubmissionRound = null
     roomCode.value = null
     room.value = null
     participants.value = []
     latestNotice.value = null
+    pendingSubmissions.value = []
     pendingAdjustMinutes.value = 0
     pendingAction.value = null
     actionError.value = null
+    submissionListenError.value = null
     phase.value = 'idle'
   }
 
@@ -143,7 +195,11 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
   }
 
   /** 실패해도 화면은 마지막 스냅샷을 유지하고 안내만 세운다(오프라인 큐는 SDK가 처리한다) */
-  async function runAction(action: RoundOpsAction, write: () => Promise<void>) {
+  async function runAction(
+    action: RoundOpsAction,
+    write: () => Promise<void>,
+    reportError = true,
+  ) {
     const actionGeneration = sessionGeneration
     pendingAction.value = action
     actionError.value = null
@@ -151,7 +207,9 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
       await write()
       return true
     } catch {
-      if (actionGeneration === sessionGeneration) actionError.value = ACTION_ERROR_MESSAGE
+      if (reportError && actionGeneration === sessionGeneration) {
+        actionError.value = ACTION_ERROR_MESSAGE
+      }
       return false
     } finally {
       if (actionGeneration === sessionGeneration) pendingAction.value = null
@@ -215,6 +273,35 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
   }
 
   /**
+   * 판정 확정 — 사진 속 완장의 팀을 기록한다. rules가 pending → approved 단방향만 허용하므로
+   * 다른 기기에서 먼저 판정된 문서면 실패한다(화면은 에러 토스트 후 스냅샷으로 수렴).
+   */
+  async function approveSubmission(submissionId: string, target: SubmissionTarget) {
+    if (!canWriteRound()) return false
+    return runAction(
+      'judge',
+      () => requestApproveSubmission(roomCode.value!, submissionId, target),
+      false,
+    )
+  }
+
+  /** 반려 — 사유 없이 상태만 남긴다(확정 스펙). 성공 여부를 돌려준다 */
+  async function rejectSubmission(submissionId: string) {
+    if (!canWriteRound()) return false
+    return runAction(
+      'judge',
+      () => requestRejectSubmission(roomCode.value!, submissionId),
+      false,
+    )
+  }
+
+  /** 판정 실패가 실제 선판정 충돌인지 서버 정본으로 확인한다. 조회 실패는 호출부가 일반 오류로 처리한다. */
+  async function getSubmissionStatus(submissionId: string) {
+    if (roomCode.value === null) return null
+    return getSubmissionStatusFromServer(roomCode.value, submissionId)
+  }
+
+  /**
    * 공지 전송 — 성공 여부를 돌려준다(화면이 시트를 닫고 토스트를 띄우는 판단에 쓴다).
    * 빈 문자열·상한 초과는 서버(rules)도 막지만, 왕복 없이 여기서 먼저 거른다.
    */
@@ -248,10 +335,12 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     room,
     participants,
     latestNotice,
+    pendingSubmissions,
     pendingAdjustMinutes,
     pendingAction,
     isActionPending,
     actionError,
+    submissionListenError,
     isSendingNotice,
     myId,
     isHost,
@@ -267,6 +356,9 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     adjustBy,
     applyAdjust,
     finishGame,
+    approveSubmission,
+    rejectSubmission,
+    getSubmissionStatus,
     submitNotice,
   }
 })

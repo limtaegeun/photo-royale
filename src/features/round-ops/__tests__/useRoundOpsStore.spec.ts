@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import type { Participant, RoomInfo, RoundState } from '@/features/waiting-room'
 import type { Notice } from '../api/notices'
+import type { Submission } from '../api/submissions'
 
 // 테스트마다 로그인 상태를 바꿀 수 있도록 getter로 참조한다
 const authState = { user: null as { uid: string } | null }
@@ -16,12 +17,22 @@ vi.mock('@/features/auth', () => ({
 const unsubscribeRoomMock = vi.fn<() => void>()
 const unsubscribeParticipantsMock = vi.fn<() => void>()
 const unsubscribeNoticeMock = vi.fn<() => void>()
+const unsubscribeSubmissionsMock = vi.fn<() => void>()
 const subscribeRoomMock =
   vi.fn<(code: string, onChange: (room: RoomInfo | null) => void) => () => void>()
 const subscribeParticipantsMock =
   vi.fn<(code: string, onChange: (participants: Participant[]) => void) => () => void>()
 const subscribeNoticeMock =
   vi.fn<(code: string, onChange: (notice: Notice | null) => void) => () => void>()
+const subscribeSubmissionsMock =
+  vi.fn<
+    (
+      code: string,
+      round: number,
+      onChange: (submissions: Submission[]) => void,
+      onError?: (error: Error) => void,
+    ) => () => void
+  >()
 
 const endGameMock = vi.fn<(code: string) => Promise<void>>()
 
@@ -66,6 +77,36 @@ vi.mock('../api/notices', () => ({
     subscribeNoticeMock(code, onChange),
 }))
 
+const approveSubmissionMock =
+  vi.fn<
+    (
+      code: string,
+      submissionId: string,
+      target: { team: string; participantUid: string },
+    ) => Promise<void>
+  >()
+const rejectSubmissionMock = vi.fn<(code: string, submissionId: string) => Promise<void>>()
+const getSubmissionStatusFromServerMock =
+  vi.fn<(code: string, submissionId: string) => Promise<'pending' | 'approved' | 'rejected' | null>>()
+
+vi.mock('../api/submissions', () => ({
+  approveSubmission: (
+    code: string,
+    submissionId: string,
+    target: { team: string; participantUid: string },
+  ) => approveSubmissionMock(code, submissionId, target),
+  rejectSubmission: (code: string, submissionId: string) =>
+    rejectSubmissionMock(code, submissionId),
+  getSubmissionStatusFromServer: (code: string, submissionId: string) =>
+    getSubmissionStatusFromServerMock(code, submissionId),
+  subscribeToPendingSubmissions: (
+    code: string,
+    round: number,
+    onChange: (submissions: Submission[]) => void,
+    onError?: (error: Error) => void,
+  ) => subscribeSubmissionsMock(code, round, onChange, onError),
+}))
+
 import { useRoundOpsStore } from '../stores/useRoundOpsStore'
 
 const NOW = new Date('2026-07-25T19:20:00Z').getTime()
@@ -75,6 +116,7 @@ function captureSnapshotCallbacks() {
   let deliverRoom: (room: RoomInfo | null) => void = () => {}
   let deliverParticipants: (participants: Participant[]) => void = () => {}
   let deliverNotice: (notice: Notice | null) => void = () => {}
+  let deliverSubmissions: (submissions: Submission[]) => void = () => {}
   subscribeRoomMock.mockImplementation((_code, onChange) => {
     deliverRoom = onChange
     return unsubscribeRoomMock
@@ -87,10 +129,15 @@ function captureSnapshotCallbacks() {
     deliverNotice = onChange
     return unsubscribeNoticeMock
   })
+  subscribeSubmissionsMock.mockImplementation((_code, _round, onChange) => {
+    deliverSubmissions = onChange
+    return unsubscribeSubmissionsMock
+  })
   return {
     room: (room: RoomInfo | null) => deliverRoom(room),
     participants: (participants: Participant[]) => deliverParticipants(participants),
     notice: (notice: Notice | null) => deliverNotice(notice),
+    submissions: (submissions: Submission[]) => deliverSubmissions(submissions),
   }
 }
 
@@ -155,15 +202,20 @@ describe('useRoundOpsStore', () => {
       adjustRoundMock,
       sendNoticeMock,
       endGameMock,
+      approveSubmissionMock,
+      rejectSubmissionMock,
     ]) {
       mock.mockReset().mockResolvedValue(undefined)
     }
+    getSubmissionStatusFromServerMock.mockReset().mockResolvedValue('pending')
     subscribeRoomMock.mockReset().mockReturnValue(unsubscribeRoomMock)
     subscribeParticipantsMock.mockReset().mockReturnValue(unsubscribeParticipantsMock)
     subscribeNoticeMock.mockReset().mockReturnValue(unsubscribeNoticeMock)
+    subscribeSubmissionsMock.mockReset().mockReturnValue(unsubscribeSubmissionsMock)
     unsubscribeRoomMock.mockReset()
     unsubscribeParticipantsMock.mockReset()
     unsubscribeNoticeMock.mockReset()
+    unsubscribeSubmissionsMock.mockReset()
   })
   afterEach(() => {
     vi.useRealTimers()
@@ -187,6 +239,12 @@ describe('useRoundOpsStore', () => {
       expect(store.isHost).toBe(true)
       expect(store.gameStatus).toBe('playing')
       expect(store.round).toEqual(RUNNING)
+      expect(subscribeSubmissionsMock).toHaveBeenCalledWith(
+        'AB2C',
+        2,
+        expect.any(Function),
+        expect.any(Function),
+      )
     })
 
     it('세션이 없으면 구독하지 않고 error로 남는다', () => {
@@ -209,22 +267,62 @@ describe('useRoundOpsStore', () => {
       expect(store.phase).toBe('not-found')
     })
 
-    it('leave는 세 구독을 모두 해제하고 대기값까지 비운다', () => {
-      captureSnapshotCallbacks()
+    it('leave는 네 구독을 모두 해제하고 대기값까지 비운다', () => {
+      const deliver = captureSnapshotCallbacks()
       const store = useRoundOpsStore()
       store.enter('AB2C')
       store.adjustBy(2)
+      deliver.room(room())
+      deliver.submissions([
+        {
+          id: 's1',
+          uid: 'u3',
+          team: 'B',
+          round: 2,
+          photo: 'data:image/jpeg;base64,killshot',
+          status: 'pending',
+          createdAtMs: NOW,
+        },
+      ])
 
       store.leave()
 
       expect(unsubscribeRoomMock).toHaveBeenCalledTimes(1)
       expect(unsubscribeParticipantsMock).toHaveBeenCalledTimes(1)
       expect(unsubscribeNoticeMock).toHaveBeenCalledTimes(1)
+      expect(unsubscribeSubmissionsMock).toHaveBeenCalledTimes(1)
       expect(store.roomCode).toBeNull()
       expect(store.room).toBeNull()
       expect(store.latestNotice).toBeNull()
+      expect(store.pendingSubmissions).toEqual([])
       expect(store.pendingAdjustMinutes).toBe(0)
       expect(store.phase).toBe('idle')
+    })
+
+    it('배정 차수가 바뀌면 이전 판정 큐를 해제하고 새 차수만 구독한다', () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+
+      deliver.room(room({ assignmentRound: 2 }))
+      deliver.room(room({ assignmentRound: 3 }))
+
+      expect(subscribeSubmissionsMock).toHaveBeenNthCalledWith(
+        1,
+        'AB2C',
+        2,
+        expect.any(Function),
+        expect.any(Function),
+      )
+      expect(subscribeSubmissionsMock).toHaveBeenNthCalledWith(
+        2,
+        'AB2C',
+        3,
+        expect.any(Function),
+        expect.any(Function),
+      )
+      expect(unsubscribeSubmissionsMock).toHaveBeenCalledTimes(1)
+      expect(store.pendingSubmissions).toEqual([])
     })
   })
 
@@ -485,6 +583,119 @@ describe('useRoundOpsStore', () => {
 
       await expect(store.finishGame()).resolves.toBe(false)
       expect(store.actionError).toBe('요청을 처리하지 못했어요. 다시 시도해 주세요.')
+    })
+  })
+
+  describe('킬샷 판정', () => {
+    it('확정은 문서 ID와 대상 완장을 서버에 쓴다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room({ round: RUNNING }))
+
+      const target = { team: 'A', participantUid: 'u1' }
+      await expect(store.approveSubmission('s1', target)).resolves.toBe(true)
+
+      expect(approveSubmissionMock).toHaveBeenCalledExactlyOnceWith('AB2C', 's1', target)
+    })
+
+    it('반려는 문서 ID만 넘긴다 — 사유는 남기지 않는다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room({ round: RUNNING }))
+
+      await expect(store.rejectSubmission('s1')).resolves.toBe(true)
+
+      expect(rejectSubmissionMock).toHaveBeenCalledExactlyOnceWith('AB2C', 's1')
+    })
+
+    it('게스트와 대기(waiting) 방에서는 판정하지 않는다 — 라운드 쓰기와 같은 가드', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+
+      deliver.room(room({ hostUid: 'host9' }))
+      await expect(
+        store.approveSubmission('s1', { team: 'A', participantUid: 'u1' }),
+      ).resolves.toBe(false)
+
+      deliver.room(room({ status: 'waiting' }))
+      await expect(store.rejectSubmission('s1')).resolves.toBe(false)
+
+      expect(approveSubmissionMock).not.toHaveBeenCalled()
+      expect(rejectSubmissionMock).not.toHaveBeenCalled()
+    })
+
+    it('실패하면 false와 안내를 남긴다 — 선판정 충돌(403)이 대표 사례', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room({ round: RUNNING }))
+
+      approveSubmissionMock.mockRejectedValueOnce(new Error('permission denied'))
+
+      await expect(
+        store.approveSubmission('s1', { team: 'A', participantUid: 'u1' }),
+      ).resolves.toBe(false)
+      expect(store.actionError).toBeNull()
+      expect(store.pendingAction).toBeNull()
+    })
+
+    it('큐 Listen 오류는 stale 큐를 비우고 재진입 전까지 유지한다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room({ round: RUNNING }))
+
+      deliver.submissions([
+        {
+          id: 's1',
+          uid: 'u1',
+          team: 'A',
+          round: 2,
+          photo: 'data:image/jpeg;base64,killshot',
+          status: 'pending',
+          createdAtMs: NOW,
+        },
+      ])
+      const onError = subscribeSubmissionsMock.mock.calls[0]![3]!
+      onError(new Error('permission-denied'))
+
+      expect(store.submissionListenError).toBe(
+        '판정 큐 연결이 끊겼어요. 화면을 새로고침해 주세요.',
+      )
+      expect(store.actionError).toBeNull()
+      expect(store.pendingSubmissions).toEqual([])
+
+      await store.pause()
+      expect(store.submissionListenError).toBe(
+        '판정 큐 연결이 끊겼어요. 화면을 새로고침해 주세요.',
+      )
+
+      expect(store.submissionListenError).toBe(
+        '판정 큐 연결이 끊겼어요. 화면을 새로고침해 주세요.',
+      )
+    })
+
+    it('판정 대기 스냅샷을 그대로 보관한다', () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room())
+
+      const submission: Submission = {
+        id: 's1',
+        uid: 'u3',
+        team: 'B',
+        round: 2,
+        photo: 'data:image/jpeg;base64,killshot',
+        status: 'pending',
+        createdAtMs: NOW,
+      }
+      deliver.submissions([submission])
+
+      expect(store.pendingSubmissions).toEqual([submission])
     })
   })
 
