@@ -121,8 +121,8 @@ src/shared/components/
 
 | 컴포넌트 | 역할 | 비고 |
 |---|---|---|
-| `BaseButton` | 버튼 | `variant` 5종 / `size` sm(36)·md(48)·lg(56). **하단 고정 주 CTA는 lg, 리스트 행 안의 인라인 액션은 sm**. 비동기 진행 표기는 `loading`(§6.3) |
-| `BaseBadge` | 상태·팀 표식 | `flex` 컨테이너 안에 둘 때는 `self-start` 필수(stretch로 폭이 늘어난다) |
+| `BaseButton` | 버튼 | `variant` primary·accent·neutral·danger·ghost·hud·shutter / `size` sm(36)·md(48)·lg(56)·content(최소 48) / `shape` default·circle / `padding` default·compact·none. **하단 고정 주 CTA는 lg, 리스트 행 안의 인라인 액션은 sm**. 비동기 진행 표기는 `loading`(§6.3) |
+| `BaseBadge` | 상태·팀 표식 | `tone` brand·accent·success·warning·danger·info·neutral. `flex` 컨테이너 안에 둘 때는 `self-start` 필수(stretch로 폭이 늘어난다) |
 | `BaseInput` / `BaseSegmented` / `BaseSwitch` | 입력·선택·토글 | |
 | `BaseDialog` / `BaseBottomSheet` / `BaseToast`(+`useToast`) | 오버레이 | |
 | `BaseCard` | 카드 서피스(`bg-elevated` + 보더 + radius + 패딩) | `padding` md(16)·lg(20)·none. `none`은 `BaseListRow`를 담는 리스트 카드용 |

@@ -11,6 +11,16 @@ describe('BaseButton', () => {
     expect(wrapper.text()).toBe('시작하기')
   })
 
+  it('긴 슬롯 내용도 버튼 너비 안에서 줄어들 수 있게 라벨 래퍼를 제한한다', () => {
+    const wrapper = mount(BaseButton, {
+      slots: { default: '<span>아주 긴 공지 내용</span>' },
+    })
+    const label = wrapper.find('button > span')
+
+    expect(label.classes()).toContain('min-w-0')
+    expect(label.classes()).toContain('max-w-full')
+  })
+
   it('variant와 size prop을 data 속성과 유틸리티 클래스로 반영한다', () => {
     const wrapper = mount(BaseButton, {
       props: { variant: 'danger', size: 'lg' },
@@ -20,6 +30,24 @@ describe('BaseButton', () => {
     expect(wrapper.attributes('data-size')).toBe('lg')
     expect(wrapper.classes()).toContain('bg-danger-solid')
     expect(wrapper.classes()).toContain('text-body')
+  })
+
+  it('HUD·셔터 variant와 원형·패딩 옵션을 충돌 없이 조합한다', () => {
+    const hud = mount(BaseButton, {
+      props: { variant: 'hud', size: 'content', padding: 'compact' },
+    })
+    const shutter = mount(BaseButton, {
+      props: { variant: 'shutter', size: 'lg', shape: 'circle', padding: 'none' },
+    })
+
+    expect(hud.classes()).toContain('bg-scrim-strong')
+    expect(hud.classes()).toContain('min-h-(--pr-size-tap-minimum)')
+    expect(hud.classes()).toContain('px-3')
+    expect(hud.classes()).not.toContain('px-5')
+    expect(shutter.classes()).toContain('bg-scrim-weak')
+    expect(shutter.classes()).toContain('rounded-full')
+    expect(shutter.classes()).toContain('px-0')
+    expect(shutter.attributes('data-padding')).toBe('none')
   })
 
   it('기본값(primary/md)이 적용된다', () => {
