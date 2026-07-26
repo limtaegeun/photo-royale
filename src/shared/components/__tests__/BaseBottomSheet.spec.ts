@@ -36,4 +36,13 @@ describe('BaseBottomSheet', () => {
     const events = wrapper.emitted('update:open')
     expect(events?.[events.length - 1]).toEqual([false])
   })
+
+  it('dismissible=false면 처리 중 닫기 버튼을 노출하지 않는다', async () => {
+    mount(BaseBottomSheet, {
+      props: { title: '판정 중', open: true, dismissible: false },
+    })
+    await flushPromises()
+
+    expect(document.body.querySelector('[aria-label="닫기"]')).toBeNull()
+  })
 })

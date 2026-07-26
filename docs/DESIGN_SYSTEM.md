@@ -138,7 +138,8 @@ src/shared/components/
 - **원자(비행동형)** — Reka `Primitive`(`as`/`as-child`)로 렌더해 다형·합성(예: `DialogTrigger as-child`)을 얻는다:
   `BaseButton`(`as="button"`), `BaseBadge`(`as="span"`), `BaseInput`(`as="input"`, Reka에 전용 Input primitive 없음 → 이미 접근성 확보된 네이티브 input을 Primitive로 렌더).
 - **행동형** — 전용 primitive를 쓴다(a11y가 무거워 headless의 실익이 큰 지점):
-  - `BaseSegmented` — `RadioGroup`(화살표키 네비·roving tabindex). 2개 이상 값 택1용.
+  - `BaseSegmented` — `RadioGroup`(화살표키 네비·roving tabindex). 2개 이상 값 택1용. 옵션의 `badge`에 count·tone·ariaLabel을 주면 `BaseCountBadge`를 붙인다.
+  - `BaseCountBadge` — 도메인과 무관한 숫자 알림 배지. 0이면 숨기고 증가 시 토큰 기반 펄스를 1회 재생한다(reduced-motion 시 정적). 의미를 설명하는 `ariaLabel`은 사용처가 제공한다.
   - `BaseSwitch` — `Switch`(단일 boolean on/off 토글; 트랙 색+thumb 위치로 상태 표기, role=switch·aria-checked는 Reka가 담당).
   - `BaseDialog` — `Dialog` 중앙 모달(focus trap·scroll lock·Escape/backdrop dismiss·포털).
   - `BaseBottomSheet` — `Dialog` 하단 시트(모바일 코어, safe-area·슬라이드업).

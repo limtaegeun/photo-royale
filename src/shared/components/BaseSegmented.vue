@@ -1,9 +1,19 @@
 <script setup lang="ts">
 import { RadioGroupItem, RadioGroupRoot } from 'reka-ui'
+import BaseCountBadge from './BaseCountBadge.vue'
+import type { CountBadgeTone } from './baseCountBadge'
+
+interface OptionBadge {
+  count: number
+  ariaLabel?: string
+  tone?: CountBadgeTone
+}
 
 interface Option {
   label: string
   value: string
+  /** 라벨 옆 선택적 건수 배지 — 의미·색·접근성 문구는 사용처가 결정한다 */
+  badge?: OptionBadge
 }
 
 interface Props {
@@ -33,7 +43,15 @@ const model = defineModel<string>()
              data-[state=checked]:bg-brand data-[state=checked]:text-on-brand
              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
     >
-      {{ option.label }}
+      <span class="inline-flex items-center justify-center gap-2">
+        {{ option.label }}
+        <BaseCountBadge
+          v-if="option.badge"
+          :count="option.badge.count"
+          :tone="option.badge.tone"
+          :aria-label="option.badge.ariaLabel"
+        />
+      </span>
     </RadioGroupItem>
   </RadioGroupRoot>
 </template>

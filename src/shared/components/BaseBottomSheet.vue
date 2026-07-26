@@ -23,18 +23,26 @@ interface Props {
   description?: string
   /** 제목을 시각적으로 숨김(스크린리더 전용). 커스텀 헤더를 직접 그릴 때 사용 */
   hideTitle?: boolean
+  /** false면 처리 중 Escape·배경·닫기 버튼으로 닫히지 않는다 */
+  dismissible?: boolean
 }
 
-withDefaults(defineProps<Props>(), {
+const props = withDefaults(defineProps<Props>(), {
   description: undefined,
   hideTitle: false,
+  dismissible: true,
 })
 
 const open = defineModel<boolean>('open', { default: false })
+
+function handleOpenChange(nextOpen: boolean) {
+  if (!nextOpen && !props.dismissible) return
+  open.value = nextOpen
+}
 </script>
 
 <template>
-  <DialogRoot v-model:open="open">
+  <DialogRoot :open="open" @update:open="handleOpenChange">
     <DialogTrigger v-if="$slots.trigger" as-child>
       <slot name="trigger" />
     </DialogTrigger>
@@ -68,6 +76,7 @@ const open = defineModel<boolean>('open', { default: false })
         </div>
 
         <DialogClose
+          v-if="dismissible"
           aria-label="닫기"
           class="absolute top-4 right-4 inline-flex h-8 w-8 items-center justify-center rounded-full
                  text-content-secondary transition-colors duration-100 ease-standard
