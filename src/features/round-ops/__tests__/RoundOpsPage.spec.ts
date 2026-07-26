@@ -4,6 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import type { Participant, RoomInfo, RoundState } from '@/features/waiting-room'
 import type { Notice } from '../api/notices'
+import type { Submission } from '../api/submissions'
 
 // 세션 상실(로그아웃)까지 재현해야 하므로 실제 스토어처럼 반응형 ref로 둔다
 const authUser = ref<{ uid: string } | null>(null)
@@ -67,6 +68,45 @@ vi.mock('../api/notices', async (importOriginal) => {
   }
 })
 
+const approveSubmissionMock =
+  vi.fn<
+    (
+      code: string,
+      submissionId: string,
+      target: { team: string; participantUid: string },
+    ) => Promise<void>
+  >()
+const rejectSubmissionMock = vi.fn<(code: string, submissionId: string) => Promise<void>>()
+const subscribeSubmissionsMock =
+  vi.fn<
+    (
+      code: string,
+      round: number,
+      onChange: (submissions: Submission[]) => void,
+      onError?: (error: Error) => void,
+    ) => () => void
+  >()
+
+vi.mock('../api/submissions', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/submissions')>()
+  return {
+    ...actual,
+    approveSubmission: (
+      code: string,
+      submissionId: string,
+      target: { team: string; participantUid: string },
+    ) => approveSubmissionMock(code, submissionId, target),
+    rejectSubmission: (code: string, submissionId: string) =>
+      rejectSubmissionMock(code, submissionId),
+    subscribeToPendingSubmissions: (
+      code: string,
+      round: number,
+      onChange: (submissions: Submission[]) => void,
+      onError?: (error: Error) => void,
+    ) => subscribeSubmissionsMock(code, round, onChange, onError),
+  }
+})
+
 const toastMock = vi.fn<(options: { title: string; tone?: string }) => number>()
 vi.mock('@/shared/composables/useToast', () => ({
   useToast: () => ({ toast: toastMock, dismissAll: vi.fn<() => void>() }),
@@ -85,6 +125,7 @@ function captureSnapshotCallbacks() {
   let deliverRoom: (room: RoomInfo | null) => void = () => {}
   let deliverParticipants: (participants: Participant[]) => void = () => {}
   let deliverNotice: (notice: Notice | null) => void = () => {}
+  let deliverSubmissions: (submissions: Submission[]) => void = () => {}
   subscribeRoomMock.mockImplementation((_code, onChange) => {
     deliverRoom = onChange
     return unsubscribeMock
@@ -97,10 +138,15 @@ function captureSnapshotCallbacks() {
     deliverNotice = onChange
     return unsubscribeMock
   })
+  subscribeSubmissionsMock.mockImplementation((_code, _round, onChange) => {
+    deliverSubmissions = onChange
+    return unsubscribeMock
+  })
   return {
     room: (room: RoomInfo | null) => deliverRoom(room),
     participants: (participants: Participant[]) => deliverParticipants(participants),
     notice: (notice: Notice | null) => deliverNotice(notice),
+    submissions: (submissions: Submission[]) => deliverSubmissions(submissions),
   }
 }
 
@@ -167,6 +213,16 @@ function assigned(id: string, team: string): Participant {
   }
 }
 
+function deferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
 describe('RoundOpsPage', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -179,6 +235,9 @@ describe('RoundOpsPage', () => {
     }
     sendNoticeMock.mockReset().mockResolvedValue(undefined)
     endGameMock.mockReset().mockResolvedValue(undefined)
+    approveSubmissionMock.mockReset().mockResolvedValue(undefined)
+    rejectSubmissionMock.mockReset().mockResolvedValue(undefined)
+    subscribeSubmissionsMock.mockReset().mockReturnValue(unsubscribeMock)
   })
   afterEach(() => {
     while (mounted.length > 0) mounted.pop()!.unmount()
@@ -619,19 +678,214 @@ describe('RoundOpsPage', () => {
   })
 
   describe('탭', () => {
-    it('판정·기록 탭은 준비 중 안내로 대체된다', async () => {
+    it('기록 탭은 준비 중 안내로 대체되고 운영 컨트롤을 숨긴다', async () => {
       const deliver = captureSnapshotCallbacks()
       const wrapper = mountPage()
       deliver.room(hostRoom({ round: running() }))
       await flushPromises()
 
-      await wrapper.find('[data-value="judge"]').trigger('click')
+      await wrapper.find('[data-value="log"]').trigger('click')
 
-      expect(wrapper.text()).toContain('판정 화면 준비 중')
+      expect(wrapper.text()).toContain('기록 화면 준비 중')
       expect(findButton(wrapper, '일시정지')).toBeUndefined()
 
       await wrapper.find('[data-value="ops"]').trigger('click')
       expect(findButton(wrapper, '일시정지')).toBeDefined()
+    })
+  })
+
+  describe('판정 탭', () => {
+    /** 판정 대기 킬샷 픽스처 — 제출자 u3(팀 B)가 방금 보낸 사진 */
+    function pendingSubmission(overrides: Partial<Submission> = {}): Submission {
+      return {
+        id: 's1',
+        uid: 'u3',
+        team: 'B',
+        round: 2,
+        photo: 'data:image/jpeg;base64,killshot',
+        status: 'pending',
+        createdAtMs: Date.now(),
+        ...overrides,
+      }
+    }
+
+    /** 판정 탭을 열고 대기 킬샷 1건과 배정 명단(A팀 u1·u2 / B팀 u3)을 채운다 */
+    async function openJudgeTab() {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      deliver.room(hostRoom({ round: running() }))
+      deliver.participants([assigned('u1', 'A'), assigned('u2', 'A'), assigned('u3', 'B')])
+      deliver.submissions([pendingSubmission()])
+      await flushPromises()
+      await wrapper.find('[data-value="judge"]').trigger('click')
+      return { deliver, wrapper }
+    }
+
+    function sheetButton(text: string) {
+      return [...document.body.querySelectorAll<HTMLElement>('button')].find(
+        (button) => button.textContent?.trim() === text,
+      )
+    }
+
+    it('하단 판정 탭에 대기 건수 배지가 뜬다 — 다른 탭에서도 도착을 알 수 있다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      deliver.room(hostRoom({ round: running() }))
+      deliver.submissions([pendingSubmission()])
+      await flushPromises()
+
+      // 운영 탭에 머문 상태 그대로 탭 바에서 확인한다
+      const judgeTab = wrapper.get('[data-value="judge"]')
+      expect(judgeTab.find('.count-badge').exists()).toBe(true)
+      expect(judgeTab.text()).toContain('1')
+
+      deliver.submissions([])
+      await flushPromises()
+      expect(judgeTab.find('.count-badge').exists()).toBe(false)
+    })
+
+    it('대기 킬샷을 건수 배지·제출 팀·제출자와 함께 오래된 순으로 나열한다', async () => {
+      const { wrapper } = await openJudgeTab()
+
+      expect(wrapper.text()).toContain('대기 1건')
+      expect(wrapper.text()).toContain('팀 B · 주황')
+      expect(wrapper.text()).toContain('u3')
+      const thumbnail = wrapper.find('button[data-submission="s1"] img')
+      expect(thumbnail.attributes('src')).toBe('data:image/jpeg;base64,killshot')
+    })
+
+    it('대기 킬샷이 없으면 빈 상태 안내를 보여준다', async () => {
+      const { deliver, wrapper } = await openJudgeTab()
+
+      deliver.submissions([])
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('대기 0건')
+      expect(wrapper.text()).toContain('판정 대기 중인 킬샷이 없어요.')
+    })
+
+    it('시작 전(waiting) 방에서는 큐 대신 안내를 보여준다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      deliver.room(hostRoom({ status: 'waiting' }))
+      await flushPromises()
+
+      await wrapper.find('[data-value="judge"]').trigger('click')
+
+      expect(wrapper.text()).toContain('게임이 아직 시작되지 않았어요')
+      expect(wrapper.text()).not.toContain('대기 0건')
+    })
+
+    it('킬샷을 골라 대상 팀을 선택하면 확정이 서버에 쓰인다', async () => {
+      const { wrapper } = await openJudgeTab()
+
+      await wrapper.find('button[data-submission="s1"]').trigger('click')
+      await flushPromises()
+
+      // 제출자 본인 팀(B)은 대상에서 비활성화된다
+      const ownTeam = document.body.querySelector<HTMLButtonElement>('button[data-team="B"]')!
+      expect(ownTeam.disabled).toBe(true)
+      expect(document.body.textContent).toContain('제출 팀')
+
+      // 대상 팀을 고르기 전에는 확정할 수 없다
+      expect(sheetButton('판정 확정')!.hasAttribute('disabled')).toBe(true)
+
+      document.body.querySelector<HTMLButtonElement>('button[data-team="A"]')!.click()
+      await flushPromises()
+      sheetButton('판정 확정')!.click()
+      await flushPromises()
+
+      expect(approveSubmissionMock).toHaveBeenCalledExactlyOnceWith('AB2C', 's1', {
+        team: 'A',
+        participantUid: 'u1',
+      })
+      expect(toastMock).toHaveBeenCalledWith({
+        title: '팀 A 킬샷으로 판정했어요.',
+        tone: 'success',
+      })
+    })
+
+    it('반려는 사유 없이 상태만 쓴다', async () => {
+      const { wrapper } = await openJudgeTab()
+
+      await wrapper.find('button[data-submission="s1"]').trigger('click')
+      await flushPromises()
+      sheetButton('반려')!.click()
+      await flushPromises()
+
+      expect(rejectSubmissionMock).toHaveBeenCalledExactlyOnceWith('AB2C', 's1')
+      expect(approveSubmissionMock).not.toHaveBeenCalled()
+      expect(toastMock).toHaveBeenCalledWith({ title: '킬샷을 반려했어요.', tone: 'neutral' })
+    })
+
+    it('시트가 열린 킬샷이 다른 기기에서 먼저 판정되면 시트를 닫고 알린다', async () => {
+      const { deliver, wrapper } = await openJudgeTab()
+
+      await wrapper.find('button[data-submission="s1"]').trigger('click')
+      await flushPromises()
+
+      deliver.submissions([])
+      await flushPromises()
+
+      expect(toastMock).toHaveBeenCalledWith({ title: '이미 판정된 킬샷이에요.', tone: 'neutral' })
+      expect(toastMock).not.toHaveBeenCalledWith({
+        title: '판정을 처리하지 못했어요. 다시 시도해 주세요.',
+        tone: 'danger',
+      })
+      expect(approveSubmissionMock).not.toHaveBeenCalled()
+    })
+
+    it('판정 요청 중 다른 기기가 먼저 처리하면 요청 실패 후 사라진 시트를 닫는다', async () => {
+      const { deliver, wrapper } = await openJudgeTab()
+      const request = deferred()
+      void request.promise.catch(() => {})
+      approveSubmissionMock.mockReturnValueOnce(request.promise)
+
+      await wrapper.find('button[data-submission="s1"]').trigger('click')
+      await flushPromises()
+      document.body.querySelector<HTMLButtonElement>('button[data-team="A"]')!.click()
+      await flushPromises()
+      sheetButton('판정 확정')!.click()
+      await flushPromises()
+
+      deliver.submissions([])
+      await flushPromises()
+      request.reject(new Error('already judged'))
+      await flushPromises()
+
+      expect(toastMock).toHaveBeenCalledWith({ title: '이미 판정된 킬샷이에요.', tone: 'neutral' })
+      expect(document.body.textContent).not.toContain('잡힌 팀 선택')
+    })
+
+    it('판정 실패 뒤 제거 스냅샷이 와도 같은 충돌을 두 번 알리지 않는다', async () => {
+      const { deliver, wrapper } = await openJudgeTab()
+      approveSubmissionMock.mockRejectedValueOnce(new Error('permission denied'))
+
+      await wrapper.find('button[data-submission="s1"]').trigger('click')
+      await flushPromises()
+      document.body.querySelector<HTMLButtonElement>('button[data-team="A"]')!.click()
+      await flushPromises()
+      sheetButton('판정 확정')!.click()
+      await flushPromises()
+
+      await vi.waitFor(() => {
+        expect(toastMock).toHaveBeenCalledWith({
+          title: '판정을 처리하지 못했어요. 다시 시도해 주세요.',
+          tone: 'danger',
+        })
+      })
+      deliver.submissions([])
+      await flushPromises()
+
+      expect(toastMock).toHaveBeenCalledWith({
+        title: '판정을 처리하지 못했어요. 다시 시도해 주세요.',
+        tone: 'danger',
+      })
+      expect(toastMock).not.toHaveBeenCalledWith({
+        title: '이미 판정된 킬샷이에요.',
+        tone: 'neutral',
+      })
+      expect(document.body.textContent).not.toContain('잡힌 팀 선택')
     })
   })
 
@@ -643,6 +897,6 @@ describe('RoundOpsPage', () => {
 
     wrapper.unmount()
 
-    expect(unsubscribeMock).toHaveBeenCalledTimes(3)
+    expect(unsubscribeMock).toHaveBeenCalledTimes(4)
   })
 })
