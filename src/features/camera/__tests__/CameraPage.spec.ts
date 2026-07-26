@@ -8,6 +8,35 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({ replace: replaceMock, push: vi.fn<() => void>() }),
 }))
 
+vi.mock('@/features/auth', () => ({
+  useAuthStore: () => ({ user: { uid: 'player1' } }),
+}))
+
+const unsubscribeNoticeMock = vi.fn<() => void>()
+const subscribeNoticeMock =
+  vi.fn<
+    (
+      code: string,
+      onChange: (notice: { id: string; text: string; createdAtMs: number | null } | null) => void,
+      onError?: (error: Error) => void,
+    ) => () => void
+  >()
+
+vi.mock('@/features/round-ops', async () => {
+  const { computed } = await import('vue')
+  return {
+    subscribeToLatestNotice: (
+      code: string,
+      onChange: (notice: { id: string; text: string; createdAtMs: number | null } | null) => void,
+      onError?: (error: Error) => void,
+    ) => subscribeNoticeMock(code, onChange, onError),
+    useRoundTimer: () => ({
+      formatted: computed(() => '20:00'),
+      displayState: computed(() => 'running'),
+    }),
+  }
+})
+
 const toastMock = vi.fn<(options: { title: string; tone?: string }) => number>()
 vi.mock('@/shared/composables/useToast', () => ({
   useToast: () => ({ toast: toastMock, dismissAll: vi.fn<() => void>() }),
@@ -15,15 +44,43 @@ vi.mock('@/shared/composables/useToast', () => ({
 
 const unsubscribeRoomMock = vi.fn<() => void>()
 const subscribeRoomMock =
-  vi.fn<(code: string, onChange: (room: RoomInfo | null) => void) => () => void>()
+  vi.fn<
+    (
+      code: string,
+      onChange: (room: RoomInfo | null) => void,
+      onError?: (error: Error) => void,
+    ) => () => void
+  >()
+const unsubscribeParticipantsMock = vi.fn<() => void>()
+const subscribeParticipantsMock =
+  vi.fn<
+    (
+      code: string,
+      onChange: (participants: unknown[]) => void,
+      onError?: (error: Error) => void,
+    ) => () => void
+  >()
 
-// 방 데이터의 소유자는 waiting-room이다 — 구독만 갈아끼우고 정규화는 실제 구현을 쓴다
-vi.mock('@/features/waiting-room', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/features/waiting-room')>()
+vi.mock('@/features/waiting-room', () => {
   return {
-    ...actual,
-    subscribeToRoom: (code: string, onChange: (room: RoomInfo | null) => void) =>
-      subscribeRoomMock(code, onChange),
+    normalizeRoomCode: (code: string) => code.trim().toUpperCase(),
+    isAssignedInRound: (
+      participant: { team: string | null; assignedRound: number },
+      assignmentRound: number,
+    ) =>
+      assignmentRound > 0 &&
+      participant.team !== null &&
+      participant.assignedRound === assignmentRound,
+    subscribeToRoom: (
+      code: string,
+      onChange: (room: RoomInfo | null) => void,
+      onError?: (error: Error) => void,
+    ) => subscribeRoomMock(code, onChange, onError),
+    subscribeToParticipants: (
+      code: string,
+      onChange: (participants: unknown[]) => void,
+      onError?: (error: Error) => void,
+    ) => subscribeParticipantsMock(code, onChange, onError),
   }
 })
 
@@ -112,6 +169,10 @@ function findButtonByText(wrapper: VueWrapper, text: string) {
   return wrapper.findAll('button').find((button) => button.text() === text)
 }
 
+function findShutter(wrapper: VueWrapper) {
+  return wrapper.find('button[aria-label="킬샷 촬영"]')
+}
+
 beforeEach(() => {
   createObjectURL.mockClear()
   revokeObjectURL.mockClear()
@@ -119,6 +180,13 @@ beforeEach(() => {
   toastMock.mockReset()
   unsubscribeRoomMock.mockReset()
   subscribeRoomMock.mockReset().mockReturnValue(unsubscribeRoomMock)
+  unsubscribeParticipantsMock.mockReset()
+  subscribeParticipantsMock.mockReset().mockReturnValue(unsubscribeParticipantsMock)
+  unsubscribeNoticeMock.mockReset()
+  subscribeNoticeMock.mockReset().mockImplementation((_code, onChange) => {
+    onChange(null)
+    return unsubscribeNoticeMock
+  })
 })
 
 afterEach(() => {
@@ -137,10 +205,49 @@ describe('CameraPage 방 구독', () => {
     const wrapper = mount(CameraPage)
     await flushPromises()
 
-    expect(subscribeRoomMock).toHaveBeenCalledWith('AB2C', expect.any(Function))
+    expect(subscribeRoomMock).toHaveBeenCalledWith(
+      'AB2C',
+      expect.any(Function),
+      expect.any(Function),
+    )
 
     wrapper.unmount()
     expect(unsubscribeRoomMock).toHaveBeenCalledTimes(1)
+    expect(unsubscribeParticipantsMock).toHaveBeenCalledTimes(1)
+    expect(unsubscribeNoticeMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('실시간 구독이 실패하면 한 번만 안내하고 입장 화면으로 돌아간다', async () => {
+    let failRoom: (error: Error) => void = () => {}
+    let failParticipants: (error: Error) => void = () => {}
+    let failNotice: (error: Error) => void = () => {}
+    subscribeRoomMock.mockImplementation((_code, _onChange, onError) => {
+      failRoom = onError ?? failRoom
+      return unsubscribeRoomMock
+    })
+    subscribeParticipantsMock.mockImplementation((_code, _onChange, onError) => {
+      failParticipants = onError ?? failParticipants
+      return unsubscribeParticipantsMock
+    })
+    subscribeNoticeMock.mockImplementation((_code, _onChange, onError) => {
+      failNotice = onError ?? failNotice
+      return unsubscribeNoticeMock
+    })
+    stubGetUserMedia(() => Promise.resolve(createFakeStream()))
+    mount(CameraPage)
+    await flushPromises()
+
+    failRoom(new Error('permission-denied'))
+    failParticipants(new Error('permission-denied'))
+    failNotice(new Error('permission-denied'))
+
+    expect(toastMock).toHaveBeenCalledTimes(1)
+    expect(toastMock).toHaveBeenCalledWith({
+      title: '게임 정보를 불러올 수 없어요. 다시 입장해주세요.',
+      tone: 'danger',
+    })
+    expect(replaceMock).toHaveBeenCalledTimes(1)
+    expect(replaceMock).toHaveBeenCalledWith({ name: 'entry' })
   })
 
   it('진행 중인 라운드가 있으면 콕핏에 머문다', async () => {
@@ -213,35 +320,165 @@ describe('CameraPage', () => {
     expect(video.element.srcObject).toBe(stream)
   })
 
-  it('스트림이 활성화되면 촬영 버튼을 보여준다', async () => {
+  it('스트림이 활성화되면 킬샷 셔터를 보여준다', async () => {
     const wrapper = await mountWithActiveCamera()
 
-    expect(findButtonByText(wrapper, '촬영')).toBeDefined()
+    expect(findShutter(wrapper).exists()).toBe(true)
+  })
+
+  it('목표·남은 시간·팀 편성과 준비 중 슬롯을 HUD에 표시한다', async () => {
+    subscribeParticipantsMock.mockImplementation((_code, onChange) => {
+      onChange([
+        {
+          id: 'player1',
+          name: '민우',
+          team: 'A',
+          assignedRound: 1,
+          gender: 'male',
+          isXTeam: false,
+          sameGenderStreak: 0,
+          previousPartnerIds: [],
+          isReady: true,
+        },
+        {
+          id: 'player2',
+          name: '하린',
+          team: 'A',
+          assignedRound: 1,
+          gender: 'female',
+          isXTeam: false,
+          sameGenderStreak: 0,
+          previousPartnerIds: [],
+          isReady: true,
+        },
+        {
+          id: 'player3',
+          name: '도윤',
+          team: 'B',
+          assignedRound: 1,
+          gender: 'male',
+          isXTeam: false,
+          sameGenderStreak: 0,
+          previousPartnerIds: [],
+          isReady: true,
+        },
+      ])
+      return unsubscribeParticipantsMock
+    })
+    const deliverRoom = captureRoomSnapshot()
+    const wrapper = await mountWithActiveCamera()
+    deliverRoom(playingRoom())
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('상대 완장 알파벳을 찍어 제출하세요.')
+    expect(wrapper.text()).toContain('20:00')
+    expect(wrapper.text()).toContain('팀 A · 하린')
+    expect(wrapper.text()).toContain('2팀 생존')
+    expect(wrapper.text()).toContain('아이템')
+    expect(wrapper.text()).toContain('지도')
+    expect(wrapper.text()).toContain('기록')
+  })
+
+  it('넘치는 공지만 애니메이션하고 펼치면 전체 내용을 줄바꿈한다', async () => {
+    const longNotice = 'https://example.com/' + 'a'.repeat(80)
+    subscribeNoticeMock.mockImplementation((_code, onChange) => {
+      onChange({ id: 'notice-1', text: longNotice, createdAtMs: null })
+      return unsubscribeNoticeMock
+    })
+    const wrapper = await mountWithActiveCamera()
+    const noticeButton = wrapper.find('button[aria-controls="cockpit-notice"]')
+    const notice = wrapper.find('#cockpit-notice')
+
+    expect(noticeButton.attributes('aria-expanded')).toBe('false')
+    expect(notice.text()).toBe(longNotice)
+    Object.defineProperty(notice.element, 'scrollWidth', { configurable: true, value: 600 })
+    Object.defineProperty(notice.element.parentElement!, 'clientWidth', {
+      configurable: true,
+      value: 240,
+    })
+    window.dispatchEvent(new Event('resize'))
+    await flushPromises()
+
+    expect(notice.classes()).toContain('notice-marquee')
+    expect(notice.attributes('style')).toContain('--notice-marquee-offset: -360px')
+    expect(notice.attributes('style')).toContain('--notice-marquee-duration: 19s')
+    expect(noticeButton.find('svg').classes()).toContain('shrink-0')
+    expect(noticeButton.find('svg').classes()).toContain('ml-auto')
+    expect(noticeButton.classes()).toContain('notice-button')
+
+    await noticeButton.trigger('click')
+    await flushPromises()
+    expect(noticeButton.attributes('aria-expanded')).toBe('true')
+    expect(notice.classes()).toContain('wrap-anywhere')
+    expect(notice.classes()).toContain('whitespace-pre-wrap')
+    expect(notice.classes()).not.toContain('notice-marquee')
+    expect(noticeButton.find('span.flex.w-full').classes()).toContain('items-start')
+
+    await noticeButton.trigger('click')
+    await flushPromises()
+    expect(noticeButton.attributes('aria-expanded')).toBe('false')
+    expect(notice.classes()).toContain('notice-marquee-resumed')
+    expect(notice.classes()).not.toContain('notice-marquee')
+  })
+
+  it('가용 폭을 넘지 않는 공지는 애니메이션 없이 그대로 표시한다', async () => {
+    subscribeNoticeMock.mockImplementation((_code, onChange) => {
+      onChange({ id: 'notice-short', text: '곧 시작합니다.', createdAtMs: null })
+      return unsubscribeNoticeMock
+    })
+    const wrapper = await mountWithActiveCamera()
+    const notice = wrapper.find('#cockpit-notice')
+    Object.defineProperty(notice.element, 'scrollWidth', { configurable: true, value: 100 })
+    Object.defineProperty(notice.element.parentElement!, 'clientWidth', {
+      configurable: true,
+      value: 240,
+    })
+    window.dispatchEvent(new Event('resize'))
+    await flushPromises()
+
+    expect(notice.text()).toBe('곧 시작합니다.')
+    expect(notice.classes()).not.toContain('notice-marquee')
+    expect(notice.attributes('style')).toBeUndefined()
+  })
+
+  it('HUD 버튼에 공용 패딩 옵션을 사용하고 셔터 전용 variant를 적용한다', async () => {
+    const wrapper = await mountWithActiveCamera()
+    const noticeButton = wrapper.find('button[aria-controls="cockpit-notice"]')
+    const shutter = findShutter(wrapper)
+    const slots = wrapper.findAll('button[data-variant="hud"][disabled]')
+
+    expect(noticeButton.attributes('data-padding')).toBe('compact')
+    expect(shutter.attributes('data-variant')).toBe('shutter')
+    expect(shutter.attributes('data-padding')).toBe('none')
+    expect(slots).toHaveLength(4)
+    expect(slots.every((slot) => slot.attributes('data-padding') === 'none')).toBe(true)
   })
 
   it('촬영 버튼을 누르면 현재 프레임을 캡처해 미리보기를 보여준다', async () => {
     stubCanvas()
     const wrapper = await mountWithActiveCamera()
 
-    await findButtonByText(wrapper, '촬영')!.trigger('click')
+    await findShutter(wrapper).trigger('click')
     await flushPromises()
 
     const preview = wrapper.find('img')
     expect(preview.exists()).toBe(true)
     expect(preview.attributes('src')).toBe('blob:preview')
-    expect(findButtonByText(wrapper, '촬영')).toBeUndefined()
+    expect(findShutter(wrapper).exists()).toBe(false)
+    expect(wrapper.text()).toContain('킬샷 확인')
+    expect(wrapper.text()).toContain('제출 준비 중')
   })
 
   it('다시 찍기를 누르면 미리보기를 닫고 뷰파인더로 돌아간다', async () => {
     stubCanvas()
     const wrapper = await mountWithActiveCamera()
-    await findButtonByText(wrapper, '촬영')!.trigger('click')
+    await findShutter(wrapper).trigger('click')
     await flushPromises()
 
     await findButtonByText(wrapper, '다시 찍기')!.trigger('click')
 
     expect(wrapper.find('img').exists()).toBe(false)
-    expect(findButtonByText(wrapper, '촬영')).toBeDefined()
+    expect(findShutter(wrapper).exists()).toBe(true)
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:preview')
   })
 

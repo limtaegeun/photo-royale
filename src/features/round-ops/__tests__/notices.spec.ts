@@ -10,14 +10,25 @@ interface FakeRef {
 }
 
 const addDocMock = vi.fn<(ref: FakeRef, data: Record<string, unknown>) => Promise<void>>()
-const onSnapshotMock = vi.fn<(query: unknown, onNext: (snapshot: unknown) => void) => () => void>()
+const onSnapshotMock =
+  vi.fn<
+    (
+      query: unknown,
+      onNext: (snapshot: unknown) => void,
+      onError?: (error: Error) => void,
+    ) => () => void
+  >()
 
 vi.mock('firebase/firestore', () => ({
   collection: (_db: unknown, ...segments: string[]): FakeRef => ({ path: segments.join('/') }),
   query: (source: FakeRef, ...constraints: unknown[]) => ({ source, constraints }),
   orderBy: (field: string, direction: string) => ({ orderBy: field, direction }),
   limit: (count: number) => ({ limit: count }),
-  onSnapshot: (query: unknown, onNext: (snapshot: unknown) => void) => onSnapshotMock(query, onNext),
+  onSnapshot: (
+    query: unknown,
+    onNext: (snapshot: unknown) => void,
+    onError?: (error: Error) => void,
+  ) => onSnapshotMock(query, onNext, onError),
   serverTimestamp: () => 'server-timestamp',
   addDoc: (ref: FakeRef, data: Record<string, unknown>) => addDocMock(ref, data),
 }))
@@ -88,6 +99,15 @@ describe('subscribeToLatestNotice', () => {
 
     onNext({ docs: [{ id: 'n1', data: () => ({ text: '집합', createdAt: null }) }] })
     expect(onChange).toHaveBeenLastCalledWith({ id: 'n1', text: '집합', createdAtMs: null })
+  })
+
+  it('영구 Listen 오류 콜백을 Firestore에 전달한다', () => {
+    onSnapshotMock.mockReturnValue(vi.fn<() => void>())
+    const onError = vi.fn<(error: Error) => void>()
+
+    subscribeToLatestNotice('AB2C', vi.fn(), onError)
+
+    expect(onSnapshotMock.mock.calls[0]![2]).toBe(onError)
   })
 })
 
