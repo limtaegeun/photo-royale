@@ -419,6 +419,10 @@ describe('CameraPage', () => {
     expect(noticeButton.attributes('aria-expanded')).toBe('false')
     expect(notice.classes()).toContain('notice-marquee-resumed')
     expect(notice.classes()).not.toContain('notice-marquee')
+
+    await notice.trigger('animationiteration')
+    expect(notice.classes()).toContain('notice-marquee')
+    expect(notice.classes()).not.toContain('notice-marquee-resumed')
   })
 
   it('가용 폭을 넘지 않는 공지는 애니메이션 없이 그대로 표시한다', async () => {

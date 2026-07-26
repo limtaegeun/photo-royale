@@ -140,6 +140,10 @@ function toggleNotice() {
   noticeExpanded.value = !noticeExpanded.value
 }
 
+function handleNoticeAnimationIteration() {
+  if (noticeResumeImmediately.value) noticeResumeImmediately.value = false
+}
+
 watch(latestNotice, () => {
   noticeResumeImmediately.value = false
 })
@@ -282,6 +286,7 @@ onUnmounted(() => {
                       ]
                 "
                 :style="noticeIsOverflowing ? noticeMarqueeStyle : undefined"
+                @animationiteration="handleNoticeAnimationIteration"
               >
                 {{ latestNotice?.text ?? '새로운 공지가 없습니다.' }}
               </span>
