@@ -45,23 +45,28 @@ export async function sendNotice(code: string, text: string): Promise<void> {
 export function subscribeToLatestNotice(
   code: string,
   onChange: (notice: Notice | null) => void,
+  onError?: (error: Error) => void,
 ): Unsubscribe {
   const latestQuery = query(
     collection(db, 'rooms', code, 'notices'),
     orderBy('createdAt', 'desc'),
     limit(1),
   )
-  return onSnapshot(latestQuery, (snapshot) => {
-    const latest = snapshot.docs[0]
-    if (latest === undefined) {
-      onChange(null)
-      return
-    }
-    const data = latest.data()
-    onChange({
-      id: latest.id,
-      text: data.text as string,
-      createdAtMs: (data.createdAt as Timestamp | null | undefined)?.toMillis() ?? null,
-    })
-  })
+  return onSnapshot(
+    latestQuery,
+    (snapshot) => {
+      const latest = snapshot.docs[0]
+      if (latest === undefined) {
+        onChange(null)
+        return
+      }
+      const data = latest.data()
+      onChange({
+        id: latest.id,
+        text: data.text as string,
+        createdAtMs: (data.createdAt as Timestamp | null | undefined)?.toMillis() ?? null,
+      })
+    },
+    onError,
+  )
 }

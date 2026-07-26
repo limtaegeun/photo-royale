@@ -78,6 +78,16 @@ describe('BaseBadge', () => {
     expect(wrapper.classes()).toContain('text-on-brand')
   })
 
+  it('accent 톤은 accent 배경 + on-accent 라벨을 채운다', () => {
+    const wrapper = mount(BaseBadge, {
+      props: { tone: 'accent' },
+    })
+
+    expect(wrapper.attributes('data-tone')).toBe('accent')
+    expect(wrapper.classes()).toContain('bg-accent')
+    expect(wrapper.classes()).toContain('text-on-accent')
+  })
+
   it('size prop을 data 속성과 높이 유틸리티 클래스로 반영한다', () => {
     const wrapper = mount(BaseBadge, {
       props: { size: 'md' },

@@ -10,7 +10,7 @@ interface Props extends PrimitiveProps {
   /** 팀 색상 — 지정되면 tone보다 우선한다 */
   team?: 'red' | 'blue' | 'green' | 'orange'
   /** 상태·브랜드 톤 — team이 없을 때만 적용 */
-  tone?: 'brand' | 'success' | 'warning' | 'danger' | 'info' | 'neutral'
+  tone?: 'brand' | 'accent' | 'success' | 'warning' | 'danger' | 'info' | 'neutral'
   /** fill: 배경을 채움 / text: 배경 투명, 텍스트만 색상 적용 / outline: 배경 투명 + 같은 색 테두리 */
   appearance?: 'fill' | 'text' | 'outline'
   /** 크기 — sm(기본, 인라인 상태 표식) / md(카테고리·브랜드 태그) */
@@ -46,6 +46,7 @@ const TEAM_TEXT = {
 
 const TONE_FILL = {
   brand: 'bg-brand text-on-brand',
+  accent: 'bg-accent text-on-accent',
   success: 'bg-success-solid text-on-success',
   warning: 'bg-warning-solid text-on-warning',
   danger: 'bg-danger-solid text-on-danger',
@@ -62,6 +63,7 @@ const TEAM_OUTLINE = {
 
 const TONE_TEXT = {
   brand: 'text-brand',
+  accent: 'text-accent',
   success: 'text-success',
   warning: 'text-warning',
   danger: 'text-danger',
@@ -71,6 +73,7 @@ const TONE_TEXT = {
 
 const TONE_OUTLINE = {
   brand: 'border border-brand text-brand',
+  accent: 'border border-accent text-accent',
   success: 'border border-success text-success',
   warning: 'border border-warning text-warning',
   danger: 'border border-danger text-danger',

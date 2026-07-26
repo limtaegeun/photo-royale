@@ -15,13 +15,21 @@ interface FakeQueryDoc {
 }
 
 const getDocMock =
-  vi.fn<(ref: FakeRef) => Promise<{ exists: () => boolean; data?: () => Record<string, unknown> }>>()
+  vi.fn<
+    (ref: FakeRef) => Promise<{ exists: () => boolean; data?: () => Record<string, unknown> }>
+  >()
 const getDocsMock = vi.fn<(query: unknown) => Promise<{ docs: FakeQueryDoc[] }>>()
 const transactionGetMock = vi.fn<(ref: FakeRef) => Promise<{ exists: () => boolean }>>()
 const transactionSetMock = vi.fn<(ref: FakeRef, data: Record<string, unknown>) => void>()
 const updateDocMock = vi.fn<(ref: FakeRef, data: Record<string, unknown>) => Promise<void>>()
 const onSnapshotMock =
-  vi.fn<(query: unknown, onNext: (snapshot: unknown) => void) => () => void>()
+  vi.fn<
+    (
+      query: unknown,
+      onNext: (snapshot: unknown) => void,
+      onError?: (error: Error) => void,
+    ) => () => void
+  >()
 
 vi.mock('firebase/firestore', () => ({
   doc: (_db: unknown, ...segments: string[]): FakeRef => ({ path: segments.join('/') }),
@@ -31,12 +39,18 @@ vi.mock('firebase/firestore', () => ({
   query: (source: FakeRef, ...constraints: unknown[]) => ({ source, constraints }),
   orderBy: (field: string, direction: string) => ({ orderBy: field, direction }),
   where: (field: string, op: string, value: unknown) => ({ where: field, op, value }),
-  onSnapshot: (query: unknown, onNext: (snapshot: unknown) => void) =>
-    onSnapshotMock(query, onNext),
+  onSnapshot: (
+    query: unknown,
+    onNext: (snapshot: unknown) => void,
+    onError?: (error: Error) => void,
+  ) => onSnapshotMock(query, onNext, onError),
   // 실제 runTransaction의 재시도는 커밋 경합에서만 일어나므로, 콜백 1회 실행으로 충분하다
   runTransaction: <T>(
     _db: unknown,
-    fn: (transaction: { get: typeof transactionGetMock; set: typeof transactionSetMock }) => Promise<T>,
+    fn: (transaction: {
+      get: typeof transactionGetMock
+      set: typeof transactionSetMock
+    }) => Promise<T>,
   ) => fn({ get: transactionGetMock, set: transactionSetMock }),
   serverTimestamp: () => 'server-timestamp',
   deleteField: () => 'delete-field',
@@ -411,6 +425,15 @@ describe('subscribeToParticipants', () => {
     ])
     expect(result).toBe(unsubscribe)
   })
+
+  it('영구 Listen 오류 콜백을 Firestore에 전달한다', () => {
+    onSnapshotMock.mockReturnValue(vi.fn<() => void>())
+    const onError = vi.fn<(error: Error) => void>()
+
+    subscribeToParticipants('AB2C', vi.fn(), onError)
+
+    expect(onSnapshotMock.mock.calls[0]![2]).toBe(onError)
+  })
 })
 
 describe('subscribeToRoom', () => {
@@ -444,6 +467,15 @@ describe('subscribeToRoom', () => {
     onNext({ exists: () => false })
     expect(onChange).toHaveBeenLastCalledWith(null)
     expect(result).toBe(unsubscribe)
+  })
+
+  it('영구 Listen 오류 콜백을 Firestore에 전달한다', () => {
+    onSnapshotMock.mockReturnValue(vi.fn<() => void>())
+    const onError = vi.fn<(error: Error) => void>()
+
+    subscribeToRoom('AB2C', vi.fn(), onError)
+
+    expect(onSnapshotMock.mock.calls[0]![2]).toBe(onError)
   })
 })
 

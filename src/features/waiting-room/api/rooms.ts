@@ -286,14 +286,19 @@ export async function joinRoom(
 export function subscribeToRoom(
   code: string,
   onChange: (room: RoomInfo | null) => void,
+  onError?: (error: Error) => void,
 ): Unsubscribe {
-  return onSnapshot(doc(db, 'rooms', code), (snapshot) => {
-    if (!snapshot.exists()) {
-      onChange(null)
-      return
-    }
-    onChange(toRoomInfo(snapshot.data()))
-  })
+  return onSnapshot(
+    doc(db, 'rooms', code),
+    (snapshot) => {
+      if (!snapshot.exists()) {
+        onChange(null)
+        return
+      }
+      onChange(toRoomInfo(snapshot.data()))
+    },
+    onError,
+  )
 }
 
 /**
@@ -322,29 +327,34 @@ export async function endGame(code: string): Promise<void> {
 export function subscribeToParticipants(
   code: string,
   onChange: (participants: Participant[]) => void,
+  onError?: (error: Error) => void,
 ): Unsubscribe {
   const participantsQuery = query(
     collection(db, 'rooms', code, 'participants'),
     orderBy('joinedAt', 'asc'),
   )
-  return onSnapshot(participantsQuery, (snapshot) => {
-    onChange(
-      snapshot.docs.map((participantDoc) => {
-        const data = participantDoc.data()
-        return {
-          id: participantDoc.id,
-          name: data.nickname as string,
-          team: (data.team as string | undefined) ?? null,
-          assignedRound: (data.assignedRound as number | undefined) ?? 0,
-          gender: (data.gender as Gender | undefined) ?? null,
-          isXTeam: (data.isXTeam as boolean | undefined) ?? false,
-          sameGenderStreak: (data.sameGenderStreak as number | undefined) ?? 0,
-          previousPartnerIds: (data.previousPartnerIds as string[] | undefined) ?? [],
-          isReady: data.isReady as boolean,
-        }
-      }),
-    )
-  })
+  return onSnapshot(
+    participantsQuery,
+    (snapshot) => {
+      onChange(
+        snapshot.docs.map((participantDoc) => {
+          const data = participantDoc.data()
+          return {
+            id: participantDoc.id,
+            name: data.nickname as string,
+            team: (data.team as string | undefined) ?? null,
+            assignedRound: (data.assignedRound as number | undefined) ?? 0,
+            gender: (data.gender as Gender | undefined) ?? null,
+            isXTeam: (data.isXTeam as boolean | undefined) ?? false,
+            sameGenderStreak: (data.sameGenderStreak as number | undefined) ?? 0,
+            previousPartnerIds: (data.previousPartnerIds as string[] | undefined) ?? [],
+            isReady: data.isReady as boolean,
+          }
+        }),
+      )
+    },
+    onError,
+  )
 }
 
 /** 내 참가자 문서의 레디 확정 — 스냅샷 구독이 화면 상태를 갱신한다 */
