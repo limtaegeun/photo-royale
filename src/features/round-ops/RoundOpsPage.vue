@@ -78,6 +78,7 @@ const tabs = computed(() => [
 const activeTab = ref<string>('ops')
 const isNoticeSheetOpen = ref(false)
 const isEndGameDialogOpen = ref(false)
+const isFinishRoundDialogOpen = ref(false)
 const isJudgeSheetOpen = ref(false)
 /** 시트에서 판정 중인 킬샷 — 큐에서 고른 스냅샷을 들고 있는다(닫힌 뒤에도 애니메이션 동안 유지) */
 const judgingSubmission = ref<Submission | null>(null)
@@ -87,10 +88,18 @@ const viewingRecord = ref<SubmissionRecord | null>(null)
 
 /** 라운드 컨트롤은 게임이 실제로 진행 중일 때만 의미가 있다(rules도 playing에서만 쓰기를 허용한다) */
 const isPlaying = computed(() => gameStatus.value === 'playing')
-/** 시작 전·종료 상태에서는 조정할 대상이 없어 '라운드 시작' 하나로 화면을 단순화한다 */
+/** 시작 전·종료 상태에는 되돌릴 타이머가 없어 일시정지/재개·시간 조정을 감춘다 */
 const canControlTimer = computed(
   () => displayState.value === 'running' || displayState.value === 'paused',
 )
+/**
+ * 타이머가 0에 닿은 상태 — 주 액션은 타이머 재시작이 **아니라** '라운드 종료'다.
+ * 기획서 타임테이블이 "1차 게임 20분 → 2차 팀편성 10분"이라, 한 모드는 20분 한 번으로 끝나고
+ * 그 자리에 오는 것은 재편성이다(모드마다 편성 단위가 달라 같은 배정을 이어 쓸 수 없다).
+ * 재시작을 주 액션으로 두면 startRound가 assignmentRound를 올리지 않으므로 직전 라운드의
+ * 미판정 킬샷이 새 20분의 판정 큐에 그대로 남고, 기록도 두 라운드가 한 라운드로 뭉친다.
+ */
+const isRoundEnded = computed(() => displayState.value === 'ended')
 
 /**
  * 호스트 전용 가드 — 컨트롤이 실쓰기라 게스트가 URL로 직접 들어오면 403만 보게 된다.
@@ -158,6 +167,34 @@ async function endGame() {
   const ended = await store.finishGame()
   isEndGameDialogOpen.value = false
   if (ended) toast({ title: '게임을 종료했어요.', tone: 'success' })
+}
+
+/**
+ * 라운드 종료 — 쓰기는 게임 종료와 같다(방을 waiting으로 되돌리고 round를 지운다). 다른 액션이
+ * 아니라 같은 액션에 다른 진입점을 준 것이다: 타이머가 0에 닿은 뒤에는 이게 중단이 아니라
+ * 한 라운드를 정상적으로 닫는 정규 경로다. 배정 이력(assignmentRound·완장)은 남으므로 대기실이
+ * 다음 차수 배정 CTA를 띄우고, 그 화면에서 다음 라운드의 게임 모드를 고른다.
+ */
+async function finishRound() {
+  const finished = await store.finishGame()
+  isFinishRoundDialogOpen.value = false
+  if (finished) {
+    toast({ title: '라운드를 종료했어요. 대기실에서 다음 라운드를 배정해 주세요.', tone: 'success' })
+  }
+}
+
+/**
+ * 판정하지 않은 킬샷이 남아 있으면 확인을 받고, 없으면 바로 종료한다. rules가 지난 라운드의
+ * 판정을 막으므로 종료 후에는 기록 탭에서 읽기만 가능해진다 — 되돌릴 수 없는 손실이라 남은
+ * 건수를 밝힌다. 남은 게 없는 흔한 경우에 다이얼로그를 끼우지 않는 이유는, 이 종료가 중단이
+ * 아니라 타임테이블대로의 다음 단계라 확인을 물을 이유가 없기 때문이다.
+ */
+function requestFinishRound() {
+  if (pendingSubmissions.value.length > 0) {
+    isFinishRoundDialogOpen.value = true
+    return
+  }
+  void finishRound()
 }
 
 /** 전송에 성공했을 때만 시트를 닫는다 — 실패하면 입력을 남겨 둔 채 재시도할 수 있어야 한다 */
@@ -285,7 +322,7 @@ onUnmounted(() => {
           />
 
           <!-- 올스탑 — 일시정지/재개는 동등한 무게의 두 액션이라 2열로 나란히 둔다.
-               시작 전·종료에는 되돌릴 상태가 없으므로 '라운드 시작' 한 개로 대체한다 -->
+               시작 전에는 '라운드 시작', 종료 후에는 '라운드 종료' 한 개로 대체한다 -->
           <div v-if="canControlTimer" class="grid grid-cols-2 gap-3">
             <BaseButton
               variant="danger"
@@ -306,6 +343,18 @@ onUnmounted(() => {
               재개
             </BaseButton>
           </div>
+          <!-- 20분이 끝난 라운드는 여기서 닫고 대기실(재편성)로 넘긴다. 타이머 재시작 버튼을
+               두지 않는 이유는 isRoundEnded 주석 참조 -->
+          <BaseButton
+            v-else-if="isRoundEnded"
+            variant="primary"
+            size="lg"
+            class="w-full"
+            :loading="pendingAction === 'end'"
+            @click="requestFinishRound"
+          >
+            라운드 종료
+          </BaseButton>
           <BaseButton
             v-else
             variant="primary"
@@ -333,8 +382,11 @@ onUnmounted(() => {
           />
 
           <!-- 게임 종료 — 전원을 대기실로 되돌리는 파괴적 액션이라 진행 컨트롤과 멀리 떨어뜨리고
-               ghost로 낮춘다. 실제 실행은 확인 다이얼로그를 거친다 -->
+               ghost로 낮춘다. 실제 실행은 확인 다이얼로그를 거친다.
+               종료 상태에서는 감춘다 — 위의 '라운드 종료'와 쓰기가 완전히 같아서, 같은 일을 하는
+               버튼이 두 개 보이면 진행자가 둘의 차이를 찾느라 멈춘다(중단 vs 정상 종료). -->
           <BaseButton
+            v-if="!isRoundEnded"
             variant="ghost"
             size="md"
             class="w-full text-danger"
@@ -468,6 +520,40 @@ onUnmounted(() => {
       :assignment-round="assignmentRound"
       :now-ms="nowMs"
     />
+
+    <!-- 종료 자체는 정규 경로라 확인을 묻지 않지만, 판정을 못 한 킬샷이 남았을 때만 끼어든다.
+         남은 건수가 결정을 바꾸는 정보라 설명에 숫자를 넣는다 -->
+    <BaseDialog
+      v-model:open="isFinishRoundDialogOpen"
+      title="판정하지 않은 킬샷이 있어요"
+      :description="`대기 중인 킬샷 ${pendingSubmissions.length}건이 남았어요. 라운드를 종료하면 판정할 수 없어요.`"
+    >
+      <div class="flex flex-col gap-5">
+        <p class="text-caption leading-(--pr-line-height-relaxed) break-keep text-content-tertiary">
+          종료해도 사진은 기록 탭에 남지만, 점수로는 집계되지 않아요.
+        </p>
+
+        <div class="flex flex-col gap-3">
+          <BaseButton
+            variant="ghost"
+            size="lg"
+            class="w-full"
+            @click="isFinishRoundDialogOpen = false"
+          >
+            먼저 판정하기
+          </BaseButton>
+          <BaseButton
+            variant="danger"
+            size="md"
+            class="w-full"
+            :loading="pendingAction === 'end'"
+            @click="finishRound"
+          >
+            그대로 라운드 종료
+          </BaseButton>
+        </div>
+      </div>
+    </BaseDialog>
 
     <!-- 되돌릴 수 없는 액션이라 무엇이 사라지는지 밝히되, 두 문장을 한 덩어리로 두면
          읽히지 않는다. 결과(중요)는 설명으로, 안심 문구(보조)는 캡션으로 위계를 나눈다 -->

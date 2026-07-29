@@ -323,7 +323,7 @@ describe('RoundOpsPage', () => {
       expect(findButton(wrapper, '재개')!.attributes('disabled')).toBeUndefined()
     })
 
-    it('남은 시간이 0이면 종료로 표시하고 다시 시작할 수 있게 한다', async () => {
+    it('남은 시간이 0이면 종료로 표시하고 주 액션을 라운드 종료로 바꾼다', async () => {
       const deliver = captureSnapshotCallbacks()
       const wrapper = mountPage()
 
@@ -332,8 +332,25 @@ describe('RoundOpsPage', () => {
 
       expect(wrapper.text()).toContain('00:00')
       expect(wrapper.text()).toContain('종료')
-      expect(findButton(wrapper, '라운드 시작')).toBeDefined()
+      expect(findButton(wrapper, '라운드 종료')).toBeDefined()
       expect(wrapper.text()).not.toContain('시간 조정')
+    })
+
+    /**
+     * 재시작을 남겨 두면 startRound가 assignmentRound를 올리지 않으므로 직전 라운드의 미판정
+     * 킬샷이 새 20분의 판정 큐에 그대로 남고 기록도 두 라운드가 한 라운드로 뭉친다. 기획서
+     * 타임테이블도 "게임 20분 → 다음 팀편성"이라 종료 다음에 오는 것은 재편성이다.
+     */
+    it('종료 상태에는 타이머를 재시작하는 경로가 없다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+
+      deliver.room(hostRoom({ round: ended() }))
+      await flushPromises()
+
+      expect(findButton(wrapper, '라운드 시작')).toBeUndefined()
+      // 쓰기가 완전히 같은 버튼이 둘 보이지 않게 '게임 종료'는 감춘다
+      expect(findButton(wrapper, '게임 종료')).toBeUndefined()
     })
 
     it('아직 시작되지 않은 방에서는 컨트롤 대신 안내를 보여준다', async () => {
@@ -844,6 +861,91 @@ describe('RoundOpsPage', () => {
 
       expect(wrapper.text()).toContain('게임이 아직 시작되지 않았어요')
       expect(wrapper.text()).not.toContain('아직 기록이 없어요.')
+    })
+  })
+
+  /**
+   * 라운드 종료 — 타이머가 0에 닿은 뒤 한 라운드를 닫고 대기실(재편성)로 넘기는 정규 경로.
+   * 쓰기는 '게임 종료'와 같은 endGame이지만, 중단이 아니라 타임테이블대로의 다음 단계라
+   * 확인을 묻지 않는다(판정이 남은 경우만 예외).
+   */
+  describe('라운드 종료', () => {
+    /** 종료 상태 + 대기 킬샷 n건인 화면 */
+    async function openEndedRound(pendingCount: number) {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      deliver.room(hostRoom({ round: ended() }))
+      await flushPromises()
+
+      deliver.submissions(
+        Array.from({ length: pendingCount }, (_unused, index) => ({
+          id: `s${index}`,
+          uid: 'u3',
+          team: 'B',
+          round: 2,
+          photo: 'data:image/jpeg;base64,killshot',
+          status: 'pending' as const,
+          createdAtMs: Date.now(),
+        })),
+      )
+      await flushPromises()
+      return wrapper
+    }
+
+    it('판정 대기가 없으면 바로 종료하고 다음 라운드 배정을 안내한다', async () => {
+      const wrapper = await openEndedRound(0)
+
+      await findButton(wrapper, '라운드 종료')!.trigger('click')
+      await flushPromises()
+
+      expect(endGameMock).toHaveBeenCalledExactlyOnceWith('AB2C')
+      expect(toastMock).toHaveBeenCalledWith({
+        title: '라운드를 종료했어요. 대기실에서 다음 라운드를 배정해 주세요.',
+        tone: 'success',
+      })
+    })
+
+    /** 종료 후에는 rules가 지난 라운드 판정을 막아 영구히 판정할 수 없게 된다 */
+    it('판정 대기가 남았으면 건수를 밝히고 확인을 받는다', async () => {
+      const wrapper = await openEndedRound(2)
+
+      await findButton(wrapper, '라운드 종료')!.trigger('click')
+      await flushPromises()
+
+      expect(document.body.textContent).toContain('판정하지 않은 킬샷이 있어요')
+      expect(document.body.textContent).toContain('킬샷 2건이 남았어요')
+      expect(endGameMock).not.toHaveBeenCalled()
+    })
+
+    it('먼저 판정하기를 고르면 종료하지 않고 다이얼로그만 닫는다', async () => {
+      const wrapper = await openEndedRound(1)
+
+      await findButton(wrapper, '라운드 종료')!.trigger('click')
+      await flushPromises()
+
+      const keep = [...document.body.querySelectorAll<HTMLElement>('button')].find(
+        (button) => button.textContent?.trim() === '먼저 판정하기',
+      )!
+      keep.click()
+      await flushPromises()
+
+      expect(endGameMock).not.toHaveBeenCalled()
+      expect(document.body.textContent).not.toContain('판정하지 않은 킬샷이 있어요')
+    })
+
+    it('확인하면 대기 건을 남겨 둔 채 라운드를 종료한다', async () => {
+      const wrapper = await openEndedRound(1)
+
+      await findButton(wrapper, '라운드 종료')!.trigger('click')
+      await flushPromises()
+
+      const confirm = [...document.body.querySelectorAll<HTMLElement>('button')].find(
+        (button) => button.textContent?.trim() === '그대로 라운드 종료',
+      )!
+      confirm.click()
+      await flushPromises()
+
+      expect(endGameMock).toHaveBeenCalledExactlyOnceWith('AB2C')
     })
   })
 
