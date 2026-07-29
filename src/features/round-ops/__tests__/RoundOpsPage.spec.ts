@@ -4,7 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import type { Participant, RoomInfo, RoundState } from '@/features/waiting-room'
 import type { Notice } from '../api/notices'
-import type { Submission } from '../api/submissions'
+import type { Submission, SubmissionRecord } from '../api/submissions'
 
 // 세션 상실(로그아웃)까지 재현해야 하므로 실제 스토어처럼 반응형 ref로 둔다
 const authUser = ref<{ uid: string } | null>(null)
@@ -88,6 +88,14 @@ const subscribeSubmissionsMock =
       onError?: (error: Error) => void,
     ) => () => void
   >()
+const subscribeRecordsMock =
+  vi.fn<
+    (
+      code: string,
+      onChange: (records: SubmissionRecord[]) => void,
+      onError?: (error: Error) => void,
+    ) => () => void
+  >()
 
 vi.mock('../api/submissions', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/submissions')>()
@@ -108,6 +116,11 @@ vi.mock('../api/submissions', async (importOriginal) => {
       onChange: (submissions: Submission[]) => void,
       onError?: (error: Error) => void,
     ) => subscribeSubmissionsMock(code, round, onChange, onError),
+    subscribeToSubmissionLog: (
+      code: string,
+      onChange: (records: SubmissionRecord[]) => void,
+      onError?: (error: Error) => void,
+    ) => subscribeRecordsMock(code, onChange, onError),
   }
 })
 
@@ -131,6 +144,8 @@ function captureSnapshotCallbacks() {
   let deliverNotice: (notice: Notice | null) => void = () => {}
   let deliverSubmissions: (submissions: Submission[]) => void = () => {}
   let failSubmissions: (error: Error) => void = () => {}
+  let deliverRecords: (records: SubmissionRecord[]) => void = () => {}
+  let failRecords: (error: Error) => void = () => {}
   subscribeRoomMock.mockImplementation((_code, onChange) => {
     deliverRoom = onChange
     return unsubscribeMock
@@ -148,12 +163,19 @@ function captureSnapshotCallbacks() {
     failSubmissions = onError ?? (() => {})
     return unsubscribeMock
   })
+  subscribeRecordsMock.mockImplementation((_code, onChange, onError) => {
+    deliverRecords = onChange
+    failRecords = onError ?? (() => {})
+    return unsubscribeMock
+  })
   return {
     room: (room: RoomInfo | null) => deliverRoom(room),
     participants: (participants: Participant[]) => deliverParticipants(participants),
     notice: (notice: Notice | null) => deliverNotice(notice),
     submissions: (submissions: Submission[]) => deliverSubmissions(submissions),
     submissionsError: (error: Error) => failSubmissions(error),
+    records: (records: SubmissionRecord[]) => deliverRecords(records),
+    recordsError: (error: Error) => failRecords(error),
   }
 }
 
@@ -246,6 +268,7 @@ describe('RoundOpsPage', () => {
     rejectSubmissionMock.mockReset().mockResolvedValue(undefined)
     getSubmissionStatusFromServerMock.mockReset().mockResolvedValue('pending')
     subscribeSubmissionsMock.mockReset().mockReturnValue(unsubscribeMock)
+    subscribeRecordsMock.mockReset().mockReturnValue(unsubscribeMock)
   })
   afterEach(() => {
     while (mounted.length > 0) mounted.pop()!.unmount()
@@ -686,7 +709,7 @@ describe('RoundOpsPage', () => {
   })
 
   describe('탭', () => {
-    it('기록 탭은 준비 중 안내로 대체되고 운영 컨트롤을 숨긴다', async () => {
+    it('기록 탭은 운영 컨트롤을 숨기고 기록 화면을 보여준다', async () => {
       const deliver = captureSnapshotCallbacks()
       const wrapper = mountPage()
       deliver.room(hostRoom({ round: running() }))
@@ -694,11 +717,133 @@ describe('RoundOpsPage', () => {
 
       await wrapper.find('[data-value="log"]').trigger('click')
 
-      expect(wrapper.text()).toContain('기록 화면 준비 중')
+      expect(wrapper.text()).toContain('아직 기록이 없어요.')
       expect(findButton(wrapper, '일시정지')).toBeUndefined()
 
       await wrapper.find('[data-value="ops"]').trigger('click')
       expect(findButton(wrapper, '일시정지')).toBeDefined()
+    })
+  })
+
+  describe('기록 탭', () => {
+    /** 판정 이력 픽스처 — 제출자 u3(팀 B)의 킬샷. 기본은 이번 라운드(2)의 확정 건 */
+    function submissionRecord(overrides: Partial<SubmissionRecord> = {}): SubmissionRecord {
+      return {
+        id: 'r1',
+        uid: 'u3',
+        team: 'B',
+        round: 2,
+        photo: 'data:image/jpeg;base64,killshot',
+        status: 'approved',
+        createdAtMs: Date.now(),
+        targetTeam: 'A',
+        judgedAtMs: Date.now(),
+        ...overrides,
+      }
+    }
+
+    /** 기록 탭을 열고(로그 구독 시작) 기록 스냅샷과 배정 명단을 채운다 */
+    async function openLogTab(records: SubmissionRecord[]) {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      deliver.room(hostRoom({ round: running() }))
+      deliver.participants([assigned('u1', 'A'), assigned('u2', 'A'), assigned('u3', 'B')])
+      await flushPromises()
+      await wrapper.find('[data-value="log"]').trigger('click')
+      deliver.records(records)
+      await flushPromises()
+      return { deliver, wrapper }
+    }
+
+    it('기록 탭 첫 활성화에서만 로그를 구독한다 — 탭을 오가도 다시 열지 않는다', async () => {
+      const { wrapper } = await openLogTab([])
+
+      expect(subscribeRecordsMock).toHaveBeenCalledExactlyOnceWith(
+        'AB2C',
+        expect.any(Function),
+        expect.any(Function),
+      )
+
+      await wrapper.find('[data-value="ops"]').trigger('click')
+      await wrapper.find('[data-value="log"]').trigger('click')
+      expect(subscribeRecordsMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('전 라운드 기록을 라운드 구분·상태와 함께 보여준다', async () => {
+      const { wrapper } = await openLogTab([
+        submissionRecord({ id: 'r2', round: 2, status: 'pending', targetTeam: null, judgedAtMs: null }),
+        submissionRecord({ id: 'r1', round: 1 }),
+      ])
+
+      const text = wrapper.text()
+      expect(text).toContain('라운드 2')
+      expect(text).toContain('라운드 1')
+      expect(text).toContain('u3')
+      expect(wrapper.find('button[data-record="r2"]').text()).toContain('대기')
+      expect(wrapper.find('button[data-record="r1"]').text()).toContain('확정')
+      expect(wrapper.find('button[data-record="r1"]').text()).toContain('팀 A · 파랑')
+    })
+
+    it('판정된 기록을 누르면 읽기 전용 상세 시트가 열린다', async () => {
+      const { wrapper } = await openLogTab([submissionRecord()])
+
+      await wrapper.find('button[data-record="r1"]').trigger('click')
+      await flushPromises()
+
+      expect(document.body.textContent).toContain('킬샷 기록')
+      expect(document.body.textContent).toContain('잡힌 팀')
+      // 판정 시트가 아니다 — 확정/반려 액션이 없어야 읽기 전용이다
+      expect(document.body.textContent).not.toContain('판정 확정')
+    })
+
+    it('이번 라운드의 대기 기록을 누르면 판정 시트가 바로 열린다', async () => {
+      const { wrapper } = await openLogTab([
+        submissionRecord({ status: 'pending', targetTeam: null, judgedAtMs: null }),
+      ])
+
+      await wrapper.find('button[data-record="r1"]').trigger('click')
+      await flushPromises()
+
+      expect(document.body.textContent).toContain('킬샷 판정')
+      expect(document.body.textContent).toContain('잡힌 팀 선택')
+    })
+
+    it('라운드가 지난 대기 기록은 판정할 수 없어 상세 시트로 연다', async () => {
+      const { wrapper } = await openLogTab([
+        submissionRecord({ round: 1, status: 'pending', targetTeam: null, judgedAtMs: null }),
+      ])
+
+      await wrapper.find('button[data-record="r1"]').trigger('click')
+      await flushPromises()
+
+      expect(document.body.textContent).toContain('킬샷 기록')
+      expect(document.body.textContent).toContain('판정되지 않은 채 라운드가 지난 제출이에요.')
+      expect(document.body.textContent).not.toContain('킬샷 판정')
+    })
+
+    it('기록 Listen 오류는 오류 카드와 토스트로 알린다', async () => {
+      const { deliver, wrapper } = await openLogTab([submissionRecord()])
+
+      deliver.recordsError(new Error('permission-denied'))
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('기록 연결 오류')
+      expect(toastMock).toHaveBeenCalledWith({
+        title: '기록 연결이 끊겼어요. 화면을 새로고침해 주세요.',
+        tone: 'danger',
+      })
+    })
+
+    it('시작 전(waiting) 방에서는 기록 대신 안내를 보여준다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      deliver.room(hostRoom({ status: 'waiting' }))
+      await flushPromises()
+
+      await wrapper.find('[data-value="log"]').trigger('click')
+
+      expect(wrapper.text()).toContain('게임이 아직 시작되지 않았어요')
+      expect(wrapper.text()).not.toContain('아직 기록이 없어요.')
     })
   })
 

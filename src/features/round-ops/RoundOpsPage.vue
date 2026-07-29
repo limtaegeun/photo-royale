@@ -9,11 +9,13 @@ import BaseDialog from '@/shared/components/BaseDialog.vue'
 import BaseSegmented from '@/shared/components/BaseSegmented.vue'
 import { normalizeRoomCode } from '@/features/waiting-room'
 import { useToast } from '@/shared/composables/useToast'
-import type { Submission, SubmissionTarget } from './api/submissions'
+import type { Submission, SubmissionRecord, SubmissionTarget } from './api/submissions'
 import JudgeQueueList from './components/JudgeQueueList.vue'
 import JudgeSheet from './components/JudgeSheet.vue'
 import NoticeCard from './components/NoticeCard.vue'
 import NoticeSheet from './components/NoticeSheet.vue'
+import RecordDetailSheet from './components/RecordDetailSheet.vue'
+import RecordLogList from './components/RecordLogList.vue'
 import RoundTimerCard from './components/RoundTimerCard.vue'
 import TimeAdjustCard from './components/TimeAdjustCard.vue'
 import { useRoundTimer } from './composables/useRoundTimer'
@@ -26,7 +28,7 @@ import { useRoundOpsStore } from './stores/useRoundOpsStore'
  *
  * 운영 탭은 방 문서(rooms/{code}.round)를 정본으로 삼아 실제 타이머·올스탑·시간 반영·공지를
  * 수행하고, 판정 탭은 참가자들이 제출한 킬샷(submissions)을 확정/반려한다.
- * 기록 탭은 화면 자체가 후속 작업이라 자리만 알린다.
+ * 기록 탭은 같은 submissions 컬렉션의 전 라운드 이력(대기 포함)을 최신순으로 되짚어 본다.
  */
 
 const route = useRoute()
@@ -44,10 +46,12 @@ const {
   participants,
   latestNotice,
   pendingSubmissions,
+  submissionRecords,
   pendingAdjustMinutes,
   pendingAction,
   actionError,
   submissionListenError,
+  recordListenError,
   isSendingNotice,
 } = storeToRefs(store)
 
@@ -57,8 +61,7 @@ const routeRoomCode = computed(() => normalizeRoomCode(String(route.params.roomC
 const { nowMs, formatted, displayState } = useRoundTimer(round)
 const JUDGE_ERROR_MESSAGE = '판정을 처리하지 못했어요. 다시 시도해 주세요.'
 
-/** 하단 탭 — 기록은 아직 화면이 없어 준비 중 안내만 보여준다.
- * 판정 탭은 다른 탭에서도 킬샷 도착을 알 수 있게 대기 건수 배지를 단다(도착 시 펄스). */
+/** 하단 탭 — 판정 탭은 다른 탭에서도 킬샷 도착을 알 수 있게 대기 건수 배지를 단다(도착 시 펄스). */
 const tabs = computed(() => [
   { label: '운영', value: 'ops' },
   {
@@ -78,6 +81,9 @@ const isEndGameDialogOpen = ref(false)
 const isJudgeSheetOpen = ref(false)
 /** 시트에서 판정 중인 킬샷 — 큐에서 고른 스냅샷을 들고 있는다(닫힌 뒤에도 애니메이션 동안 유지) */
 const judgingSubmission = ref<Submission | null>(null)
+const isRecordSheetOpen = ref(false)
+/** 상세 시트에서 보는 기록 — 판정 시트와 같은 이유로 스냅샷을 들고 있는다 */
+const viewingRecord = ref<SubmissionRecord | null>(null)
 
 /** 라운드 컨트롤은 게임이 실제로 진행 중일 때만 의미가 있다(rules도 playing에서만 쓰기를 허용한다) */
 const isPlaying = computed(() => gameStatus.value === 'playing')
@@ -133,6 +139,15 @@ watch(actionError, (message) => {
 watch(submissionListenError, (message) => {
   if (message !== null) toast({ title: message, tone: 'danger' })
 })
+watch(recordListenError, (message) => {
+  if (message !== null) toast({ title: message, tone: 'danger' })
+})
+
+// 기록 로그는 사진 포함 전체 이력이라 무겁다 — 기록 탭이 처음 열릴 때 게으르게 구독을 시작한다
+// (스토어가 중복 시작을 막는다). 방 스냅샷 도착 전이면 phase가 ready로 바뀔 때 다시 시도한다.
+watch([activeTab, phase], ([tab, currentPhase]) => {
+  if (tab === 'log' && currentPhase === 'ready') store.watchRecordLog()
+})
 
 /**
  * 게임 종료 — 성공하면 방 status가 waiting이 되고, 대기실 복귀는 아래 watch(스냅샷)가 맡는다.
@@ -157,6 +172,21 @@ function openJudgeSheet(submission: Submission) {
   if (pendingAction.value === 'judge') return
   judgingSubmission.value = submission
   isJudgeSheetOpen.value = true
+}
+
+/**
+ * 기록 행 선택 — 이번 라운드의 대기 건이면 기록 탭에서도 바로 판정할 수 있게 판정 시트를
+ * 연다(판정 큐와 같은 문서라 기존 판정 플로우를 그대로 탄다). 그 외(판정 완료, 판정 없이
+ * 라운드가 지난 대기 건)는 사진을 크게 확인하는 읽기 전용 상세 시트로 보낸다 —
+ * rules가 지난 라운드 판정을 막으므로 판정 시트를 열어 줘도 확정이 실패한다.
+ */
+function openRecord(record: SubmissionRecord) {
+  if (record.status === 'pending' && record.round === assignmentRound.value && isPlaying.value) {
+    openJudgeSheet(record)
+    return
+  }
+  viewingRecord.value = record
+  isRecordSheetOpen.value = true
 }
 
 /** 실패 원인을 큐의 로컬 상태로 추정하지 않고 서버 문서의 확정 상태로 판별한다. */
@@ -379,13 +409,33 @@ onUnmounted(() => {
         </p>
       </template>
 
-      <!-- 기록 탭은 화면 자체가 후속 작업이라 자리만 알린다 -->
-      <BaseCard v-else padding="lg">
-        <h2 class="text-subheading text-content">기록 화면 준비 중</h2>
-        <p class="mt-3 text-body text-content-secondary">
-          이 탭은 다음 단계에서 구현돼요.
+      <template v-else>
+        <BaseCard v-if="recordListenError !== null" padding="lg">
+          <h2 class="text-subheading text-danger">기록 연결 오류</h2>
+          <p class="mt-3 text-body text-content-secondary">
+            {{ recordListenError }} 연결이 복구되기 전에는 기록을 확인할 수 없어요.
+          </p>
+        </BaseCard>
+        <RecordLogList
+          v-else-if="phase === 'ready' && isPlaying"
+          :records="submissionRecords"
+          :participants="participants"
+          :now-ms="nowMs"
+          @select="openRecord"
+        />
+
+        <!-- 판정 탭과 같은 기준 — 시작 전에는 쌓일 기록이 없다 -->
+        <BaseCard v-else-if="phase === 'ready'" padding="lg">
+          <h2 class="text-subheading text-content">게임이 아직 시작되지 않았어요</h2>
+          <p class="mt-3 text-body text-content-secondary">
+            게임을 시작하면 킬샷 제출과 판정 결과가 이곳에 쌓여요.
+          </p>
+        </BaseCard>
+
+        <p v-else class="text-body text-content-secondary" role="status">
+          기록을 불러오는 중…
         </p>
-      </BaseCard>
+      </template>
     </div>
 
     <!-- 하단 고정 탭 — 목업이 하단 고정이고, 콘텐츠가 길어져도 탭이 화면 밖으로 밀리지 않아야 한다
@@ -409,6 +459,14 @@ onUnmounted(() => {
       :now-ms="nowMs"
       @approve="approveKillshot"
       @reject="rejectKillshot"
+    />
+
+    <RecordDetailSheet
+      v-model:open="isRecordSheetOpen"
+      :record="viewingRecord"
+      :participants="participants"
+      :assignment-round="assignmentRound"
+      :now-ms="nowMs"
     />
 
     <!-- 되돌릴 수 없는 액션이라 무엇이 사라지는지 밝히되, 두 문장을 한 덩어리로 두면
