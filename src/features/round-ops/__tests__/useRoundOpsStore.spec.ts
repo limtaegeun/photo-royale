@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import type { Participant, RoomInfo, RoundState } from '@/features/waiting-room'
 import type { Notice } from '../api/notices'
-import type { Submission } from '../api/submissions'
+import type { Submission, SubmissionRecord } from '../api/submissions'
 
 // 테스트마다 로그인 상태를 바꿀 수 있도록 getter로 참조한다
 const authState = { user: null as { uid: string } | null }
@@ -18,6 +18,7 @@ const unsubscribeRoomMock = vi.fn<() => void>()
 const unsubscribeParticipantsMock = vi.fn<() => void>()
 const unsubscribeNoticeMock = vi.fn<() => void>()
 const unsubscribeSubmissionsMock = vi.fn<() => void>()
+const unsubscribeRecordsMock = vi.fn<() => void>()
 const subscribeRoomMock =
   vi.fn<(code: string, onChange: (room: RoomInfo | null) => void) => () => void>()
 const subscribeParticipantsMock =
@@ -30,6 +31,14 @@ const subscribeSubmissionsMock =
       code: string,
       round: number,
       onChange: (submissions: Submission[]) => void,
+      onError?: (error: Error) => void,
+    ) => () => void
+  >()
+const subscribeRecordsMock =
+  vi.fn<
+    (
+      code: string,
+      onChange: (records: SubmissionRecord[]) => void,
       onError?: (error: Error) => void,
     ) => () => void
   >()
@@ -105,6 +114,11 @@ vi.mock('../api/submissions', () => ({
     onChange: (submissions: Submission[]) => void,
     onError?: (error: Error) => void,
   ) => subscribeSubmissionsMock(code, round, onChange, onError),
+  subscribeToSubmissionLog: (
+    code: string,
+    onChange: (records: SubmissionRecord[]) => void,
+    onError?: (error: Error) => void,
+  ) => subscribeRecordsMock(code, onChange, onError),
 }))
 
 import { useRoundOpsStore } from '../stores/useRoundOpsStore'
@@ -117,6 +131,8 @@ function captureSnapshotCallbacks() {
   let deliverParticipants: (participants: Participant[]) => void = () => {}
   let deliverNotice: (notice: Notice | null) => void = () => {}
   let deliverSubmissions: (submissions: Submission[]) => void = () => {}
+  let deliverRecords: (records: SubmissionRecord[]) => void = () => {}
+  let failRecords: (error: Error) => void = () => {}
   subscribeRoomMock.mockImplementation((_code, onChange) => {
     deliverRoom = onChange
     return unsubscribeRoomMock
@@ -133,11 +149,18 @@ function captureSnapshotCallbacks() {
     deliverSubmissions = onChange
     return unsubscribeSubmissionsMock
   })
+  subscribeRecordsMock.mockImplementation((_code, onChange, onError) => {
+    deliverRecords = onChange
+    failRecords = onError ?? (() => {})
+    return unsubscribeRecordsMock
+  })
   return {
     room: (room: RoomInfo | null) => deliverRoom(room),
     participants: (participants: Participant[]) => deliverParticipants(participants),
     notice: (notice: Notice | null) => deliverNotice(notice),
     submissions: (submissions: Submission[]) => deliverSubmissions(submissions),
+    records: (records: SubmissionRecord[]) => deliverRecords(records),
+    recordsError: (error: Error) => failRecords(error),
   }
 }
 
@@ -212,10 +235,12 @@ describe('useRoundOpsStore', () => {
     subscribeParticipantsMock.mockReset().mockReturnValue(unsubscribeParticipantsMock)
     subscribeNoticeMock.mockReset().mockReturnValue(unsubscribeNoticeMock)
     subscribeSubmissionsMock.mockReset().mockReturnValue(unsubscribeSubmissionsMock)
+    subscribeRecordsMock.mockReset().mockReturnValue(unsubscribeRecordsMock)
     unsubscribeRoomMock.mockReset()
     unsubscribeParticipantsMock.mockReset()
     unsubscribeNoticeMock.mockReset()
     unsubscribeSubmissionsMock.mockReset()
+    unsubscribeRecordsMock.mockReset()
   })
   afterEach(() => {
     vi.useRealTimers()
@@ -696,6 +721,102 @@ describe('useRoundOpsStore', () => {
       deliver.submissions([submission])
 
       expect(store.pendingSubmissions).toEqual([submission])
+    })
+  })
+
+  describe('기록 로그', () => {
+    function record(overrides: Partial<SubmissionRecord> = {}): SubmissionRecord {
+      return {
+        id: 'r1',
+        uid: 'u3',
+        team: 'B',
+        round: 2,
+        photo: 'data:image/jpeg;base64,killshot',
+        status: 'approved',
+        createdAtMs: NOW,
+        targetTeam: 'A',
+        judgedAtMs: NOW,
+        ...overrides,
+      }
+    }
+
+    it('watchRecordLog는 첫 호출에만 구독을 시작하고 스냅샷을 그대로 보관한다', () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room())
+
+      store.watchRecordLog()
+      store.watchRecordLog()
+
+      expect(subscribeRecordsMock).toHaveBeenCalledExactlyOnceWith(
+        'AB2C',
+        expect.any(Function),
+        expect.any(Function),
+      )
+
+      deliver.records([record()])
+      expect(store.submissionRecords).toEqual([record()])
+    })
+
+    it('진입 전에는 기록을 구독하지 않는다', () => {
+      const store = useRoundOpsStore()
+
+      store.watchRecordLog()
+
+      expect(subscribeRecordsMock).not.toHaveBeenCalled()
+    })
+
+    it('Listen 오류는 stale 기록을 비우고 안내를 세운다', () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room())
+      store.watchRecordLog()
+      deliver.records([record()])
+
+      deliver.recordsError(new Error('permission-denied'))
+
+      expect(store.submissionRecords).toEqual([])
+      expect(store.recordListenError).toBe('기록 연결이 끊겼어요. 화면을 새로고침해 주세요.')
+    })
+
+    it('leave는 기록 구독을 해제하고 상태를 초기화한다 — 재진입 시 다시 구독할 수 있다', () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room())
+      store.watchRecordLog()
+      deliver.records([record()])
+
+      store.leave()
+
+      expect(unsubscribeRecordsMock).toHaveBeenCalledTimes(1)
+      expect(store.submissionRecords).toEqual([])
+      expect(store.recordListenError).toBeNull()
+
+      store.enter('CD3E')
+      store.watchRecordLog()
+      expect(subscribeRecordsMock).toHaveBeenNthCalledWith(
+        2,
+        'CD3E',
+        expect.any(Function),
+        expect.any(Function),
+      )
+    })
+
+    it('방 문서가 사라지면(not-found) 기록 구독도 해제하고 비운다', () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room())
+      store.watchRecordLog()
+      deliver.records([record()])
+
+      deliver.room(null)
+
+      expect(unsubscribeRecordsMock).toHaveBeenCalledTimes(1)
+      expect(store.submissionRecords).toEqual([])
     })
   })
 

@@ -68,6 +68,17 @@ export interface SubmissionTarget {
   participantUid: string
 }
 
+/**
+ * 기록 탭이 보는 판정 이력 한 건 — 대기(pending)를 포함한 모든 상태를 담고,
+ * 확정(approved)이면 잡힌 팀 완장(targetTeam)이 함께 남는다.
+ */
+export interface SubmissionRecord extends Submission {
+  /** 확정 시 잡힌 팀 완장(A~Z 1글자) — 대기·반려는 null */
+  targetTeam: string | null
+  /** 판정 시각 — 대기 중이거나 serverTimestamp 반영 전이면 null */
+  judgedAtMs: number | null
+}
+
 interface FirestoreTimestamp {
   toMillis: () => number
 }
@@ -100,6 +111,30 @@ function toPendingSubmission(id: string, data: Record<string, unknown>): Submiss
     photo: data.photo,
     status: data.status,
     createdAtMs: isFirestoreTimestamp(data.createdAt) ? data.createdAt.toMillis() : null,
+  }
+}
+
+function toSubmissionRecord(id: string, data: Record<string, unknown>): SubmissionRecord | null {
+  if (
+    typeof data.uid !== 'string' ||
+    typeof data.team !== 'string' ||
+    typeof data.round !== 'number' ||
+    typeof data.photo !== 'string' ||
+    (data.status !== 'pending' && data.status !== 'approved' && data.status !== 'rejected')
+  ) {
+    return null
+  }
+
+  return {
+    id,
+    uid: data.uid,
+    team: data.team,
+    round: data.round,
+    photo: data.photo,
+    status: data.status,
+    createdAtMs: isFirestoreTimestamp(data.createdAt) ? data.createdAt.toMillis() : null,
+    targetTeam: data.status === 'approved' && typeof data.targetTeam === 'string' ? data.targetTeam : null,
+    judgedAtMs: isFirestoreTimestamp(data.judgedAt) ? data.judgedAt.toMillis() : null,
   }
 }
 
@@ -147,6 +182,37 @@ export function subscribeToPendingSubmissions(
           (a.createdAtMs ?? Number.MAX_SAFE_INTEGER) - (b.createdAtMs ?? Number.MAX_SAFE_INTEGER),
       )
       onChange(submissions)
+    },
+    onError,
+  )
+}
+
+/**
+ * 판정 이력 전체 실시간 구독 — 기록 탭 전용. pending 큐와 달리 서버 필터 없이 전 라운드·
+ * 전 상태를 받는다. 사진(data URL)이 커서 이 구독은 무겁다 — 화면이 항상 열지 않고
+ * 기록 탭이 처음 활성화될 때 한 번만 게으르게 시작한다(스토어가 보장).
+ * 정렬은 클라이언트에서 한다(pending 큐와 같은 이유: 복합 인덱스 회피).
+ * 기록은 로그라 최신이 위다 — 라운드 내림차순, 라운드 안에서는 최신 제출부터.
+ * 서버 시각 반영 전(null)은 방금 제출된 것이므로 맨 앞에 둔다.
+ */
+export function subscribeToSubmissionLog(
+  code: string,
+  onChange: (records: SubmissionRecord[]) => void,
+  onError?: (error: Error) => void,
+): Unsubscribe {
+  return onSnapshot(
+    collection(db, 'rooms', code, 'submissions'),
+    (snapshot) => {
+      const records = snapshot.docs.flatMap((submissionDoc) => {
+        const record = toSubmissionRecord(submissionDoc.id, submissionDoc.data())
+        return record === null ? [] : [record]
+      })
+      records.sort(
+        (a, b) =>
+          b.round - a.round ||
+          (b.createdAtMs ?? Number.MAX_SAFE_INTEGER) - (a.createdAtMs ?? Number.MAX_SAFE_INTEGER),
+      )
+      onChange(records)
     },
     onError,
   )

@@ -27,7 +27,9 @@ import {
   getSubmissionStatusFromServer,
   rejectSubmission as requestRejectSubmission,
   subscribeToPendingSubmissions,
+  subscribeToSubmissionLog,
   type Submission,
+  type SubmissionRecord,
   type SubmissionTarget,
 } from '../api/submissions'
 import { computeRemainingMs } from '../composables/useRoundTimer'
@@ -55,6 +57,9 @@ const ACTION_ERROR_MESSAGE = '요청을 처리하지 못했어요. 다시 시도
  */
 const SUBMISSIONS_LISTEN_ERROR_MESSAGE = '판정 큐 연결이 끊겼어요. 화면을 새로고침해 주세요.'
 
+/** 기록 로그 Listen의 영구 오류 안내 — 판정 큐와 같은 이유(죽은 리스너는 재연결하지 않는다) */
+const RECORD_LOG_LISTEN_ERROR_MESSAGE = '기록 연결이 끊겼어요. 화면을 새로고침해 주세요.'
+
 /**
  * H04 라운드 운영 상태 — 호스트(진행자) 전용. 방 문서(rooms/{code})의 round 맵이 타이머의
  * 정본이라 새로고침·기기 교체에도 복원되고, 참가자 명단·최근 공지도 같은 방 경로에서 구독한다.
@@ -72,6 +77,8 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
   const latestNotice = ref<Notice | null>(null)
   /** 판정 대기 킬샷 — 오래된 순(api가 정렬). 판정되면 서버 필터(pending)로 자연 제거된다 */
   const pendingSubmissions = ref<Submission[]>([])
+  /** 전 라운드 판정 이력 — 최신이 위(api가 정렬). 기록 탭이 처음 열릴 때만 구독한다 */
+  const submissionRecords = ref<SubmissionRecord[]>([])
   /** −1분/+1분으로 쌓는 로컬 대기값 — '반영'을 눌러야 서버(참가자 전원)에 커밋된다 */
   const pendingAdjustMinutes = ref(0)
   const pendingAction = ref<RoundOpsAction | null>(null)
@@ -79,12 +86,14 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
   const isActionPending = computed(() => pendingAction.value !== null)
   const actionError = ref<string | null>(null)
   const submissionListenError = ref<string | null>(null)
+  const recordListenError = ref<string | null>(null)
   const isSendingNotice = ref(false)
 
   let unsubscribeRoom: (() => void) | null = null
   let unsubscribeParticipants: (() => void) | null = null
   let unsubscribeNotice: (() => void) | null = null
   let unsubscribeSubmissions: (() => void) | null = null
+  let unsubscribeRecords: (() => void) | null = null
   let subscribedSubmissionRound: number | null = null
   /** leave/enter를 거친 이전 화면의 비동기 완료가 현재 화면 상태를 덮지 못하게 하는 세대값 */
   let sessionGeneration = 0
@@ -148,6 +157,9 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
         unsubscribeSubmissions = null
         subscribedSubmissionRound = null
         pendingSubmissions.value = []
+        unsubscribeRecords?.()
+        unsubscribeRecords = null
+        submissionRecords.value = []
         return
       }
       subscribeToCurrentRoundSubmissions(code, nextRoom.assignmentRound ?? 0)
@@ -167,21 +179,44 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     unsubscribeParticipants?.()
     unsubscribeNotice?.()
     unsubscribeSubmissions?.()
+    unsubscribeRecords?.()
     unsubscribeRoom = null
     unsubscribeParticipants = null
     unsubscribeNotice = null
     unsubscribeSubmissions = null
+    unsubscribeRecords = null
     subscribedSubmissionRound = null
     roomCode.value = null
     room.value = null
     participants.value = []
     latestNotice.value = null
     pendingSubmissions.value = []
+    submissionRecords.value = []
     pendingAdjustMinutes.value = 0
     pendingAction.value = null
     actionError.value = null
     submissionListenError.value = null
+    recordListenError.value = null
     phase.value = 'idle'
+  }
+
+  /**
+   * 기록 로그 구독 시작 — 사진 포함 전체 이력이라 무거워서 enter에서 항상 열지 않고,
+   * 기록 탭이 처음 활성화될 때 화면이 호출한다. 이미 구독 중이면 아무것도 하지 않는다.
+   */
+  function watchRecordLog() {
+    if (roomCode.value === null || unsubscribeRecords !== null) return
+    unsubscribeRecords = subscribeToSubmissionLog(
+      roomCode.value,
+      (records) => {
+        recordListenError.value = null
+        submissionRecords.value = records
+      },
+      () => {
+        submissionRecords.value = []
+        recordListenError.value = RECORD_LOG_LISTEN_ERROR_MESSAGE
+      },
+    )
   }
 
   /** 라운드 쓰기의 공통 가드 — 호스트 본인 + 진행 중(playing)인 방에서만, 한 번에 하나씩 */
@@ -336,11 +371,13 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     participants,
     latestNotice,
     pendingSubmissions,
+    submissionRecords,
     pendingAdjustMinutes,
     pendingAction,
     isActionPending,
     actionError,
     submissionListenError,
+    recordListenError,
     isSendingNotice,
     myId,
     isHost,
@@ -350,6 +387,7 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     assignedTeamCount,
     enter,
     leave,
+    watchRecordLog,
     start,
     pause,
     resume,

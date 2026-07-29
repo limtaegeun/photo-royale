@@ -45,6 +45,7 @@ import {
   rejectSubmission,
   submitKillshot,
   subscribeToPendingSubmissions,
+  subscribeToSubmissionLog,
 } from '../api/submissions'
 
 beforeEach(() => {
@@ -166,6 +167,108 @@ describe('subscribeToPendingSubmissions', () => {
     const onError = vi.fn<(error: Error) => void>()
 
     subscribeToPendingSubmissions('AB2C', 2, vi.fn(), onError)
+
+    expect(onSnapshotMock.mock.calls[0]![2]).toBe(onError)
+  })
+})
+
+describe('subscribeToSubmissionLog', () => {
+  it('전체 컬렉션을 서버 필터 없이 구독하고 판정 결과까지 SubmissionRecord로 매핑한다', () => {
+    const unsubscribe = vi.fn<() => void>()
+    onSnapshotMock.mockReturnValue(unsubscribe)
+    const onChange = vi.fn<(records: unknown) => void>()
+
+    const result = subscribeToSubmissionLog('AB2C', onChange)
+
+    // where/orderBy 없이 컬렉션 참조 자체를 구독한다 — 기록 탭은 전 라운드·전 상태가 재료다
+    const [logQuery, onNext] = onSnapshotMock.mock.calls[0]!
+    expect(logQuery).toEqual({ path: 'rooms/AB2C/submissions' })
+
+    onNext({
+      docs: [
+        pendingDoc('s1', { toMillis: () => 1_000 }, {
+          status: 'approved',
+          targetTeam: 'A',
+          targetParticipantUid: 'u1',
+          judgedAt: { toMillis: () => 2_000 },
+        }),
+      ],
+    })
+    expect(onChange).toHaveBeenCalledWith([
+      {
+        id: 's1',
+        uid: 'player1',
+        team: 'B',
+        round: 2,
+        photo: 'data:image/jpeg;base64,killshot',
+        status: 'approved',
+        createdAtMs: 1_000,
+        targetTeam: 'A',
+        judgedAtMs: 2_000,
+      },
+    ])
+    expect(result).toBe(unsubscribe)
+  })
+
+  it('확정이 아닌 문서의 targetTeam은 신뢰하지 않고 null로 남긴다', () => {
+    onSnapshotMock.mockReturnValue(vi.fn<() => void>())
+    const onChange = vi.fn<(records: Array<{ targetTeam: string | null }>) => void>()
+
+    subscribeToSubmissionLog('AB2C', onChange)
+    const onNext = onSnapshotMock.mock.calls[0]![1]
+
+    onNext({
+      docs: [
+        pendingDoc('rejected', null, { status: 'rejected', targetTeam: 'A' }),
+        pendingDoc('pending', null),
+      ],
+    })
+
+    expect(
+      onChange.mock.calls[0]![0].map((record) => record.targetTeam),
+    ).toEqual([null, null])
+  })
+
+  it('라운드 내림차순, 라운드 안에서는 최신 제출부터 — 서버 시각 반영 전(null)은 맨 앞', () => {
+    onSnapshotMock.mockReturnValue(vi.fn<() => void>())
+    const onChange = vi.fn<(records: Array<{ id: string }>) => void>()
+
+    subscribeToSubmissionLog('AB2C', onChange)
+    const onNext = onSnapshotMock.mock.calls[0]![1]
+
+    onNext({
+      docs: [
+        pendingDoc('r1-old', { toMillis: () => 1_000 }, { round: 1 }),
+        pendingDoc('r2-new', { toMillis: () => 3_000 }, { round: 2 }),
+        pendingDoc('r2-just-sent', null, { round: 2 }),
+        pendingDoc('r2-old', { toMillis: () => 2_000 }, { round: 2 }),
+      ],
+    })
+
+    expect(onChange.mock.calls[0]![0].map((record) => record.id)).toEqual([
+      'r2-just-sent',
+      'r2-new',
+      'r2-old',
+      'r1-old',
+    ])
+  })
+
+  it('스키마가 깨진 문서는 타입 단언하지 않고 기록에서 제외한다', () => {
+    onSnapshotMock.mockReturnValue(vi.fn<() => void>())
+    const onChange = vi.fn<(records: Array<{ id: string }>) => void>()
+
+    subscribeToSubmissionLog('AB2C', onChange)
+    const onNext = onSnapshotMock.mock.calls[0]![1]
+    onNext({ docs: [pendingDoc('invalid', null, { status: 'broken' })] })
+
+    expect(onChange).toHaveBeenCalledWith([])
+  })
+
+  it('영구 Listen 오류 콜백을 Firestore에 전달한다', () => {
+    onSnapshotMock.mockReturnValue(vi.fn<() => void>())
+    const onError = vi.fn<(error: Error) => void>()
+
+    subscribeToSubmissionLog('AB2C', vi.fn(), onError)
 
     expect(onSnapshotMock.mock.calls[0]![2]).toBe(onError)
   })
