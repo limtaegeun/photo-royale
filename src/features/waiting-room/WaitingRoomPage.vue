@@ -7,7 +7,7 @@ import BaseButton from '@/shared/components/BaseButton.vue'
 import BaseCard from '@/shared/components/BaseCard.vue'
 import BaseSectionHeader from '@/shared/components/BaseSectionHeader.vue'
 import PlayerChip from '@/shared/components/PlayerChip.vue'
-import { DEFAULT_GAME_MODE } from '@/features/game-mode'
+import { DEFAULT_GAME_MODE, GAME_MODES } from '@/features/game-mode'
 import {
   AssignmentBoard,
   MAX_ASSIGNABLE_MEMBERS,
@@ -46,6 +46,25 @@ const {
   gameStatus,
   isRoundStarted,
 } = storeToRefs(store)
+
+/**
+ * 확정된 라운드의 차수·모드 요약 — 배정 확정 전(assignmentRound 0)에는 null이다.
+ *
+ * **기본값을 표시하지 않는 것이 핵심이다.** room.gameMode는 필드가 없는 방에서 normalizeRoom이
+ * DEFAULT_GAME_MODE로 채우므로(rooms.ts), 배정 전에도 값은 '일반전'으로 읽힌다 — 그대로 보여주면
+ * 진행자가 고르지도 않은 모드를 확정된 것처럼 알리게 된다. 모드가 실제로 정해지는 시점은
+ * 배정 확정(assignmentRound와 gameMode를 원자적으로 커밋)뿐이다.
+ *
+ * 차수를 모드와 붙여 쓴다 — 하단 CTA가 '다음 차수 배정'이라, 이 줄이 차수를 빼고 모드만 말하면
+ * 진행자가 '게임 시작'이 이번 차수 재실행인지 다음 차수인지 구분할 근거를 잃는다.
+ */
+const confirmedRoundSummary = computed(() => {
+  if (assignmentRound.value === 0) return null
+  return {
+    round: assignmentRound.value,
+    modeLabel: GAME_MODES[room.value?.gameMode ?? DEFAULT_GAME_MODE].label,
+  }
+})
 
 // 호스트 팀 배정 보드 — 드래프트는 로컬 스토어에만 쌓이고 "배정 확정"만 서버에 쓴다
 const taStore = useTeamAssignmentStore()
@@ -220,16 +239,36 @@ async function copyInviteLink() {
                담당하므로 이 카드는 코드·상태·초대에만 집중한다(같은 숫자를 두 번 보여주지 않는다).
                코드는 카드 내 주요 정보(text-heading)로, display(카운트다운용)는 과하다 -->
           <BaseCard>
-            <div class="flex items-center justify-between gap-3">
-              <!-- 방 코드는 받아 적어 입력하는 값이라 mono + 자간으로 0/O·1/I 오독을 줄인다 -->
-              <p class="text-heading text-content">
-                ROOM <span class="font-mono tracking-widest">{{ roomCode }}</span>
-              </p>
-              <BaseBadge tone="info" appearance="outline" size="sm">대기 중</BaseBadge>
+            <!-- 카드 안 블록 간격도 mt-* 대신 gap으로 준다 — 모드 줄이 조건부라 마진 체인이면
+                 배정 전/후로 초대 버튼 위 여백이 달라진다 -->
+            <div class="flex flex-col gap-4">
+              <!-- 코드·상태·모드는 "이 방의 지금 상태"라 한 덩어리로 묶고 gap-2로 붙인다 -->
+              <div class="flex flex-col gap-2">
+                <div class="flex items-center justify-between gap-3">
+                  <!-- 방 코드는 받아 적어 입력하는 값이라 mono + 자간으로 0/O·1/I 오독을 줄인다 -->
+                  <p class="text-heading text-content">
+                    ROOM <span class="font-mono tracking-widest">{{ roomCode }}</span>
+                  </p>
+                  <BaseBadge tone="info" appearance="outline" size="sm">대기 중</BaseBadge>
+                </div>
+
+                <!-- 진행자가 모드를 바꾸지 않으면 직전 라운드 모드가 그대로 반복되므로(배정 보드의
+                     기본값), '게임 시작'이 무슨 모드를 켜는지 이 줄에서 확인할 수 있어야 한다.
+                     이 줄을 실제로 보는 건 호스트와 **이번 라운드에 배정되지 않은 게스트**다 —
+                     배정된 게스트는 이 카드가 RoundAssignmentCard로 대체되므로 보지 못하고,
+                     그쪽 규칙서('이번 게임 규칙서')가 모드명을 이미 보여준다(live-qa W-03 실측). -->
+                <p v-if="confirmedRoundSummary !== null" class="text-caption text-content-secondary">
+                  {{ confirmedRoundSummary.round }}차 라운드 ·
+                  <span class="font-semibold text-content">
+                    {{ confirmedRoundSummary.modeLabel }}
+                  </span>
+                </p>
+              </div>
+
+              <BaseButton variant="ghost" size="md" class="w-full" @click="copyInviteLink">
+                초대 링크 복사
+              </BaseButton>
             </div>
-            <BaseButton variant="ghost" size="md" class="mt-4 w-full" @click="copyInviteLink">
-              초대 링크 복사
-            </BaseButton>
           </BaseCard>
 
           <!-- 입장 명단 -->

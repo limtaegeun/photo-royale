@@ -183,6 +183,40 @@ describe('WaitingRoomPage', () => {
     expect(wrapper.text()).not.toContain('참가자 3명')
   })
 
+  /**
+   * 배정 확정 전에는 room.gameMode가 기본값('일반전')으로 채워져 있어도 표시하지 않는다 —
+   * 진행자가 고르지 않은 모드를 확정된 것처럼 알리는 것이기 때문이다.
+   */
+  it('배정 확정 전에는 룸 카드에 차수·모드를 표시하지 않는다', async () => {
+    captureSnapshotCallbacks()
+    const wrapper = mountPage()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('ROOM AB2C')
+    expect(wrapper.text()).not.toContain('차 라운드')
+    expect(wrapper.text()).not.toContain('일반전')
+  })
+
+  /** '게임 시작'이 무슨 모드를 켜는지 대기실에서 확인할 수 있어야 한다(호스트·게스트 공통) */
+  it('배정 확정 후에는 룸 카드에 차수와 게임 모드를 표시한다', async () => {
+    getRoomMock.mockResolvedValue(MY_ROOM)
+    const deliver = captureSnapshotCallbacks()
+    const wrapper = mountPage()
+    await flushPromises()
+
+    deliver.room({
+      hostUid: 'me',
+      status: 'waiting',
+      assignmentRound: 3,
+      gameMode: 'group',
+      round: null,
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('3차 라운드')
+    expect(wrapper.text()).toContain('그룹전')
+  })
+
   it('참가자가 없으면 명단 대신 초대 안내 문구를 보여준다', async () => {
     const deliver = captureSnapshotCallbacks()
     const wrapper = mountPage()
