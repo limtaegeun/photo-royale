@@ -22,6 +22,8 @@ const { title: headerTitle, description: headerDescription } = useAppHeader()
         :show-profile-link="authStore.isLoggedIn"
         :title="headerTitle ?? route.meta.appHeaderTitle"
         :description="headerDescription ?? route.meta.appHeaderDescription"
+        :back-to="route.meta.appHeaderBackTo"
+        :back-label="route.meta.appHeaderBackLabel"
       />
       <RouterView />
     </main>
