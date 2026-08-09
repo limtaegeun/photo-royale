@@ -917,7 +917,8 @@ describe('RoundOpsPage', () => {
       expect(endGameMock).not.toHaveBeenCalled()
     })
 
-    it('먼저 판정하기를 고르면 종료하지 않고 다이얼로그만 닫는다', async () => {
+    /** 라벨이 약속한 대로 판정 탭까지 데려가야 한다 — 닫기만 하면 진행자가 탭을 손으로 찾는다 */
+    it('먼저 판정하기를 고르면 종료하지 않고 판정 탭으로 데려간다', async () => {
       const wrapper = await openEndedRound(1)
 
       await findButton(wrapper, '라운드 종료')!.trigger('click')
@@ -931,6 +932,8 @@ describe('RoundOpsPage', () => {
 
       expect(endGameMock).not.toHaveBeenCalled()
       expect(document.body.textContent).not.toContain('판정하지 않은 킬샷이 있어요')
+      // 판정 탭으로 전환됐다 — 대기 큐 화면의 안내가 보인다
+      expect(wrapper.text()).toContain('사진 속 완장의 팀을 확인해 판정해 주세요.')
     })
 
     it('확인하면 대기 건을 남겨 둔 채 라운드를 종료한다', async () => {

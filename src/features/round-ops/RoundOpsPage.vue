@@ -197,6 +197,15 @@ function requestFinishRound() {
   void finishRound()
 }
 
+/**
+ * '먼저 판정하기' — 다이얼로그를 닫고 **판정 탭까지 데려간다**. 닫기만 하면 진행자가 탭을 손으로
+ * 찾아야 해서 라벨이 약속한 동작과 어긋난다(live-qa 실측 지적).
+ */
+function goJudgePending() {
+  isFinishRoundDialogOpen.value = false
+  activeTab.value = 'judge'
+}
+
 /** 전송에 성공했을 때만 시트를 닫는다 — 실패하면 입력을 남겨 둔 채 재시도할 수 있어야 한다 */
 async function sendNotice(text: string) {
   const sent = await store.submitNotice(text)
@@ -538,7 +547,7 @@ onUnmounted(() => {
             variant="ghost"
             size="lg"
             class="w-full"
-            @click="isFinishRoundDialogOpen = false"
+            @click="goJudgePending"
           >
             먼저 판정하기
           </BaseButton>
