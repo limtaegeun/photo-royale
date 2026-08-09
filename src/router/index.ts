@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import type { RouteLocationRaw } from 'vue-router'
 import { CameraPage } from '@/features/camera'
 import { EntryPage } from '@/features/entry'
 import { RoundOpsPage } from '@/features/round-ops'
@@ -14,6 +15,10 @@ declare module 'vue-router' {
     appHeaderTitle?: string
     /** AppHeader 타이틀 아래 한 줄 설명 */
     appHeaderDescription?: string
+    /** AppHeader 좌측 이탈 링크의 목적지 — 지정한 화면에만 뒤로가기 수단이 생긴다 */
+    appHeaderBackTo?: RouteLocationRaw
+    /** AppHeader 좌측 이탈 링크의 접근성 라벨 */
+    appHeaderBackLabel?: string
   }
 }
 
@@ -96,6 +101,10 @@ const router = createRouter({
         requiresAuth: true,
         appHeaderTitle: '프로필',
         appHeaderDescription: '계정 정보를 관리해요.',
+        // 헤더 아이콘으로만 들어오는 잎 화면 — 되돌아갈 링크가 없으면 브라우저 뒤로가기 외에
+        // 이탈 수단이 없다. 진입 경로가 화면마다 달라 히스토리 대신 랜딩으로 고정한다
+        appHeaderBackTo: { name: 'entry' },
+        appHeaderBackLabel: '홈으로',
       },
     },
   ],
