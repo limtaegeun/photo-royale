@@ -3,7 +3,9 @@ import {
   collection,
   doc,
   getDocFromServer,
+  limit,
   onSnapshot,
+  orderBy,
   query,
   serverTimestamp,
   updateDoc,
@@ -188,10 +190,18 @@ export function subscribeToPendingSubmissions(
 }
 
 /**
+ * 기록 탭 구독 건수 상한 — 킬샷 사진이 data URL로 인라인 저장되어 무제한 구독은 모바일
+ * 메모리·다운로드 과금 위험이 크다. 5라운드×20명 규모를 여유 있게 덮는 최근 200건으로 제한한다.
+ */
+export const RECORD_LOG_LIMIT = 200
+
+/**
  * 판정 이력 전체 실시간 구독 — 기록 탭 전용. pending 큐와 달리 서버 필터 없이 전 라운드·
  * 전 상태를 받는다. 사진(data URL)이 커서 이 구독은 무겁다 — 화면이 항상 열지 않고
  * 기록 탭이 처음 활성화될 때 한 번만 게으르게 시작한다(스토어가 보장).
- * 정렬은 클라이언트에서 한다(pending 큐와 같은 이유: 복합 인덱스 회피).
+ * 서버에서는 createdAt 내림차순으로 최근 RECORD_LOG_LIMIT건만 받는다(무제한 구독의 모바일
+ * 메모리·과금 위험 완화) — orderBy가 단일 필드라 복합 인덱스가 필요 없다. 화면이 원하는
+ * 정렬(라운드 내림차순)은 여전히 클라이언트에서 한다(pending 큐와 같은 이유: 복합 인덱스 회피).
  * 기록은 로그라 최신이 위다 — 라운드 내림차순, 라운드 안에서는 최신 제출부터.
  * 서버 시각 반영 전(null)은 방금 제출된 것이므로 맨 앞에 둔다.
  */
@@ -200,8 +210,13 @@ export function subscribeToSubmissionLog(
   onChange: (records: SubmissionRecord[]) => void,
   onError?: (error: Error) => void,
 ): Unsubscribe {
-  return onSnapshot(
+  const logQuery = query(
     collection(db, 'rooms', code, 'submissions'),
+    orderBy('createdAt', 'desc'),
+    limit(RECORD_LOG_LIMIT),
+  )
+  return onSnapshot(
+    logQuery,
     (snapshot) => {
       const records = snapshot.docs.flatMap((submissionDoc) => {
         const record = toSubmissionRecord(submissionDoc.id, submissionDoc.data())

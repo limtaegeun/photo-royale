@@ -26,6 +26,8 @@ vi.mock('firebase/firestore', () => ({
   doc: (_db: unknown, ...segments: string[]): FakeRef => ({ path: segments.join('/') }),
   query: (source: FakeRef, ...constraints: unknown[]) => ({ source, constraints }),
   where: (field: string, op: string, value: unknown) => ({ where: field, op, value }),
+  orderBy: (field: string, direction: string) => ({ orderBy: field, direction }),
+  limit: (n: number) => ({ limit: n }),
   onSnapshot: (
     query: unknown,
     onNext: (snapshot: unknown) => void,
@@ -38,6 +40,7 @@ vi.mock('firebase/firestore', () => ({
 }))
 
 import {
+  RECORD_LOG_LIMIT,
   SUBMISSION_PHOTO_MAX_LENGTH,
   SUBMISSION_PHOTO_PREFIX,
   approveSubmission,
@@ -173,16 +176,22 @@ describe('subscribeToPendingSubmissions', () => {
 })
 
 describe('subscribeToSubmissionLog', () => {
-  it('전체 컬렉션을 서버 필터 없이 구독하고 판정 결과까지 SubmissionRecord로 매핑한다', () => {
+  it('createdAt 내림차순 + 최근 RECORD_LOG_LIMIT건으로 구독하고 판정 결과까지 SubmissionRecord로 매핑한다', () => {
     const unsubscribe = vi.fn<() => void>()
     onSnapshotMock.mockReturnValue(unsubscribe)
     const onChange = vi.fn<(records: unknown) => void>()
 
     const result = subscribeToSubmissionLog('AB2C', onChange)
 
-    // where/orderBy 없이 컬렉션 참조 자체를 구독한다 — 기록 탭은 전 라운드·전 상태가 재료다
+    // 무제한 구독 대신 서버 정렬(createdAt desc) + limit으로 최근 건만 받는다(모바일 메모리·과금 위험 완화)
     const [logQuery, onNext] = onSnapshotMock.mock.calls[0]!
-    expect(logQuery).toEqual({ path: 'rooms/AB2C/submissions' })
+    expect(logQuery).toEqual({
+      source: { path: 'rooms/AB2C/submissions' },
+      constraints: [
+        { orderBy: 'createdAt', direction: 'desc' },
+        { limit: RECORD_LOG_LIMIT },
+      ],
+    })
 
     onNext({
       docs: [

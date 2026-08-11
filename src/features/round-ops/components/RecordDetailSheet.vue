@@ -2,11 +2,13 @@
 import { computed } from 'vue'
 import BaseBadge from '@/shared/components/BaseBadge.vue'
 import BaseBottomSheet from '@/shared/components/BaseBottomSheet.vue'
-import { displayGroup, groupLabelKo } from '@/features/team-assignment'
+import { displayGroup } from '@/features/team-assignment'
 import { isAssignedInRound, type Participant } from '@/features/waiting-room'
-import type { SubmissionRecord } from '../api/submissions'
+import type { SubmissionRecord, SubmissionStatus } from '../api/submissions'
+import KillshotPhotoHeader from './KillshotPhotoHeader.vue'
 import { RECORD_STATUS_LABEL, RECORD_STATUS_TONE } from '../recordStatusStyles'
 import { formatRelativeTime } from '../relativeTime'
+import { participantName, teamChipLabel } from '../submissionDisplay'
 
 /**
  * 기록 상세 시트 — 리스트 썸네일로는 사진 속 완장을 확인하기 어려워 사진을 크게 보여주고,
@@ -28,10 +30,7 @@ const props = defineProps<Props>()
 
 const open = defineModel<boolean>('open', { default: false })
 
-const submitterName = computed(() => {
-  const uid = props.record?.uid
-  return props.participants.find((participant) => participant.id === uid)?.name ?? '알 수 없음'
-})
+const submitterName = computed(() => participantName(props.participants, props.record?.uid))
 
 /**
  * 지난 라운드 기록인지 — 팀 구성은 참가자 문서의 현재 배정만 남아 있어(라운드별 편성 이력을
@@ -59,18 +58,13 @@ function memberNames(team: string): string {
   return (memberNamesByTeam.value.get(team) ?? []).join(' · ')
 }
 
-/** 색+라벨 병기 규칙 — 완장 알파벳과 그룹 한글 라벨을 항상 함께 쓴다 */
-function teamChipLabel(team: string): string {
-  const label = groupLabelKo(team)
-  return label === '' ? `팀 ${team}` : `팀 ${team} · ${label}`
-}
-
 /**
  * 상태별 보조 설명 — 확정은 잡힌 팀 배지가 정보를 전달하므로 나머지 두 상태만 문장이 필요하다.
  * 이번 라운드의 대기 건은 호출부가 판정 시트로 보내므로, 여기 오는 대기 건은 판정되지 않은 채
- * 라운드가 지난 제출뿐이다(rules가 지난 라운드 판정을 막는다).
+ * 라운드가 지난 제출뿐이다(rules가 지난 라운드 판정을 막는다). approved는 키가 없다 —
+ * Partial이라 타입이 그 사실을 그대로 드러낸다.
  */
-const STATUS_DESCRIPTION: Record<string, string> = {
+const STATUS_DESCRIPTION: Partial<Record<SubmissionStatus, string>> = {
   pending: '판정되지 않은 채 라운드가 지난 제출이에요.',
   rejected: '킬로 인정되지 않은 제출이에요.',
 }
@@ -83,22 +77,14 @@ const STATUS_DESCRIPTION: Record<string, string> = {
     :description="record === null ? undefined : `라운드 ${record.round}`"
   >
     <div v-if="record" class="flex flex-col gap-5">
-      <img
-        :src="record.photo"
-        alt="제출된 킬샷"
-        class="max-h-72 w-full rounded-lg border border-stroke bg-surface object-contain"
-      />
-
-      <div class="flex flex-col gap-2">
-        <div class="flex items-center gap-2">
-          <BaseBadge :team="displayGroup(record.team) ?? undefined">
-            {{ teamChipLabel(record.team) }}
-          </BaseBadge>
-          <span class="min-w-0 truncate text-label text-content">{{ submitterName }}</span>
-          <span class="ml-auto shrink-0 text-caption text-content-secondary">
-            {{ formatRelativeTime(record.createdAtMs, nowMs) }} 제출
-          </span>
-        </div>
+      <KillshotPhotoHeader
+        :photo="record.photo"
+        photo-alt="제출된 킬샷"
+        :team="record.team"
+        :submitter-name="submitterName"
+        :created-at-ms="record.createdAtMs"
+        :now-ms="nowMs"
+      >
         <p
           v-if="memberNames(record.team) !== ''"
           class="text-caption break-keep text-content-secondary"
@@ -108,7 +94,7 @@ const STATUS_DESCRIPTION: Record<string, string> = {
         <p v-else-if="isPastRound" class="text-caption break-keep text-content-tertiary">
           지난 라운드의 팀원 구성은 남아 있지 않아요.
         </p>
-      </div>
+      </KillshotPhotoHeader>
 
       <div class="flex flex-col gap-3 rounded-md border border-stroke bg-surface p-4">
         <div class="flex items-center gap-2">

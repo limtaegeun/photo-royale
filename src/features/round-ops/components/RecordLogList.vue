@@ -1,14 +1,15 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import BaseBadge from '@/shared/components/BaseBadge.vue'
 import BaseCard from '@/shared/components/BaseCard.vue'
 import BaseSectionHeader from '@/shared/components/BaseSectionHeader.vue'
 import BaseSegmented from '@/shared/components/BaseSegmented.vue'
-import { displayGroup, groupLabelKo } from '@/features/team-assignment'
+import { displayGroup } from '@/features/team-assignment'
 import type { Participant } from '@/features/waiting-room'
 import type { SubmissionRecord } from '../api/submissions'
 import { RECORD_STATUS_LABEL, RECORD_STATUS_TONE } from '../recordStatusStyles'
 import { formatRelativeTime } from '../relativeTime'
+import { participantName, teamChipLabel } from '../submissionDisplay'
 
 /**
  * 기록 — 전 라운드의 킬샷 제출·판정 이력을 최신순으로 나열한다(대기 건 포함). 기본은 모든
@@ -39,9 +40,14 @@ const STATUS_FILTER_OPTIONS = [
   { label: '반려', value: 'rejected' },
 ]
 
-const statusFilter = ref<string>('all')
+/**
+ * 필터는 모델로 열어 둔다 — 탭을 떠나면 이 컴포넌트가 언마운트되면서 내부 ref가 사라져,
+ * 판정하러 갔다 돌아온 진행자가 좁혀 둔 조건을 매번 다시 골라야 했다. 호출부가 v-model로
+ * 묶으면 상태가 페이지에 남고, 묶지 않으면 로컬 폴백으로 지금처럼 동작한다.
+ */
+const statusFilter = defineModel<string>('statusFilter', { default: 'all' })
 /** null = 모든 라운드 */
-const roundFilter = ref<number | null>(null)
+const roundFilter = defineModel<number | null>('roundFilter', { default: null })
 
 /** 라운드 필터 선택지 — 필터로 좁혀도 선택지가 사라지지 않게 전체 기록에서 파생한다 */
 const roundOptions = computed(() =>
@@ -72,17 +78,6 @@ const roundGroups = computed<RoundGroup[]>(() => {
   return [...byRound.entries()].map(([round, records]) => ({ round, records }))
 })
 
-/** 명단 유실(경계 상황) 시에도 리스트가 깨지지 않게 안전 문구로 흡수한다 */
-function submitterName(uid: string): string {
-  return props.participants.find((participant) => participant.id === uid)?.name ?? '알 수 없음'
-}
-
-/** 색+라벨 병기 규칙 — 완장 알파벳과 그룹 한글 라벨을 항상 함께 쓴다 */
-function teamChipLabel(team: string): string {
-  const label = groupLabelKo(team)
-  return label === '' ? `팀 ${team}` : `팀 ${team} · ${label}`
-}
-
 /** 선택 상태별 클래스 — 보더 폭은 고정하고 색만 바꾼다(선택 이동 시 칩 크기 흔들림 방지) */
 const ROUND_CHIP_CLASS = {
   selected: 'border-transparent bg-brand text-on-brand',
@@ -109,18 +104,20 @@ function roundChipClass(selected: boolean): string {
 
       <!-- 라운드가 하나뿐이면 필터가 의미 없어 숨긴다. 칩 수가 라운드만큼 늘어나므로
            BaseSegmented(균등 분할) 대신 가로 스크롤 칩으로 둔다 -->
+      <!-- overflow-x-auto는 세로도 스크롤 박스로 만들어 ::before 히트 확장이 잘린다 —
+           패딩으로 확장분을 박스 안에 수용(레이아웃 이동은 음수 마진으로 상쇄) -->
       <div
         v-if="roundOptions.length >= 2"
         role="group"
         aria-label="라운드 필터"
-        class="flex gap-2 overflow-x-auto"
+        class="flex gap-2 overflow-x-auto py-1 -my-1"
       >
         <button
           type="button"
           :aria-pressed="roundFilter === null"
-          class="h-10 shrink-0 rounded-full border px-4 text-label font-bold whitespace-nowrap
-                 transition-colors duration-100 ease-standard focus-visible:outline-none
-                 focus-visible:ring-2 focus-visible:ring-brand"
+          class="chip-hit relative h-10 shrink-0 rounded-full border px-4 text-label font-bold
+                 whitespace-nowrap transition-colors duration-100 ease-standard
+                 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
           :class="roundChipClass(roundFilter === null)"
           @click="roundFilter = null"
         >
@@ -132,9 +129,9 @@ function roundChipClass(selected: boolean): string {
           type="button"
           :data-round="round"
           :aria-pressed="roundFilter === round"
-          class="h-10 shrink-0 rounded-full border px-4 text-label font-bold whitespace-nowrap
-                 transition-colors duration-100 ease-standard focus-visible:outline-none
-                 focus-visible:ring-2 focus-visible:ring-brand"
+          class="chip-hit relative h-10 shrink-0 rounded-full border px-4 text-label font-bold
+                 whitespace-nowrap transition-colors duration-100 ease-standard
+                 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
           :class="roundChipClass(roundFilter === round)"
           @click="roundFilter = round"
         >
@@ -170,7 +167,7 @@ function roundChipClass(selected: boolean): string {
         </h3>
 
         <ul class="flex flex-col gap-3">
-          <li v-for="record in group.records" :key="record.id">
+          <li v-for="record in group.records" :key="record.id" class="log-row">
             <button
               type="button"
               :data-record="record.id"
@@ -185,6 +182,8 @@ function roundChipClass(selected: boolean): string {
                 :src="record.photo"
                 alt=""
                 aria-hidden="true"
+                loading="lazy"
+                decoding="async"
                 class="size-16 shrink-0 rounded-md border border-stroke bg-surface object-cover"
               />
               <span class="flex min-w-0 flex-1 flex-col gap-1">
@@ -201,7 +200,7 @@ function roundChipClass(selected: boolean): string {
                     </BaseBadge>
                   </template>
                 </span>
-                <span class="truncate text-label text-content">{{ submitterName(record.uid) }}</span>
+                <span class="truncate text-label text-content">{{ participantName(participants, record.uid) }}</span>
                 <span class="text-caption text-content-secondary">
                   {{ formatRelativeTime(record.createdAtMs, nowMs) }} 제출
                 </span>
@@ -234,3 +233,23 @@ function roundChipClass(selected: boolean): string {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* 히트 영역 확장 — 필터 칩 시각 높이(h-10=40px)가 최소 터치 타겟 48px(DESIGN_SYSTEM.md §3-5)
+   보다 낮으므로, SelectableMemberChip(team-assignment)의 ::before 확장 선례를 그대로 따른다. */
+.chip-hit::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: var(--pr-size-tap-minimum);
+  transform: translateY(-50%);
+}
+
+/* 오프스크린 행의 레이아웃·페인트를 생략한다 — 사진 목록이 길어질 때 스크롤 성능을 지킨다 */
+.log-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 88px;
+}
+</style>
