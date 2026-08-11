@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
+import { ref } from 'vue'
 import type { RoomInfo, RoundState } from '@/features/waiting-room'
 
 const replaceMock = vi.fn<(to: unknown) => void>()
@@ -22,6 +23,8 @@ const subscribeNoticeMock =
     ) => () => void
   >()
 const submitKillshotMock = vi.fn<(code: string, input: Record<string, unknown>) => Promise<void>>()
+/** 라운드 종료 게이트 테스트가 마운트 중간에 바꿔 끼울 수 있도록 실제 ref로 둔다 */
+const mockDisplayState = ref<'idle' | 'running' | 'paused' | 'ended'>('running')
 
 vi.mock('@/features/round-ops', async () => {
   const { computed } = await import('vue')
@@ -37,7 +40,7 @@ vi.mock('@/features/round-ops', async () => {
     ) => subscribeNoticeMock(code, onChange, onError),
     useRoundTimer: () => ({
       formatted: computed(() => '20:00'),
-      displayState: computed(() => 'running'),
+      displayState: mockDisplayState,
     }),
   }
 })
@@ -224,6 +227,7 @@ beforeEach(() => {
     return unsubscribeNoticeMock
   })
   submitKillshotMock.mockReset().mockResolvedValue(undefined)
+  mockDisplayState.value = 'running'
 })
 
 afterEach(() => {
@@ -345,6 +349,73 @@ describe('CameraPage 방 구독', () => {
   })
 })
 
+/**
+ * 타이머가 00:00(ended)에 닿아도 셔터·제출이 계속 살아 있으면 게스트가 종료를 인지할 방법이
+ * 없다. 확정 스펙(라운드당 20분)이 표시로만 존재하지 않도록 두 진입점을 모두 고정해 둔다.
+ */
+describe('CameraPage 라운드 종료 게이트', () => {
+  it('라운드가 종료되면 셔터가 비활성화된다', async () => {
+    mockDisplayState.value = 'ended'
+    const wrapper = await mountWithActiveCamera()
+
+    expect(findShutter(wrapper).attributes('disabled')).toBeDefined()
+  })
+
+  it('확인 화면이 열린 채 라운드가 종료되면 제출을 막고 안내한다', async () => {
+    stubCanvas()
+    stubKillshotEncoding()
+    deliverAssignedParticipants()
+    const deliverRoom = captureRoomSnapshot()
+    const wrapper = await mountWithActiveCamera()
+    deliverRoom(playingRoom())
+    await flushPromises()
+
+    // 사진은 라운드가 아직 진행 중일 때 찍어 확인 화면을 열어 둔다
+    await findShutter(wrapper).trigger('click')
+    await flushPromises()
+
+    // 확인 화면을 보는 도중 타이머가 00:00에 닿는다. 리렌더(disabled 반영)를 기다리지 않고
+    // 곧바로 클릭한다 — VTU의 trigger는 현재 DOM의 disabled 여부만 보고 이벤트 발송 자체를
+    // 건너뛰므로, 여기서 flush를 끼우면 버튼 disabled 경로만 검증하게 되어 submitPhoto의
+    // 진입 가드(이중 방어: 리렌더가 아직 반영되지 않은 순간의 클릭)를 더는 확인할 수 없다.
+    mockDisplayState.value = 'ended'
+    await findButtonByText(wrapper, '킬샷 제출')!.trigger('click')
+    await flushPromises()
+
+    expect(toastMock).toHaveBeenCalledWith({
+      title: '라운드가 종료되어 제출할 수 없어요.',
+      tone: 'danger',
+    })
+    expect(submitKillshotMock).not.toHaveBeenCalled()
+  })
+
+  /**
+   * HUD 종료 안내는 뷰파인더(v-if="!photo") 쪽에만 있어 확인 화면이 열리면 보이지 않았다.
+   * 셔터만 잠그고 제출 버튼을 열어 두면 확인 화면에서는 종료를 인지할 방법이 없어, 버튼
+   * disabled와 안내 문구를 확인 화면 자체에도 고정해 둔다.
+   */
+  it('확인 화면에서 라운드가 종료되면 제출 버튼이 비활성화되고 종료 안내를 보여준다', async () => {
+    stubCanvas()
+    deliverAssignedParticipants()
+    const deliverRoom = captureRoomSnapshot()
+    const wrapper = await mountWithActiveCamera()
+    deliverRoom(playingRoom())
+    await flushPromises()
+
+    await findShutter(wrapper).trigger('click')
+    await flushPromises()
+
+    mockDisplayState.value = 'ended'
+    await flushPromises()
+
+    const submitButton = findButtonByText(wrapper, '킬샷 제출')!
+    expect(submitButton.attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('라운드가 종료되어 제출할 수 없어요. 다시 찍기로 돌아가 주세요.')
+    // 팀 배정은 이미 확인됐으므로 미배정 안내와는 동시에 뜨지 않는다
+    expect(wrapper.text()).not.toContain('이번 라운드 팀 배정을 확인하는 중이에요')
+  })
+})
+
 describe('CameraPage', () => {
   it('마운트 시 카메라를 켜고 비디오에 스트림을 연결한다', async () => {
     const stream = createFakeStream()
@@ -411,7 +482,7 @@ describe('CameraPage', () => {
     expect(wrapper.text()).toContain('상대 완장 알파벳을 찍어 제출하세요.')
     expect(wrapper.text()).toContain('20:00')
     expect(wrapper.text()).toContain('팀 A · 하린')
-    expect(wrapper.text()).toContain('2팀 생존')
+    expect(wrapper.text()).toContain('2팀 참가')
     expect(wrapper.text()).toContain('아이템')
     expect(wrapper.text()).toContain('지도')
     expect(wrapper.text()).toContain('기록')
@@ -544,7 +615,7 @@ describe('CameraPage', () => {
       photo: 'data:image/jpeg;base64,killshot',
     })
     expect(toastMock).toHaveBeenCalledWith({
-      title: '킬샷을 제출했어요. 호스트 판정을 기다려 주세요.',
+      title: '킬샷을 제출했어요.',
       tone: 'success',
     })
     // 미리보기가 닫히고 콕핏으로 돌아가 다음 킬샷을 이어서 찍을 수 있다

@@ -72,6 +72,11 @@ let noticeResizeObserver: ResizeObserver | null = null
 
 const round = computed(() => room.value?.round ?? null)
 const { formatted: remainingTime, displayState } = useRoundTimer(round)
+/**
+ * 타이머가 0에 닿은 상태 — 확정 스펙(라운드당 20분)이 표시로만 존재하지 않도록 셔터·제출을
+ * 여기서 잠근다(RoundOpsPage의 동일 이름 파생값과 같은 뜻: displayState === 'ended').
+ */
+const isRoundEnded = computed(() => displayState.value === 'ended')
 const currentMode = computed(() => GAME_MODES[room.value?.gameMode ?? 'normal'])
 const objective = computed(
   () =>
@@ -95,7 +100,7 @@ const teammates = computed(() =>
         (participant) => participant.team === me.value?.team && participant.id !== me.value?.id,
       ),
 )
-const aliveTeamCount = computed(
+const assignedTeamCount = computed(
   // 탈락 상태는 아직 데이터 모델에 없다. 탈락 모델 기능이 추가되면 배정 팀 수 대신
   // 실제 생존 상태를 기준으로 계산하도록 교체한다.
   () => new Set(assignedParticipants.value.map((participant) => participant.team)).size,
@@ -103,9 +108,7 @@ const aliveTeamCount = computed(
 const teamLabel = computed(() => {
   if (me.value?.team === null || me.value === null) return '팀 확인 중'
   const partnerNames = teammates.value.map((participant) => participant.name).join(' · ')
-  return partnerNames
-    ? `팀 ${me.value.team} · ${partnerNames}`
-    : `팀 ${me.value.team} · 나 홀로 생존`
+  return partnerNames ? `팀 ${me.value.team} · ${partnerNames}` : `팀 ${me.value.team} · 1인 팀`
 })
 
 function leaveCockpit(nextRoom: RoomInfo | null) {
@@ -180,6 +183,12 @@ async function shoot() {
  * 성공하면 미리보기를 비우고 콕핏으로 돌아가 다음 킬샷을 이어서 찍을 수 있게 한다.
  */
 async function submitPhoto() {
+  // 확인 화면이 열린 채 00:00을 넘기는 경우를 막는다 — 셔터 비활성만으로는
+  // 이미 찍어둔 사진의 제출을 잠그지 못한다.
+  if (isRoundEnded.value) {
+    toast({ title: '라운드가 종료되어 제출할 수 없어요.', tone: 'danger' })
+    return
+  }
   const killshot = photo.value
   const submitter = me.value
   const currentRoom = room.value
@@ -198,7 +207,8 @@ async function submitPhoto() {
     return
   }
   clear()
-  toast({ title: '킬샷을 제출했어요. 호스트 판정을 기다려 주세요.', tone: 'success' })
+  // 판정 결과를 게스트에게 전달하는 채널이 없으므로 "기다려 주세요"를 약속하지 않는다
+  toast({ title: '킬샷을 제출했어요.', tone: 'success' })
 }
 
 onMounted(() => {
@@ -258,13 +268,15 @@ onUnmounted(() => {
               <BaseBadge tone="accent">목표</BaseBadge>
               <span class="text-caption text-content-secondary">{{ currentMode.label }}</span>
             </div>
-            <p class="mt-1 text-label text-pretty break-keep">{{ objective }}</p>
+            <p class="mt-1 text-label text-pretty break-keep">
+              {{ isRoundEnded ? '라운드가 종료됐어요. 진행자 안내를 기다려 주세요.' : objective }}
+            </p>
           </div>
           <div class="shrink-0 text-right" aria-label="게임 남은 시간">
             <p class="text-caption text-content-secondary">남은 시간</p>
             <p
               class="font-mono text-subheading"
-              :class="displayState === 'paused' ? 'text-warning' : 'text-info'"
+              :class="displayState === 'paused' || isRoundEnded ? 'text-warning' : 'text-info'"
             >
               {{ remainingTime }}
             </p>
@@ -279,7 +291,7 @@ onUnmounted(() => {
             {{ teamLabel }}
           </span>
           <span class="shrink-0 rounded-full bg-scrim-strong px-3 py-2 text-content">
-            {{ aliveTeamCount }}팀 생존
+            {{ assignedTeamCount }}팀 참가
           </span>
         </div>
 
@@ -383,6 +395,7 @@ onUnmounted(() => {
             padding="none"
             aria-label="킬샷 촬영"
             class="shutter col-start-2 row-start-1 mb-7 min-h-20 w-20"
+            :disabled="isRoundEnded"
             @click="shoot"
           >
             <span class="size-14 rounded-full bg-brand"></span>
@@ -413,6 +426,12 @@ onUnmounted(() => {
         <p v-if="me === null" class="text-center text-caption break-keep text-content-secondary">
           이번 라운드 팀 배정을 확인하는 중이에요. 배정이 확인되면 제출할 수 있어요.
         </p>
+        <p
+          v-else-if="isRoundEnded"
+          class="text-center text-caption break-keep text-content-secondary"
+        >
+          라운드가 종료되어 제출할 수 없어요. 다시 찍기로 돌아가 주세요.
+        </p>
         <div class="grid grid-cols-2 gap-3">
           <BaseButton
             variant="ghost"
@@ -427,7 +446,7 @@ onUnmounted(() => {
             variant="primary"
             size="lg"
             class="w-full"
-            :disabled="me === null"
+            :disabled="me === null || isRoundEnded"
             :loading="isSubmitting"
             @click="submitPhoto"
           >
