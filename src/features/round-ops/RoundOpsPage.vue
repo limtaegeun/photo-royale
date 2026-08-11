@@ -47,6 +47,7 @@ const {
   latestNotice,
   pendingSubmissions,
   submissionRecords,
+  recordsLoaded,
   pendingAdjustMinutes,
   pendingAction,
   actionError,
@@ -75,16 +76,34 @@ const tabs = computed(() => [
   { label: '기록', value: 'log' },
 ])
 
-const activeTab = ref<string>('ops')
+const TAB_VALUES = ['ops', 'judge', 'log'] as const
+
+/**
+ * 진입 탭 — 대기실의 '지난 라운드 기록 보기'가 `?tab=log`로 들어온다. 쿼리를 믿지 않고
+ * 아는 값일 때만 채택한다(오타·오래된 링크는 기본 탭으로 수렴).
+ */
+const initialTab = String(route.query.tab ?? '')
+const activeTab = ref<string>(
+  (TAB_VALUES as readonly string[]).includes(initialTab) ? initialTab : 'ops',
+)
 const isNoticeSheetOpen = ref(false)
 const isEndGameDialogOpen = ref(false)
 const isFinishRoundDialogOpen = ref(false)
+/**
+ * 종료 확인에 쓸 값 — 다이얼로그가 **열리는 순간**에 고정한다. 반응형 보간으로 두면 다이얼로그가
+ * 떠 있는 동안 다른 기기가 판정을 끝냈을 때 문구가 "0건이 남았어요"로 바뀌어, 진행자가 읽고
+ * 판단한 근거와 실제로 확인 중인 대상이 어긋난다.
+ */
+const finishDialogInfo = ref<{ count: number; uncertain: boolean } | null>(null)
 const isJudgeSheetOpen = ref(false)
 /** 시트에서 판정 중인 킬샷 — 큐에서 고른 스냅샷을 들고 있는다(닫힌 뒤에도 애니메이션 동안 유지) */
 const judgingSubmission = ref<Submission | null>(null)
 const isRecordSheetOpen = ref(false)
 /** 상세 시트에서 보는 기록 — 판정 시트와 같은 이유로 스냅샷을 들고 있는다 */
 const viewingRecord = ref<SubmissionRecord | null>(null)
+/** 기록 필터 — 탭을 오가며 목록이 언마운트돼도 좁혀 둔 조건을 잃지 않게 페이지가 들고 있는다 */
+const recordStatusFilter = ref<string>('all')
+const recordRoundFilter = ref<number | null>(null)
 
 /** 라운드 컨트롤은 게임이 실제로 진행 중일 때만 의미가 있다(rules도 playing에서만 쓰기를 허용한다) */
 const isPlaying = computed(() => gameStatus.value === 'playing')
@@ -154,8 +173,10 @@ watch(recordListenError, (message) => {
 
 // 기록 로그는 사진 포함 전체 이력이라 무겁다 — 기록 탭이 처음 열릴 때 게으르게 구독을 시작한다
 // (스토어가 중복 시작을 막는다). 방 스냅샷 도착 전이면 phase가 ready로 바뀔 때 다시 시도한다.
+// 게임 상태(playing)는 보지 않는다 — 기록은 라운드가 끝난 대기 상태에서 되짚어 보는 것이라
+// 렌더 조건도 같은 기준이어야 한다(둘이 어긋나면 구독만 열리고 화면은 안내 카드에 머문다).
 watch([activeTab, phase], ([tab, currentPhase]) => {
-  if (tab === 'log' && currentPhase === 'ready') store.watchRecordLog()
+  if (tab === 'log' && currentPhase === 'ready') store.subscribeToRecordLog()
 })
 
 /**
@@ -184,18 +205,43 @@ async function finishRound() {
 }
 
 /**
- * 판정하지 않은 킬샷이 남아 있으면 확인을 받고, 없으면 바로 종료한다. rules가 지난 라운드의
- * 판정을 막으므로 종료 후에는 기록 탭에서 읽기만 가능해진다 — 되돌릴 수 없는 손실이라 남은
- * 건수를 밝힌다. 남은 게 없는 흔한 경우에 다이얼로그를 끼우지 않는 이유는, 이 종료가 중단이
- * 아니라 타임테이블대로의 다음 단계라 확인을 물을 이유가 없기 때문이다.
+ * 판정하지 않은 킬샷이 남아 있으면 확인을 받고, 없으면 바로 종료한다. 종료하면 방이 waiting이
+ * 되어 판정 쓰기가 막히고(rules: playing에서만), 다음 차수 배정을 확정하면 영구히 판정할 수
+ * 없다 — 남은 건수가 결정을 바꾸는 정보라 확인을 끼운다. 남은 게 없는 흔한 경우에 다이얼로그를
+ * 끼우지 않는 이유는 이 종료가 중단이 아니라 타임테이블대로의 다음 단계이기 때문이다.
  */
 function requestFinishRound() {
-  if (pendingSubmissions.value.length > 0) {
+  // 큐 리스너가 죽으면 store가 stale 큐를 비우므로 "알 수 없음"이 "0건"으로 위장한다 — 그대로
+  // 두면 남은 킬샷이 확인 한 번 없이 영구 미판정으로 넘어간다. 모르는 상태는 아는 0건과 다르게
+  // 취급해 확인을 끼운다.
+  const uncertain = submissionListenError.value !== null
+  const count = pendingSubmissions.value.length
+  if (count > 0 || uncertain) {
+    finishDialogInfo.value = { count, uncertain }
     isFinishRoundDialogOpen.value = true
     return
   }
   void finishRound()
 }
+
+/** 열림 시점 스냅샷으로만 문구를 만든다 — 열려 있는 동안 건수가 바뀌어도 근거는 고정된다 */
+const finishDialogDescription = computed(() => {
+  const info = finishDialogInfo.value
+  if (info === null) return ''
+  return info.uncertain
+    ? '판정 큐 연결이 끊겨 대기 건수를 확인할 수 없어요. 판정되지 않은 킬샷은 킬로 인정되지 않아요.'
+    : `대기 중인 킬샷 ${info.count}건이 남았어요. 판정되지 않은 킬샷은 킬로 인정되지 않아요.`
+})
+
+/**
+ * uncertain(큐 리스너 사망)은 "몇 건이 남았는지"가 아니라 "확인 자체가 불가능하다"가
+ * 핵심이라 제목도 그 사실을 그대로 말한다 — count 문구를 재활용하면 알 수 없는 상태를
+ * 아는 것처럼 단정하게 된다.
+ */
+const isFinishDialogUncertain = computed(() => finishDialogInfo.value?.uncertain === true)
+const finishDialogTitle = computed(() =>
+  isFinishDialogUncertain.value ? '대기 건수를 확인할 수 없어요' : '판정하지 않은 킬샷이 있어요',
+)
 
 /**
  * '먼저 판정하기' — 다이얼로그를 닫고 **판정 탭까지 데려간다**. 닫기만 하면 진행자가 탭을 손으로
@@ -375,9 +421,11 @@ onUnmounted(() => {
             라운드 시작
           </BaseButton>
 
-          <!-- 시간 조정 — 진행 중인 타이머가 있을 때만 의미가 있다 -->
+          <!-- 시간 조정 — 종료(0:00) 상태에서도 남긴다. −1분 오조작으로 0에 닿으면 복구 수단이
+               전무했는데, rules는 방이 playing이면 round 쓰기를 허용하므로 +N분 반영이 그대로
+               성립하고 반영되는 순간 타이머가 running으로 돌아온다 -->
           <TimeAdjustCard
-            v-if="canControlTimer"
+            v-if="canControlTimer || isRoundEnded"
             :pending-minutes="pendingAdjustMinutes"
             :applying="pendingAction === 'adjust'"
             @adjust="store.adjustBy($event)"
@@ -477,21 +525,19 @@ onUnmounted(() => {
             {{ recordListenError }} 연결이 복구되기 전에는 기록을 확인할 수 없어요.
           </p>
         </BaseCard>
+        <!-- 판정 탭과 달리 게임 상태를 보지 않는다 — 라운드가 끝나 방이 waiting으로 돌아간 직후가
+             호스트가 기록을 확인할 유일한 시점이고, 대기실의 '지난 라운드 기록 보기'도 이리로
+             들어온다. 첫 스냅샷 전에는 목록을 그리지 않는다: 빈 배열이 "기록 없음"으로 읽혀
+             "아직 기록이 없어요"라는 확언이 도착 전에 떴다 -->
         <RecordLogList
-          v-else-if="phase === 'ready' && isPlaying"
+          v-else-if="phase === 'ready' && recordsLoaded"
+          v-model:status-filter="recordStatusFilter"
+          v-model:round-filter="recordRoundFilter"
           :records="submissionRecords"
           :participants="participants"
           :now-ms="nowMs"
           @select="openRecord"
         />
-
-        <!-- 판정 탭과 같은 기준 — 시작 전에는 쌓일 기록이 없다 -->
-        <BaseCard v-else-if="phase === 'ready'" padding="lg">
-          <h2 class="text-subheading text-content">게임이 아직 시작되지 않았어요</h2>
-          <p class="mt-3 text-body text-content-secondary">
-            게임을 시작하면 킬샷 제출과 판정 결과가 이곳에 쌓여요.
-          </p>
-        </BaseCard>
 
         <p v-else class="text-body text-content-secondary" role="status">
           기록을 불러오는 중…
@@ -534,22 +580,35 @@ onUnmounted(() => {
          남은 건수가 결정을 바꾸는 정보라 설명에 숫자를 넣는다 -->
     <BaseDialog
       v-model:open="isFinishRoundDialogOpen"
-      title="판정하지 않은 킬샷이 있어요"
-      :description="`대기 중인 킬샷 ${pendingSubmissions.length}건이 남았어요. 라운드를 종료하면 판정할 수 없어요.`"
+      :title="finishDialogTitle"
+      :description="finishDialogDescription"
     >
       <div class="flex flex-col gap-5">
         <p class="text-caption leading-(--pr-line-height-relaxed) break-keep text-content-tertiary">
-          종료해도 사진은 기록 탭에 남지만, 점수로는 집계되지 않아요.
+          사진은 삭제되지 않고 기록에 남아요.
         </p>
 
         <div class="flex flex-col gap-3">
           <BaseButton
+            v-if="!isFinishDialogUncertain"
             variant="ghost"
             size="lg"
             class="w-full"
             @click="goJudgePending"
           >
             먼저 판정하기
+          </BaseButton>
+          <!-- uncertain은 큐 리스너가 죽어 재연결 수단이 없는 상태다 — 판정 탭도 "판정 큐 연결
+               오류" 카드뿐이라 데려가도 할 수 있는 게 없으므로, 새로고침을 약속하지 않고
+               다이얼로그만 닫는다 -->
+          <BaseButton
+            v-else
+            variant="ghost"
+            size="lg"
+            class="w-full"
+            @click="isFinishRoundDialogOpen = false"
+          >
+            닫기
           </BaseButton>
           <BaseButton
             variant="danger"
@@ -576,23 +635,25 @@ onUnmounted(() => {
           팀 배정은 그대로 남아 다음 라운드를 이어서 준비할 수 있어요.
         </p>
 
+        <!-- 위 = 안전(계속 진행), 아래 = 파괴(종료). 같은 화면의 킬샷 종료 다이얼로그와 순서·무게를
+             맞춘다 — 두 모달의 위치가 반대면 한쪽에서 익힌 손이 다른 쪽에서 오조작으로 이어진다 -->
         <div class="flex flex-col gap-3">
           <BaseButton
-            variant="danger"
+            variant="ghost"
             size="lg"
+            class="w-full"
+            @click="isEndGameDialogOpen = false"
+          >
+            계속 진행
+          </BaseButton>
+          <BaseButton
+            variant="danger"
+            size="md"
             class="w-full"
             :loading="pendingAction === 'end'"
             @click="endGame"
           >
             게임 종료
-          </BaseButton>
-          <BaseButton
-            variant="ghost"
-            size="md"
-            class="w-full"
-            @click="isEndGameDialogOpen = false"
-          >
-            계속 진행
           </BaseButton>
         </div>
       </div>

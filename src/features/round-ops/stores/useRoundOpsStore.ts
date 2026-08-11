@@ -3,7 +3,7 @@ import { defineStore } from 'pinia'
 import { useAuthStore } from '@/features/auth'
 import {
   endGame,
-  isAssignedInRound,
+  markRoundPlayed,
   subscribeToParticipants,
   subscribeToRoom,
   type Participant,
@@ -79,6 +79,11 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
   const pendingSubmissions = ref<Submission[]>([])
   /** 전 라운드 판정 이력 — 최신이 위(api가 정렬). 기록 탭이 처음 열릴 때만 구독한다 */
   const submissionRecords = ref<SubmissionRecord[]>([])
+  /**
+   * 첫 기록 스냅샷이 도착했는지 — 빈 배열만으로는 "기록이 없다"와 "아직 안 왔다"를 구분할 수
+   * 없어, 화면이 구독 직후에 "아직 기록이 없어요"라는 확언을 띄우던 오표시를 막는다.
+   */
+  const recordsLoaded = ref(false)
   /** −1분/+1분으로 쌓는 로컬 대기값 — '반영'을 눌러야 서버(참가자 전원)에 커밋된다 */
   const pendingAdjustMinutes = ref(0)
   const pendingAction = ref<RoundOpsAction | null>(null)
@@ -104,16 +109,6 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
   /** 팀편성 차수 = 라운드 번호. 라운드 운영은 별도 번호를 두지 않고 이 값을 그대로 쓴다 */
   const assignmentRound = computed(() => room.value?.assignmentRound ?? 0)
   const round = computed(() => room.value?.round ?? null)
-
-  /** 요약 줄의 'M팀 배정' — 이번 라운드에 실제로 배정된 참가자들의 완장 고유 개수 */
-  const assignedTeamCount = computed(() => {
-    const armbands = new Set(
-      participants.value
-        .filter((participant) => isAssignedInRound(participant, assignmentRound.value))
-        .map((participant) => participant.team),
-    )
-    return armbands.size
-  })
 
   function subscribeToCurrentRoundSubmissions(code: string, roundNumber: number) {
     if (subscribedSubmissionRound === roundNumber) return
@@ -192,6 +187,7 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     latestNotice.value = null
     pendingSubmissions.value = []
     submissionRecords.value = []
+    recordsLoaded.value = false
     pendingAdjustMinutes.value = 0
     pendingAction.value = null
     actionError.value = null
@@ -203,15 +199,18 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
   /**
    * 기록 로그 구독 시작 — 사진 포함 전체 이력이라 무거워서 enter에서 항상 열지 않고,
    * 기록 탭이 처음 활성화될 때 화면이 호출한다. 이미 구독 중이면 아무것도 하지 않는다.
+   * 이름은 api 계층의 subscribeToXxx 계열과 동사를 맞춘다(같은 일에 두 동사를 쓰지 않는다).
    */
-  function watchRecordLog() {
+  function subscribeToRecordLog() {
     if (roomCode.value === null || unsubscribeRecords !== null) return
     unsubscribeRecords = subscribeToSubmissionLog(
       roomCode.value,
       (records) => {
+        recordsLoaded.value = true
         recordListenError.value = null
         submissionRecords.value = records
       },
+      // 오류 콜백에서는 loaded를 세우지 않는다 — 화면이 빈 목록이 아니라 오류 카드를 띄워야 한다
       () => {
         submissionRecords.value = []
         recordListenError.value = RECORD_LOG_LISTEN_ERROR_MESSAGE
@@ -251,10 +250,19 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     }
   }
 
-  /** 라운드 시작·재시작 — 기본 20분으로 카운트다운을 건다 */
+  /**
+   * 라운드 시작·재시작 — 기본 20분으로 카운트다운을 건다.
+   *
+   * 시작에 성공한 차수만 "플레이했음"으로 마크한다. 대기실의 재실행 가드(hasPlayedRound)가
+   * 이 마커를 근거로 같은 차수 재시작을 확인받는데, 실패한 시도까지 마크하면 라운드가 실제로는
+   * 시작되지 않은 방에서도 경고가 뜨는 오시작 복구 경로를 막는다.
+   */
   async function start() {
     if (!canWriteRound()) return
-    await runAction('start', () => startRound(roomCode.value!))
+    const code = roomCode.value!
+    const playedRound = assignmentRound.value
+    const started = await runAction('start', () => startRound(code))
+    if (started) markRoundPlayed(code, playedRound)
   }
 
   /** 올스탑 — 진행 중일 때만. 클릭 순간의 남은 시간을 서버에 고정한다 */
@@ -372,6 +380,7 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     latestNotice,
     pendingSubmissions,
     submissionRecords,
+    recordsLoaded,
     pendingAdjustMinutes,
     pendingAction,
     isActionPending,
@@ -384,10 +393,9 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     gameStatus,
     assignmentRound,
     round,
-    assignedTeamCount,
     enter,
     leave,
-    watchRecordLog,
+    subscribeToRecordLog,
     start,
     pause,
     resume,

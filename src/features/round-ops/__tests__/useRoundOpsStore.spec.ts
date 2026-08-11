@@ -44,14 +44,11 @@ const subscribeRecordsMock =
   >()
 
 const endGameMock = vi.fn<(code: string) => Promise<void>>()
+const markRoundPlayedMock = vi.fn<(code: string, round: number) => void>()
 
 vi.mock('@/features/waiting-room', () => ({
   endGame: (code: string) => endGameMock(code),
-  // 순수 판정 함수 — firebase에 의존하지 않으므로 실제와 같은 로직을 그대로 쓴다
-  isAssignedInRound: (participant: Participant, assignmentRound: number) =>
-    assignmentRound > 0 &&
-    participant.team !== null &&
-    participant.assignedRound === assignmentRound,
+  markRoundPlayed: (code: string, round: number) => markRoundPlayedMock(code, round),
   subscribeToRoom: (code: string, onChange: (room: RoomInfo | null) => void) =>
     subscribeRoomMock(code, onChange),
   subscribeToParticipants: (code: string, onChange: (participants: Participant[]) => void) =>
@@ -198,20 +195,6 @@ function deferred<T = void>() {
   return { promise, resolve, reject }
 }
 
-function assigned(id: string, team: string, assignedRound: number): Participant {
-  return {
-    id,
-    name: id,
-    team,
-    assignedRound,
-    gender: null,
-    isXTeam: false,
-    sameGenderStreak: 0,
-    previousPartnerIds: [],
-    isReady: true,
-  }
-}
-
 describe('useRoundOpsStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -231,6 +214,7 @@ describe('useRoundOpsStore', () => {
       mock.mockReset().mockResolvedValue(undefined)
     }
     getSubmissionStatusFromServerMock.mockReset().mockResolvedValue('pending')
+    markRoundPlayedMock.mockReset()
     subscribeRoomMock.mockReset().mockReturnValue(unsubscribeRoomMock)
     subscribeParticipantsMock.mockReset().mockReturnValue(unsubscribeParticipantsMock)
     subscribeNoticeMock.mockReset().mockReturnValue(unsubscribeNoticeMock)
@@ -351,25 +335,6 @@ describe('useRoundOpsStore', () => {
     })
   })
 
-  describe('요약 파생값', () => {
-    it('이번 라운드에 배정된 참가자의 완장 고유 개수를 팀 수로 센다', () => {
-      const deliver = captureSnapshotCallbacks()
-      const store = useRoundOpsStore()
-      store.enter('AB2C')
-      deliver.room(room({ assignmentRound: 2 }))
-
-      deliver.participants([
-        assigned('u1', 'A', 2),
-        assigned('u2', 'A', 2),
-        assigned('u3', 'B', 2),
-        // 직전 라운드 잔재 — 이번 라운드 팀 수에 섞이면 안 된다
-        assigned('u4', 'C', 1),
-      ])
-
-      expect(store.assignedTeamCount).toBe(2)
-    })
-  })
-
   describe('라운드 액션 가드', () => {
     it('호스트가 아니면 아무 것도 쓰지 않는다', async () => {
       const deliver = captureSnapshotCallbacks()
@@ -418,6 +383,31 @@ describe('useRoundOpsStore', () => {
       await store.start()
 
       expect(startRoundMock).toHaveBeenCalledExactlyOnceWith('AB2C')
+    })
+
+    /** 대기실의 재실행 가드(hasPlayedRound)가 읽는 마커 — 실제로 시작된 차수만 남아야 한다 */
+    it('시작에 성공하면 이번 배정 차수를 플레이한 것으로 마크한다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room({ assignmentRound: 3 }))
+
+      await store.start()
+
+      expect(markRoundPlayedMock).toHaveBeenCalledExactlyOnceWith('AB2C', 3)
+    })
+
+    /** 시작되지 않은 라운드까지 마크하면 오시작 복구(다시 시작)가 경고에 막힌다 */
+    it('시작에 실패하면 마크하지 않는다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room())
+      startRoundMock.mockRejectedValueOnce(new Error('offline'))
+
+      await store.start()
+
+      expect(markRoundPlayedMock).not.toHaveBeenCalled()
     })
 
     it('pause는 클릭 순간의 남은 시간을 계산해 넘긴다', async () => {
@@ -740,14 +730,14 @@ describe('useRoundOpsStore', () => {
       }
     }
 
-    it('watchRecordLog는 첫 호출에만 구독을 시작하고 스냅샷을 그대로 보관한다', () => {
+    it('subscribeToRecordLog는 첫 호출에만 구독을 시작하고 스냅샷을 그대로 보관한다', () => {
       const deliver = captureSnapshotCallbacks()
       const store = useRoundOpsStore()
       store.enter('AB2C')
       deliver.room(room())
 
-      store.watchRecordLog()
-      store.watchRecordLog()
+      store.subscribeToRecordLog()
+      store.subscribeToRecordLog()
 
       expect(subscribeRecordsMock).toHaveBeenCalledExactlyOnceWith(
         'AB2C',
@@ -762,22 +752,37 @@ describe('useRoundOpsStore', () => {
     it('진입 전에는 기록을 구독하지 않는다', () => {
       const store = useRoundOpsStore()
 
-      store.watchRecordLog()
+      store.subscribeToRecordLog()
 
       expect(subscribeRecordsMock).not.toHaveBeenCalled()
     })
 
-    it('Listen 오류는 stale 기록을 비우고 안내를 세운다', () => {
+    /** 빈 배열만으로는 "기록 없음"과 "아직 안 옴"을 구분할 수 없다 — 첫 스냅샷 도착을 따로 남긴다 */
+    it('첫 스냅샷이 도착해야 recordsLoaded가 선다 — 빈 목록도 도착이다', () => {
       const deliver = captureSnapshotCallbacks()
       const store = useRoundOpsStore()
       store.enter('AB2C')
       deliver.room(room())
-      store.watchRecordLog()
-      deliver.records([record()])
+
+      store.subscribeToRecordLog()
+      expect(store.recordsLoaded).toBe(false)
+
+      deliver.records([])
+
+      expect(store.recordsLoaded).toBe(true)
+    })
+
+    it('Listen 오류는 stale 기록을 비우고 안내를 세운다 — 도착으로 치지 않는다', () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room())
+      store.subscribeToRecordLog()
 
       deliver.recordsError(new Error('permission-denied'))
 
       expect(store.submissionRecords).toEqual([])
+      expect(store.recordsLoaded).toBe(false)
       expect(store.recordListenError).toBe('기록 연결이 끊겼어요. 화면을 새로고침해 주세요.')
     })
 
@@ -786,17 +791,18 @@ describe('useRoundOpsStore', () => {
       const store = useRoundOpsStore()
       store.enter('AB2C')
       deliver.room(room())
-      store.watchRecordLog()
+      store.subscribeToRecordLog()
       deliver.records([record()])
 
       store.leave()
 
       expect(unsubscribeRecordsMock).toHaveBeenCalledTimes(1)
       expect(store.submissionRecords).toEqual([])
+      expect(store.recordsLoaded).toBe(false)
       expect(store.recordListenError).toBeNull()
 
       store.enter('CD3E')
-      store.watchRecordLog()
+      store.subscribeToRecordLog()
       expect(subscribeRecordsMock).toHaveBeenNthCalledWith(
         2,
         'CD3E',
@@ -810,7 +816,7 @@ describe('useRoundOpsStore', () => {
       const store = useRoundOpsStore()
       store.enter('AB2C')
       deliver.room(room())
-      store.watchRecordLog()
+      store.subscribeToRecordLog()
       deliver.records([record()])
 
       deliver.room(null)
