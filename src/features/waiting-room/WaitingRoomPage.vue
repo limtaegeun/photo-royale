@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import BaseBadge from '@/shared/components/BaseBadge.vue'
 import BaseButton from '@/shared/components/BaseButton.vue'
 import BaseCard from '@/shared/components/BaseCard.vue'
+import BaseDialog from '@/shared/components/BaseDialog.vue'
 import BaseSectionHeader from '@/shared/components/BaseSectionHeader.vue'
 import PlayerChip from '@/shared/components/PlayerChip.vue'
 import { DEFAULT_GAME_MODE, GAME_MODES } from '@/features/game-mode'
@@ -18,6 +19,7 @@ import {
 import { useToast } from '@/shared/composables/useToast'
 import { useAppHeader } from '@/shared/composables/useAppHeader'
 import { normalizeRoomCode, type Participant } from './api/rooms'
+import { hasPlayedRound } from './roundPlayMarker'
 import { useWaitingRoomStore } from './stores/useWaitingRoomStore'
 
 const route = useRoute()
@@ -69,6 +71,8 @@ const confirmedRoundSummary = computed(() => {
 // 호스트 팀 배정 보드 — 드래프트는 로컬 스토어에만 쌓이고 "배정 확정"만 서버에 쓴다
 const taStore = useTeamAssignmentStore()
 const showAssignmentBoard = ref(false)
+/** 같은 차수 재실행 확인 — hasPlayedRound가 true일 때만 연다(requestStartGame 참조) */
+const isRestartRoundDialogOpen = ref(false)
 
 /** 참가자 → 배정 드래프트 멤버(배정 로직에 필요한 필드만 추린다) */
 function toDraftMember(participant: Participant): DraftMember {
@@ -133,6 +137,34 @@ function startAssignment() {
   showAssignmentBoard.value = true
 }
 
+/**
+ * '게임 시작' 클릭 — 이 기기가 이번 차수를 이미 플레이했으면(hasPlayedRound) 즉시 시작하지
+ * 않고 재실행 확인 다이얼로그를 연다. 라운드 종료는 status만 waiting으로 되돌리고
+ * assignmentRound·전원 레디는 보존하므로, 그대로 다시 누르면 같은 차수가 재실행되며 직전
+ * 라운드의 미판정 킬샷이 판정 큐에 부활하고 새 제출·기록이 한 라운드로 뭉친다(서버 rules는
+ * 아직 이를 막지 않는다 — 후속 과제). 마커가 없으면(첫 시작이거나 다음 차수로 배정을 새로
+ * 확정한 경우) 기존과 동일하게 즉시 시작한다.
+ */
+function requestStartGame() {
+  if (roomCode.value !== null && hasPlayedRound(roomCode.value, assignmentRound.value)) {
+    isRestartRoundDialogOpen.value = true
+    return
+  }
+  store.startPlaying()
+}
+
+/** 재실행 확인 다이얼로그 — 안전한 경로(다음 차수 배정)를 고르면 기존 팀 배정 시작 경로를 그대로 탄다 */
+function goNextAssignment() {
+  isRestartRoundDialogOpen.value = false
+  startAssignment()
+}
+
+/** 재실행 확인 다이얼로그 — 위험을 감수하고 같은 차수를 그대로 다시 시작한다 */
+function restartSameRound() {
+  isRestartRoundDialogOpen.value = false
+  store.startPlaying()
+}
+
 /** 확정 완료 — 보드를 닫고 기존 대기실 뷰로 복귀한다(명단에 완장 보더가 반영된다) */
 function onAssignmentConfirmed() {
   showAssignmentBoard.value = false
@@ -190,6 +222,16 @@ watch([gameStatus, isRoundStarted], ([status, roundStarted]) => {
     router.replace({ name: 'camera', params: { roomCode: roomCode.value } })
   }
 })
+
+/**
+ * 지난 라운드 기록 보기 — 라운드 종료 후 이번 방의 제출·판정 이력을 확인할 유일한 경로다.
+ * 라운드 운영 화면의 기록 탭으로 쿼리(?tab=log)를 붙여 이동한다 — 그 화면은 대기 상태에서도
+ * 기록 탭을 열람할 수 있게 바뀐다(round-ops 담당, 이 파일 범위 밖).
+ */
+function viewPastRecords() {
+  if (!roomCode.value) return
+  router.push({ name: 'round-ops', params: { roomCode: roomCode.value }, query: { tab: 'log' } })
+}
 
 /** 초대는 링크 복사 단일 채널 — 링크의 ?code=가 입장 화면의 자동 입장으로 이어진다 */
 async function copyInviteLink() {
@@ -352,7 +394,7 @@ async function copyInviteLink() {
           class="w-full"
           :loading="isStartingGame"
           :disabled="!canStartGame"
-          @click="store.startPlaying()"
+          @click="requestStartGame"
         >
           게임 시작
         </BaseButton>
@@ -363,6 +405,16 @@ async function copyInviteLink() {
           @click="startAssignment"
         >
           {{ assignmentRound > 0 ? `${assignmentRound + 1}차 팀 배정` : '팀 배정 시작' }}
+        </BaseButton>
+        <!-- 라운드 종료 후 기록을 확인할 유일한 경로 — 최소 한 번 배정된 방에서만 의미가 있다 -->
+        <BaseButton
+          v-if="assignmentRound > 0"
+          variant="ghost"
+          size="md"
+          class="w-full"
+          @click="viewPastRecords"
+        >
+          지난 라운드 기록 보기
         </BaseButton>
       </template>
 
@@ -382,5 +434,22 @@ async function copyInviteLink() {
         </BaseButton>
       </template>
     </div>
+
+    <!-- 같은 차수 재실행 확인 — 안전한 경로(다음 배정)를 위·크게 두고, 위험을 감수하는 경로
+         (그대로 재실행)는 아래·작게 둔다(기존 종료 확인 다이얼로그들과 같은 위계) -->
+    <BaseDialog
+      v-model:open="isRestartRoundDialogOpen"
+      title="이번 차수는 이미 진행했어요"
+      description="같은 차수로 다시 시작하면 지난 라운드의 판정하지 않은 킬샷이 판정 큐에 다시 나타나고, 새 기록이 같은 라운드로 합쳐져요."
+    >
+      <div class="flex flex-col gap-3">
+        <BaseButton variant="primary" size="lg" class="w-full" @click="goNextAssignment">
+          다음 팀 배정하기
+        </BaseButton>
+        <BaseButton variant="ghost" size="md" class="w-full" @click="restartSameRound">
+          그대로 다시 시작
+        </BaseButton>
+      </div>
+    </BaseDialog>
   </section>
 </template>
