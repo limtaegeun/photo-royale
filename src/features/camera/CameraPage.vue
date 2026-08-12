@@ -77,6 +77,12 @@ const { formatted: remainingTime, displayState } = useRoundTimer(round)
  * 여기서 잠근다(RoundOpsPage의 동일 이름 파생값과 같은 뜻: displayState === 'ended').
  */
 const isRoundEnded = computed(() => displayState.value === 'ended')
+/**
+ * 진행자가 일시정지(올스탑)를 건 상태 — 정지 중에도 셔터·제출이 살아 있으면 안전을 위한
+ * 전원 정지가 게임적으로는 지켜지지 않는다. ended가 항상 paused보다 먼저다(정지 중 남은
+ * 시간이 0에 닿으면 displayState가 자연히 'ended'로 넘어가 이 값은 false로 물러난다).
+ */
+const isPaused = computed(() => displayState.value === 'paused')
 const currentMode = computed(() => GAME_MODES[room.value?.gameMode ?? 'normal'])
 const objective = computed(
   () =>
@@ -189,6 +195,12 @@ async function submitPhoto() {
     toast({ title: '라운드가 종료되어 제출할 수 없어요.', tone: 'danger' })
     return
   }
+  // 확인 화면이 열린 채 일시정지가 걸리는 경우를 막는다 — 셔터 비활성만으로는
+  // 이미 찍어둔 사진의 제출을 잠그지 못한다.
+  if (isPaused.value) {
+    toast({ title: '일시정지 중에는 제출할 수 없어요.', tone: 'danger' })
+    return
+  }
   const killshot = photo.value
   const submitter = me.value
   const currentRoom = room.value
@@ -269,7 +281,13 @@ onUnmounted(() => {
               <span class="text-caption text-content-secondary">{{ currentMode.label }}</span>
             </div>
             <p class="mt-1 text-label text-pretty break-keep">
-              {{ isRoundEnded ? '라운드가 종료됐어요. 진행자 안내를 기다려 주세요.' : objective }}
+              {{
+                isRoundEnded
+                  ? '라운드가 종료됐어요. 진행자 안내를 기다려 주세요.'
+                  : isPaused
+                    ? '일시정지 중이에요. 자리에 멈춰 진행자 안내를 기다려 주세요.'
+                    : objective
+              }}
             </p>
           </div>
           <div class="shrink-0 text-right" aria-label="게임 남은 시간">
@@ -395,7 +413,7 @@ onUnmounted(() => {
             padding="none"
             aria-label="킬샷 촬영"
             class="shutter col-start-2 row-start-1 mb-7 min-h-20 w-20"
-            :disabled="isRoundEnded"
+            :disabled="isRoundEnded || isPaused"
             @click="shoot"
           >
             <span class="size-14 rounded-full bg-brand"></span>
@@ -432,6 +450,12 @@ onUnmounted(() => {
         >
           라운드가 종료되어 제출할 수 없어요. 다시 찍기로 돌아가 주세요.
         </p>
+        <p
+          v-else-if="isPaused"
+          class="text-center text-caption break-keep text-content-secondary"
+        >
+          일시정지 중이라 제출할 수 없어요. 재개되면 다시 제출해 주세요.
+        </p>
         <div class="grid grid-cols-2 gap-3">
           <BaseButton
             variant="ghost"
@@ -446,7 +470,7 @@ onUnmounted(() => {
             variant="primary"
             size="lg"
             class="w-full"
-            :disabled="me === null || isRoundEnded"
+            :disabled="me === null || isRoundEnded || isPaused"
             :loading="isSubmitting"
             @click="submitPhoto"
           >
