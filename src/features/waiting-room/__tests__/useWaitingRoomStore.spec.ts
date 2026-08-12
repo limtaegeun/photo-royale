@@ -77,6 +77,7 @@ const GUEST_ROOM: RoomInfo = {
   status: 'waiting',
   assignmentRound: 0,
   gameMode: 'normal',
+  roundModes: {},
   round: null,
 }
 const MY_ROOM: RoomInfo = {
@@ -84,6 +85,7 @@ const MY_ROOM: RoomInfo = {
   status: 'waiting',
   assignmentRound: 0,
   gameMode: 'normal',
+  roundModes: {},
   round: null,
 }
 
@@ -303,6 +305,7 @@ describe('useWaitingRoomStore', () => {
       status: 'waiting',
       assignmentRound: 2,
       gameMode: 'normal',
+      roundModes: {},
       round: null,
     }
 
@@ -415,6 +418,7 @@ describe('useWaitingRoomStore', () => {
       status: 'waiting',
       assignmentRound: 1,
       gameMode: 'normal',
+      roundModes: {},
       round: null,
     }
 

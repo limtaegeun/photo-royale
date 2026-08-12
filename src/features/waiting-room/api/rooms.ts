@@ -47,6 +47,12 @@ export interface RoomInfo {
   assignmentRound: number
   /** 확정된 이번 라운드 게임 모드. 필드가 없으면(기존 방·배정 전) 일반전(normal) */
   gameMode: GameModeId
+  /**
+   * 차수 → 확정 모드 이력. 키는 팀편성 차수 문자열(Firestore 맵 키는 문자열만 된다).
+   * gameMode는 확정마다 덮어써지므로 이 맵만이 과거 라운드가 무슨 모드였는지 알려 준다.
+   * 이력을 남기기 전에 확정된 기존 방은 필드가 없어 빈 객체다.
+   */
+  roundModes: Record<string, GameModeId>
   /** 진행 중인 라운드 타이머. 필드가 없으면(라운드 시작 전) null */
   round: RoundState | null
 }
@@ -112,6 +118,21 @@ function toRoundState(raw: unknown): RoundState | null {
   }
 }
 
+/**
+ * 방 문서의 roundModes 맵 → 차수 문자열 → 모드 레코드. 필드가 없던 기존 방은 빈 객체이고,
+ * 값이 유효한 모드 id가 아닌 엔트리는 **그 엔트리만** 버린다 — 한 차수가 오염돼도 나머지 라운드
+ * 이력은 계속 읽혀야 하기 때문이다(gameMode 단건은 기본값으로 수렴시키지만, 이력은 대체할
+ * 기본값이 없으므로 "모르는 차수"로 두고 라벨을 생략하는 쪽이 안전하다).
+ */
+function toRoundModes(raw: unknown): Record<string, GameModeId> {
+  if (raw === null || typeof raw !== 'object') return {}
+  const roundModes: Record<string, GameModeId> = {}
+  for (const [round, mode] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof mode === 'string' && isGameModeId(mode)) roundModes[round] = mode
+  }
+  return roundModes
+}
+
 /** 방 문서 데이터 → RoomInfo. 단건 조회와 실시간 구독이 같은 매핑을 쓰도록 한 곳에 둔다 */
 function toRoomInfo(data: Record<string, unknown>): RoomInfo {
   const gameMode = data.gameMode
@@ -121,6 +142,7 @@ function toRoomInfo(data: Record<string, unknown>): RoomInfo {
     assignmentRound: (data.assignmentRound as number | undefined) ?? 0,
     gameMode:
       typeof gameMode === 'string' && isGameModeId(gameMode) ? gameMode : DEFAULT_GAME_MODE,
+    roundModes: toRoundModes(data.roundModes ?? null),
     round: toRoundState(data.round ?? null),
   }
 }
