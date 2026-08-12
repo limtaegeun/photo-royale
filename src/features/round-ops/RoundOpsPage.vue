@@ -38,6 +38,7 @@ const store = useRoundOpsStore()
 const {
   roomCode,
   phase,
+  room,
   round,
   gameStatus,
   isHost,
@@ -574,6 +575,7 @@ onUnmounted(() => {
           :records="submissionRecords"
           :participants="participants"
           :now-ms="nowMs"
+          :round-modes="room?.roundModes ?? {}"
           @select="openRecord"
         />
 

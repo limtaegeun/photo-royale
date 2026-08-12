@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
+import type { GameModeId } from '@/features/game-mode'
 import type { Participant } from '@/features/waiting-room'
 import type { SubmissionRecord } from '../api/submissions'
 import RecordLogList from '../components/RecordLogList.vue'
@@ -35,14 +36,20 @@ function record(id: string, overrides: Partial<SubmissionRecord> = {}): Submissi
   }
 }
 
-function mountList(records: SubmissionRecord[]) {
+function mountList(records: SubmissionRecord[], roundModes?: Record<string, GameModeId>) {
   return mount(RecordLogList, {
     props: {
       records,
       participants: [participant('u1', 'A'), participant('u3', 'B')],
       nowMs: NOW,
+      roundModes,
     },
   })
+}
+
+/** 라운드 구분선(h3)만 뽑는다 — 라운드 필터 칩도 '라운드 N'을 쓰므로 요소로 구분한다 */
+function roundDividers(wrapper: ReturnType<typeof mountList>): string[] {
+  return wrapper.findAll('h3').map((divider) => divider.text())
 }
 
 describe('RecordLogList', () => {
@@ -60,6 +67,22 @@ describe('RecordLogList', () => {
     expect(text.indexOf('라운드 2')).toBeLessThan(text.indexOf('라운드 1'))
     expect(text).toContain('u3')
     expect(text).toContain('방금 제출')
+  })
+
+  /**
+   * "라운드 3"만으로는 그 라운드가 그룹전이었는지 왕잡기였는지 되짚을 수 없다 — 방 문서의
+   * 차수 → 모드 이력(roundModes)이 있으면 구분선에 함께 적는다.
+   */
+  it('라운드 구분선에 그 차수의 확정 모드를 병기하고, 이력이 없는 차수는 예전 라벨을 지킨다', () => {
+    const records = [record('r2', { round: 2 }), record('r1', { round: 1 })]
+
+    // 라운드 2만 이력이 있는 방 — 필터 칩 라벨(좁아서 모드 미포함)은 그대로 둔다
+    const withHistory = mountList(records, { 2: 'king-hunt' })
+    expect(roundDividers(withHistory)).toEqual(['라운드 2 · 왕잡기', '라운드 1'])
+    expect(withHistory.find('[data-round="2"]').text()).toBe('라운드 2')
+
+    // 이력을 남기기 전에 확정된 기존 방
+    expect(roundDividers(mountList(records))).toEqual(['라운드 2', '라운드 1'])
   })
 
   it('확정 건은 제출 팀 → 잡힌 팀을 병기한다 — 색+라벨 규칙', () => {
