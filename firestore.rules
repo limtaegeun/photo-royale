@@ -111,17 +111,29 @@ service cloud.firestore {
           (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
             && resource.data.status == 'waiting'
             && request.resource.data.status == 'playing')
-          // 2) 배정 확정 — 팀편성 차수(+1)와 게임 모드를 함께 커밋한다. 아직 대기 중일 때만 허용한다.
+          // 2) 배정 확정 — 팀편성 차수(+1)와 게임 모드, 그리고 차수 → 모드 이력(roundModes)을
+          //    함께 커밋한다. 아직 대기 중일 때만 허용한다.
           //    모드는 확정과 함께만 커밋된다(드래프트는 로컬) — assignmentRound +1 제약을 유지하므로
           //    모드만 단독으로 바꾸는 요청은(차수가 그대로라) 거부된다.
           //    아래 모드 리스트는 src/features/game-mode/registry.ts의 GAME_MODE_IDS와 일치해야
           //    한다(registry.spec이 대조 검증) — 새 모드 추가 시 여기도 갱신하고 rules를 배포할 것.
-          || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['assignmentRound', 'gameMode'])
+          //    roundModes는 gameMode가 덮어써져 사라지는 과거 라운드 모드를 남기는 이력 맵이다.
+          //    이번 확정 차수의 키 하나만 추가/변경할 수 있고 값은 함께 커밋되는 gameMode와 같아야
+          //    한다(모드 화이트리스트 검증은 위 gameMode 조건이 이미 수행하므로 등식으로 전이된다).
+          //    기존 키 변조·삭제는 diff의 affectedKeys 제약이 막는다. 필드가 실제로 실렸을 때만
+          //    검증하므로, roundModes를 모르는 구버전 클라이언트의 확정도 그대로 통과한다(배포 순서 자유).
+          || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['assignmentRound', 'gameMode', 'roundModes'])
             && resource.data.status == 'waiting'
             && request.resource.data.assignmentRound is int
             && request.resource.data.assignmentRound ==
               (('assignmentRound' in resource.data) ? resource.data.assignmentRound + 1 : 1)
-            && request.resource.data.gameMode in ['normal', 'tail-chase', 'group', 'king-hunt', 'staff-chase', 'bomb-plant', 'kkomkkomi', 'fast-survival'])
+            && request.resource.data.gameMode in ['normal', 'tail-chase', 'group', 'king-hunt', 'staff-chase', 'bomb-plant', 'kkomkkomi', 'fast-survival']
+            && (!('roundModes' in request.resource.data)
+              || (request.resource.data.roundModes is map
+                && request.resource.data.roundModes.diff(resource.data.get('roundModes', {})).affectedKeys()
+                  .hasOnly([string(request.resource.data.assignmentRound)])
+                && request.resource.data.roundModes[string(request.resource.data.assignmentRound)]
+                  == request.resource.data.gameMode)))
           // 3) 라운드 운영(H04) — 게임이 진행 중일 때만 round 맵을 통째로 갱신한다.
           //    시작·정지·재개·시간 반영이 모두 같은 갈래를 탄다(전이 종류는 클라가 결정하고,
           //    서버는 결과 문서가 유효한 라운드 상태인지만 본다).
