@@ -387,11 +387,16 @@ describe('RoundOpsPage', () => {
       expect(findButton(wrapper, '게임 종료')).toBeUndefined()
     })
 
-    it('아직 시작되지 않은 방에서는 컨트롤 대신 안내를 보여준다', async () => {
+    /**
+     * assignmentRound=0(한 번도 배정된 적 없는 방)만 이 카피를 쓴다. hostRoom()의 기본값(2)은
+     * "이미 배정을 치른 방"을 뜻하므로 명시적으로 0을 줘야 이 시나리오가 된다 — assignmentRound>0
+     * 인 waiting 방의 새 카피는 아래 '라운드 종료 후 대기 안내'에서 검증한다.
+     */
+    it('한 번도 배정되지 않은 방에서는 컨트롤 대신 기존 안내를 보여준다', async () => {
       const deliver = captureSnapshotCallbacks()
       const wrapper = mountPage()
 
-      deliver.room(hostRoom({ status: 'waiting' }))
+      deliver.room(hostRoom({ status: 'waiting', assignmentRound: 0 }))
       await flushPromises()
 
       expect(wrapper.text()).toContain('게임이 아직 시작되지 않았어요')
@@ -663,7 +668,8 @@ describe('RoundOpsPage', () => {
       const deliver = captureSnapshotCallbacks()
       const wrapper = mountPage()
 
-      deliver.room(hostRoom({ status: 'waiting', round: null }))
+      // '처음부터' waiting이라는 시나리오라 assignmentRound도 0(한 번도 배정 안 됨)으로 명시한다
+      deliver.room(hostRoom({ status: 'waiting', round: null, assignmentRound: 0 }))
       await flushPromises()
 
       expect(replaceMock).not.toHaveBeenCalled()
@@ -1113,6 +1119,73 @@ describe('RoundOpsPage', () => {
     })
   })
 
+  /**
+   * 라운드 종료로 waiting에 돌아간 방(assignmentRound>0)의 안내 카드 — 판정 큐 구독은 status와
+   * 무관하게 차수 키로 유지되어 미판정 건이 배지에 계속 잡히는데, 본문이 "게임이 아직 시작되지
+   * 않았어요"인 옛 카피는 이미 라운드를 치른 방에서는 사실과 다르다. 그 모순이 대기실의 재실행
+   * 가드('그대로 다시 시작' 선택 유도)를 무력화하므로 assignmentRound로 분기해야 한다.
+   */
+  describe('라운드 종료 후 대기 안내', () => {
+    it('운영 탭은 라운드 종료 카피를 보여주고 대기실로 버튼을 유지한다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+
+      deliver.room(hostRoom({ status: 'waiting', round: null }))
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('라운드가 종료된 상태예요')
+      expect(wrapper.text()).toContain('대기실에서 다음 라운드를 배정하고 게임을 시작해 주세요.')
+      expect(wrapper.text()).not.toContain('게임이 아직 시작되지 않았어요')
+      expect(findButton(wrapper, '대기실로')).toBeDefined()
+    })
+
+    it('판정 탭은 미판정 건수를 밝히고, 기록 탭 열기를 누르면 기록 탭으로 전환된다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+
+      deliver.room(hostRoom({ status: 'waiting', round: null }))
+      deliver.submissions([
+        {
+          id: 's1',
+          uid: 'u3',
+          team: 'B',
+          round: 2,
+          photo: 'data:image/jpeg;base64,killshot',
+          status: 'pending' as const,
+          createdAtMs: Date.now(),
+        },
+      ])
+      await flushPromises()
+
+      await wrapper.find('[data-value="judge"]').trigger('click')
+
+      expect(wrapper.text()).toContain('판정은 라운드 진행 중에만 할 수 있어요')
+      expect(wrapper.text()).toContain('판정되지 않은 킬샷 1건은 기록 탭에서 확인할 수 있어요.')
+      expect(wrapper.text()).not.toContain('게임이 아직 시작되지 않았어요')
+
+      await findButton(wrapper, '기록 탭 열기')!.trigger('click')
+      await flushPromises()
+
+      // 기록 탭 첫 활성화 — 로그 구독이 시작되고 로딩 문구가 뜬다(판정 탭 안내는 사라진다)
+      expect(wrapper.text()).toContain('기록을 불러오는 중…')
+      expect(wrapper.text()).not.toContain('판정은 라운드 진행 중에만 할 수 있어요')
+      expect(subscribeRecordsMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('판정 탭은 미판정 건이 없으면 지난 기록 안내로 대체한다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+
+      deliver.room(hostRoom({ status: 'waiting', round: null }))
+      await flushPromises()
+
+      await wrapper.find('[data-value="judge"]').trigger('click')
+
+      expect(wrapper.text()).toContain('지난 라운드의 기록은 기록 탭에서 확인할 수 있어요.')
+      expect(wrapper.text()).not.toContain('판정되지 않은 킬샷')
+    })
+  })
+
   describe('판정 탭', () => {
     /** 판정 대기 킬샷 픽스처 — 제출자 u3(팀 B)가 방금 보낸 사진 */
     function pendingSubmission(overrides: Partial<Submission> = {}): Submission {
@@ -1183,10 +1256,11 @@ describe('RoundOpsPage', () => {
       expect(wrapper.text()).toContain('판정 대기 중인 킬샷이 없어요.')
     })
 
+    /** 한 번도 배정된 적 없는 방(assignmentRound=0)만 이 카피를 쓴다 — 기본값(2)은 이미 배정을 치른 방이다 */
     it('시작 전(waiting) 방에서는 큐 대신 안내를 보여준다', async () => {
       const deliver = captureSnapshotCallbacks()
       const wrapper = mountPage()
-      deliver.room(hostRoom({ status: 'waiting' }))
+      deliver.room(hostRoom({ status: 'waiting', assignmentRound: 0 }))
       await flushPromises()
 
       await wrapper.find('[data-value="judge"]').trigger('click')

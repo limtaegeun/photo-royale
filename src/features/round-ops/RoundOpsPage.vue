@@ -121,6 +121,17 @@ const canControlTimer = computed(
 const isRoundEnded = computed(() => displayState.value === 'ended')
 
 /**
+ * 판정 탭의 "라운드 진행 중이 아님" 카드 본문 — assignmentRound>0(적어도 한 번 라운드를 치른 방)
+ * 에서는 미판정 건수에 따라 기록 탭으로 보내는 문구가 갈린다. 템플릿에 3중 분기를 그대로 두면
+ * 가독성이 떨어지므로 finishDialogDescription과 같은 방식으로 computed로 뺀다.
+ */
+const judgeIdleCardBody = computed(() =>
+  pendingSubmissions.value.length > 0
+    ? `판정되지 않은 킬샷 ${pendingSubmissions.value.length}건은 기록 탭에서 확인할 수 있어요.`
+    : '지난 라운드의 기록은 기록 탭에서 확인할 수 있어요.',
+)
+
+/**
  * 호스트 전용 가드 — 컨트롤이 실쓰기라 게스트가 URL로 직접 들어오면 403만 보게 된다.
  * 방 문서를 받아 본 뒤(스냅샷 도착) 역할을 판정해 각자의 화면으로 돌려보낸다.
  *
@@ -453,11 +464,20 @@ onUnmounted(() => {
           </BaseButton>
         </template>
 
-        <!-- 아직 시작하지 않은 방 — rules도 playing에서만 라운드 쓰기를 허용한다 -->
+        <!-- 아직 시작하지 않은 방 — rules도 playing에서만 라운드 쓰기를 허용한다.
+             assignmentRound>0(적어도 한 번 라운드를 치른 방)에서는 "시작 전" 카피가 사실과
+             달라 판정 탭 배지(대기 N건)와 모순되고, 그 모순이 재실행 가드('그대로 다시 시작'
+             선택 유도)를 무력화한다. 한 번도 배정된 적 없는 방(0)만 기존 카피를 유지한다 -->
         <BaseCard v-else-if="phase === 'ready'" padding="lg">
-          <h2 class="text-subheading text-content">게임이 아직 시작되지 않았어요</h2>
+          <h2 class="text-subheading text-content">
+            {{ assignmentRound > 0 ? '라운드가 종료된 상태예요' : '게임이 아직 시작되지 않았어요' }}
+          </h2>
           <p class="mt-3 text-body text-content-secondary">
-            대기실에서 팀 배정을 확정하고 게임을 시작하면 라운드를 운영할 수 있어요.
+            {{
+              assignmentRound > 0
+                ? '대기실에서 다음 라운드를 배정하고 게임을 시작해 주세요.'
+                : '대기실에서 팀 배정을 확정하고 게임을 시작하면 라운드를 운영할 수 있어요.'
+            }}
           </p>
           <BaseButton
             variant="primary"
@@ -505,12 +525,30 @@ onUnmounted(() => {
           @select="openJudgeSheet"
         />
 
-        <!-- rules도 playing에서만 제출을 허용한다 — 시작 전에는 모일 킬샷이 없다 -->
+        <!-- rules도 playing에서만 제출을 허용한다 — 시작 전에는 모일 킬샷이 없다.
+             assignmentRound>0(적어도 한 번 라운드를 치른 방)에서는 "시작 전" 카피가 사실과
+             달라 판정 탭 배지(대기 N건)와 모순되고, 그 모순이 재실행 가드('그대로 다시 시작'
+             선택 유도)를 무력화한다. 한 번도 배정된 적 없는 방(0)만 기존 카피를 유지한다 -->
         <BaseCard v-else-if="phase === 'ready'" padding="lg">
-          <h2 class="text-subheading text-content">게임이 아직 시작되지 않았어요</h2>
+          <h2 class="text-subheading text-content">
+            {{ assignmentRound > 0 ? '판정은 라운드 진행 중에만 할 수 있어요' : '게임이 아직 시작되지 않았어요' }}
+          </h2>
           <p class="mt-3 text-body text-content-secondary">
-            게임을 시작하면 참가자들이 제출한 킬샷이 이곳에 모여요.
+            {{
+              assignmentRound > 0
+                ? judgeIdleCardBody
+                : '게임을 시작하면 참가자들이 제출한 킬샷이 이곳에 모여요.'
+            }}
           </p>
+          <BaseButton
+            v-if="assignmentRound > 0"
+            variant="ghost"
+            size="md"
+            class="mt-5 w-full"
+            @click="activeTab = 'log'"
+          >
+            기록 탭 열기
+          </BaseButton>
         </BaseCard>
 
         <p v-else class="text-body text-content-secondary" role="status">
