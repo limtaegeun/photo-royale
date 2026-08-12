@@ -17,7 +17,8 @@
 |---|---|---|
 | **A** | 라운드 운영 — 기록 탭 구현 | 커밋·푸시 완료 |
 | **B** | 라운드 종료 처리 (재시작 → 종료) | 커밋·푸시 완료 |
-| **C** | 대기실 차수·게임 모드 표시 | **미커밋** |
+| **C** | 대기실 차수·게임 모드 표시 | 커밋·푸시 완료 |
+| **D** | 종료 흐름 보강 — 재실행 가드·기록 진입점·카메라 잠금·공용화 | 커밋·푸시 완료 |
 
 ---
 
@@ -92,7 +93,7 @@ interface SubmissionRecord extends Submission {
 }
 ```
 
-- **게으른 구독**: 사진이 data URL이라 무겁다 → enter에서 항상 열지 않고 **기록 탭이 처음 활성화될 때** `watchRecordLog()`가 시작한다(스토어가 중복 시작을 막는다).
+- **게으른 구독**: 사진이 data URL이라 무겁다 → enter에서 항상 열지 않고 **기록 탭이 처음 활성화될 때** `subscribeToRecordLog()`가 시작한다(스토어가 중복 시작을 막는다).
 - **정렬은 클라이언트**: 복합 인덱스를 피하려고 라운드 내림차순 → 라운드 안에서는 최신 제출 순으로 클라이언트에서 정렬한다.
 
 ### 화면
@@ -104,7 +105,7 @@ interface SubmissionRecord extends Submission {
 
 지난 라운드 판정은 `firestore.rules`가 막으므로 판정 시트를 열어줘도 실패한다 — 그래서 애초에 열지 않는다.
 
-**추가 파일**: `components/RecordLogList.vue`, `components/RecordDetailSheet.vue`, `recordStatusStyles.ts`, `api/submissions.ts`(`subscribeToSubmissionLog`), `stores/useRoundOpsStore.ts`(`watchRecordLog`)
+**추가 파일**: `components/RecordLogList.vue`, `components/RecordDetailSheet.vue`, `recordStatusStyles.ts`, `api/submissions.ts`(`subscribeToSubmissionLog`), `stores/useRoundOpsStore.ts`(`subscribeToRecordLog`)
 
 ---
 
@@ -141,7 +142,7 @@ interface SubmissionRecord extends Submission {
 
 ---
 
-## 5. 작업 C — 대기실 차수·게임 모드 표시 (미커밋)
+## 5. 작업 C — 대기실 차수·게임 모드 표시
 
 ### 문제
 
@@ -174,17 +175,32 @@ interface SubmissionRecord extends Submission {
 
 ---
 
+## 작업 D — 종료 흐름 보강 (계획 확정 후 커밋 4개로 추가)
+
+A~C를 검증하는 과정에서 드러난 구멍을 같은 브랜치에서 막았다. 결정 요지만 남긴다.
+
+| 보강 | 내용 | 커밋 |
+|---|---|---|
+| 같은 차수 재실행 가드 | `roundPlayMarker`(sessionStorage, **탭 스코프 best-effort**)에 '라운드 시작' **성공 시에만** 마크. 대기실 '게임 시작'이 마커를 보면 확인 다이얼로그를 띄워 '다음 팀 배정하기'를 우선 경로로 제시. 서버(rules) 강제는 후속 과제 | `ae6b4d0` |
+| 기록 진입점 | 대기실에 '지난 라운드 기록 보기'(호스트·차수>0 전용) → `?tab=log` 딥링크. 기록 탭은 **waiting 상태에서도 열람 가능**(판정 탭은 playing 게이트 유지 — 판정 쓰기는 rules가 playing에서만 허용) | `ae6b4d0`, `db26802` |
+| 공용화·구독 부하 | 판정/상세 시트 헤더를 `KillshotPhotoHeader`로 공용화, 기록 구독을 `orderBy(createdAt desc) + limit(200)`으로 상한, 첫 스냅샷 게이트(`recordsLoaded`)로 도착 전 "기록 없음" 오표시 제거 | `4290342`, `db26802` |
+| 판정 실패 서버 확인 | 판정 실패 시 로컬 큐 추정 대신 `getSubmissionStatusFromServer`로 선판정 충돌/일반 오류를 구분 | `db26802` |
+| 카메라 종료 잠금 | 타이머 0(displayState `ended`)이면 셔터 disabled + `submitPhoto` 가드 — 확인 화면을 열어 둔 채 00:00을 넘기는 경로까지 차단 | `6ece8af` |
+| 머지 검토 반영 | waiting+차수>0인 방의 운영/판정 탭이 "게임이 아직 시작되지 않았어요"를 보여주던 모순 카피를 상태 사실에 맞게 교체(판정 배지·본문 불일치가 재실행 가드를 무력화하던 문제) | 2026-08-12 |
+
 ## 6. 검증
 
 ### 단위 테스트
 
-**581개 전부 통과** (type-check ✅ / lint ✅). 이 브랜치에서 늘어난 테스트가 A·B·C 전부를 커버한다.
+**603개 전부 통과** (type-check ✅ / lint ✅, 2026-08-12 기준). 이 브랜치에서 늘어난 테스트가 A·B·C·D 전부를 커버한다.
 
 ### 브라우저 실동작 (live-qa)
 
 main이 이 브랜치의 정확한 base라 **수정 전/후 dev 서버 2대를 띄워 같은 방·같은 상태를 대조**했다. 실제 Firebase에 붙었고, 판정은 화면 텍스트가 아니라 `rooms/{code}` 문서와 `submissions` 컬렉션을 REST로 직접 읽어 대조했다.
 
 **10개 케이스 전부 통과.** [QA 보고서(스크린샷 12장 포함)](https://claude.ai/code/artifact/ae9f056a-c42e-435a-b23d-589a1a0b8762) · `docs/qa/round-finish-report.html`
+
+작업 D 반영분은 **2026-08-10 live-qa 회차**(실 Firebase, 방 8CWJ)로 별도 실측했다 — 판정은 `docs/qa/record-review.md`·`docs/qa/waiting-room.md`에 TC 단위로 기입돼 있다(재실행 다이얼로그·딥링크·waiting 열람·ended 시간 조정 복구 등 12케이스 실측 통과).
 
 수정 전 결함도 실측으로 재현했다:
 
@@ -199,6 +215,22 @@ QA 중 발견해 고친 것 2건: ① 게스트 시야에 대한 코드 주석�
 ---
 
 ## 7. 남은 작업 · 미정 스펙
+
+### 행사 전 필수 수정 (2026-08-12 머지 검토에서 확정)
+
+머지 블로커는 아니지만 야외 행사 당일 전에 반드시 처리할 4건:
+
+1. **쓰기 매달림 시 '라운드 종료' 무반응** — 다른 액션(pendingAction)이 오프라인으로 settle되지 않으면 `finishGame()`이 가드에서 조용히 false를 반환하고 다이얼로그만 닫힌다. 진행자에게 아무 피드백이 없다.
+2. **캐시 신선도 미검사** — 종료 확인의 uncertain은 리스너 터미널 오류만 잡는다(`fromCache` 미사용). 음영지역에서 큐가 "0건"으로 보이면 확인 없이 종료된다.
+3. **운영 탭 밖에는 종료 신호가 없음** — 타이머·상태 배지·종료 버튼이 전부 운영 탭 안에만 있어, 판정 탭에서 작업 중이면 20분이 끝나도 모른다.
+4. **게스트 콕핏에 출구 없음** — 종료 잠금 후 모든 버튼이 disabled인데 '대기실로' 같은 탈출 수단이 없다. 호스트가 종료를 누를 때까지 갇힌다.
+
+참고 사실관계: 미판정 킬샷의 영구 손실 시점은 라운드 종료가 아니라 **다음 배정 확정(assignmentRound +1)** 이다 — 같은 차수 재시작으로 판정이 부활한다(rules 판정 조건은 playing+차수 일치뿐). 종료·재실행 다이얼로그 문구를 손볼 때 이 기준을 따를 것.
+
+### 별도 브랜치로 착수 (2026-08-12)
+
+- **일시정지(올스탑) 중 촬영·제출 잠금** — P05부터 정지 중 촬영이 유효했던 구멍. 카메라 잠금 + rules `round.status == 'running'` 검사.
+- **라운드별 게임 모드 기록** — `rooms.gameMode`가 배정마다 덮어써져 과거 라운드 모드가 유실된다. 배정 확정 시 `roundModes.{차수}`를 함께 커밋.
 
 ### 다음 작업 (별도 진행하기로 함)
 
@@ -218,25 +250,23 @@ QA 중 발견해 고친 것 2건: ① 게스트 시야에 대한 코드 주석�
 
 ---
 
-## 8. 현재 상태 (2026-08-09 기준)
+## 8. 현재 상태 (2026-08-12 기준)
 
-### 커밋·푸시 완료 (`origin/feat/p06-record-review`)
+**[PR #21](https://github.com/limtaegeun/photo-royale/pull/21)** (base: `main`)이 열려 있고, A~D 전부 커밋·푸시 완료다.
 
 ```
+bd7a8e4  docs: P06 반영분 TC와 live-qa 판정을 기록
+6ece8af  feat: 라운드 종료 시 촬영과 제출을 잠근다
+db26802  feat: 라운드 종료 확인과 기록 열람을 견고화한다
+4290342  refactor: 기록 목록·판정 시트를 공용화하고 구독 부하를 줄인다
+ae6b4d0  feat: 대기실에 같은 차수 재실행 가드와 기록 진입점을 추가
+3ed0f38  docs: P06 계획 문서와 라운드 종료 QA 보고서를 추가
+cc095da  fix: 먼저 판정하기가 판정 탭으로 이동하게 연결
+226ad01  feat: 대기실 룸 카드에 확정 차수·게임 모드를 표시
 de921a3  feat: 라운드 종료 후 다음 라운드 재편성으로 넘긴다
 713ec21  docs: 기록 탭 QA 검증 문서를 추가
 7209523  feat: 라운드 운영 기록 탭을 구현
 75eaaf6  feat: 판정 이력 구독 API와 스토어를 추가
 ```
 
-### 미커밋 — 작업 C + QA 수정 2건 + 보고서
-
-```
-M  src/features/round-ops/RoundOpsPage.vue              ('먼저 판정하기' → 판정 탭 이동)
-M  src/features/round-ops/__tests__/RoundOpsPage.spec.ts
-M  src/features/waiting-room/WaitingRoomPage.vue        (차수·모드 표시 + 주석 정정)
-M  src/features/waiting-room/__tests__/WaitingRoomPage.spec.ts
-?? docs/qa/round-finish-report.html
-```
-
-**PR은 아직 없다.** 미커밋분을 커밋한 뒤 PR을 만들면 된다.
+2026-08-12 머지 검토(에이전트 2계통 + 코드 재검증) 결과 **머지 가능** 판정 — 검토에서 나온 수정분(작업 D 표의 "머지 검토 반영" 행)과 이 문서 갱신이 후속 커밋으로 추가된다. 행사 전 필수 4건은 §7 참조.
