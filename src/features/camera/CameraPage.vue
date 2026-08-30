@@ -281,24 +281,34 @@ onUnmounted(() => {
               <span class="text-caption text-content-secondary">{{ currentMode.label }}</span>
             </div>
             <p class="mt-1 text-label text-pretty break-keep">
-              {{
-                isRoundEnded
-                  ? '라운드가 종료됐어요. 진행자 안내를 기다려 주세요.'
-                  : isPaused
-                    ? '일시정지 중이에요. 자리에 멈춰 진행자 안내를 기다려 주세요.'
-                    : objective
-              }}
+              {{ isRoundEnded ? '라운드가 종료됐어요. 진행자 안내를 기다려 주세요.' : objective }}
             </p>
           </div>
           <div class="shrink-0 text-right" aria-label="게임 남은 시간">
             <p class="text-caption text-content-secondary">남은 시간</p>
             <p
               class="font-mono text-subheading"
-              :class="displayState === 'paused' || isRoundEnded ? 'text-warning' : 'text-info'"
+              :class="isPaused || isRoundEnded ? 'text-warning' : 'text-info'"
             >
               {{ remainingTime }}
             </p>
           </div>
+        </div>
+
+        <!--
+          일시정지는 목표·공지를 덮어쓰지 않고 자기 자리에서 알린다 — 정지가 풀리면 그대로
+          사라져야 하는 일시적 상태라, 계속 읽혀야 하는 목표나 진행자 공지를 대체하면
+          정지가 끝난 뒤에도 원문이 무엇이었는지 알 수 없다. 셔터가 잠긴 이유도 여기서 읽힌다.
+        -->
+        <div
+          v-if="isPaused"
+          role="status"
+          class="flex items-center gap-2 rounded-lg border border-warning bg-scrim-strong p-3"
+        >
+          <BaseBadge tone="warning">일시정지</BaseBadge>
+          <p class="min-w-0 flex-1 text-caption text-pretty break-keep text-warning">
+            진행자가 게임을 멈췄어요. 자리에 멈춰 안내를 기다려 주세요.
+          </p>
         </div>
 
         <div class="flex gap-2 text-caption">

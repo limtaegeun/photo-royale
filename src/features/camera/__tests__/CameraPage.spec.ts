@@ -422,12 +422,20 @@ describe('CameraPage 라운드 종료 게이트', () => {
  * ended 게이트와 같은 이유로 paused도 셔터·제출 두 진입점을 모두 고정해 둔다.
  */
 describe('CameraPage 일시정지 게이트', () => {
-  it('라운드가 일시정지되면 셔터가 비활성화되고 HUD가 일시정지 안내를 보여준다', async () => {
+  it('라운드가 일시정지되면 셔터가 비활성화되고 목표는 그대로 둔 채 일시정지 안내를 따로 보여준다', async () => {
     mockDisplayState.value = 'paused'
     const wrapper = await mountWithActiveCamera()
 
     expect(findShutter(wrapper).attributes('disabled')).toBeDefined()
-    expect(wrapper.text()).toContain('일시정지 중이에요. 자리에 멈춰 진행자 안내를 기다려 주세요.')
+    expect(wrapper.text()).toContain('진행자가 게임을 멈췄어요. 자리에 멈춰 안내를 기다려 주세요.')
+    // 일시정지는 별도 블록이라 목표 문구를 밀어내지 않는다 — 재개 후 다시 읽을 필요가 없어야 한다
+    expect(wrapper.text()).toContain('상대 완장 알파벳을 찍어 제출하세요.')
+  })
+
+  it('진행 중에는 일시정지 안내를 띄우지 않는다', async () => {
+    const wrapper = await mountWithActiveCamera()
+
+    expect(wrapper.text()).not.toContain('진행자가 게임을 멈췄어요.')
   })
 
   it('라운드가 진행 중이면 셔터가 활성화된다', async () => {
@@ -446,6 +454,7 @@ describe('CameraPage 일시정지 게이트', () => {
     await flushPromises()
 
     expect(findShutter(wrapper).attributes('disabled')).toBeUndefined()
+    expect(wrapper.text()).not.toContain('진행자가 게임을 멈췄어요.')
   })
 
   it('확인 화면에서 라운드가 일시정지되면 제출 버튼이 비활성화되고 일시정지 안내를 보여준다', async () => {
