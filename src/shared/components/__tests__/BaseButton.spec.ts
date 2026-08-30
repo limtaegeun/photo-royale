@@ -50,6 +50,18 @@ describe('BaseButton', () => {
     expect(shutter.attributes('data-padding')).toBe('none')
   })
 
+  /**
+   * size로 정한 높이는 어느 컨테이너에 놓여도 지켜져야 한다. flex 컨테이너의 남는 공간이
+   * 모자라면 기본값(flex-shrink:1)으로 버튼이 눌려, 같은 size를 준 버튼끼리도 높이가 갈린다.
+   * 그 보장을 사용처가 챙기지 않도록 루트가 직접 들고 있는다.
+   */
+  it('flex 컨테이너에서 눌리지 않도록 루트가 shrink-0을 들고 있다', () => {
+    const wrapper = mount(BaseButton, { props: { size: 'lg' } })
+
+    expect(wrapper.classes()).toContain('shrink-0')
+    expect(wrapper.classes()).toContain('h-(--pr-size-control-lg)')
+  })
+
   it('기본값(primary/md)이 적용된다', () => {
     const wrapper = mount(BaseButton)
 

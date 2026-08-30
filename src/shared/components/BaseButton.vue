@@ -13,6 +13,10 @@ interface Props extends PrimitiveProps {
    * 버튼 크기 — md(48)/lg(56)는 시각 높이로 최소 터치 타겟을 충족한다.
    * sm(36)은 리스트 행 안의 인라인 액션용으로, 시각 높이는 낮추되 히트 영역은
    * ::before로 48px까지 확장해 터치 타겟 규칙을 지킨다(DESIGN_SYSTEM §3-5).
+   *
+   * 여기서 정한 크기는 **어느 컨테이너에 놓여도 그대로 지켜진다**(루트의 `shrink-0`).
+   * 나란히 놓인 버튼끼리 크기를 섞으면 그대로 높이 차이로 보이므로, 한 묶음(다이얼로그의
+   * 확인/취소, 하단 액션 행) 안에서는 같은 size를 쓰고 위계는 variant로 준다(DESIGN_SYSTEM §6.4).
    */
   size?: 'sm' | 'md' | 'lg' | 'content'
   /** 기본 라운드 사각형 또는 셔터·콕핏 슬롯용 원형 */
@@ -104,7 +108,7 @@ const isBlocked = computed(() => props.disabled || props.loading)
     :data-size="size"
     :data-padding="padding"
     :data-loading="loading || undefined"
-    class="relative inline-flex items-center justify-center gap-2 font-semibold whitespace-nowrap transition-colors duration-100 ease-standard select-none touch-manipulation disabled:cursor-default"
+    class="relative inline-flex shrink-0 items-center justify-center gap-2 font-semibold whitespace-nowrap transition-colors duration-100 ease-standard select-none touch-manipulation disabled:cursor-default"
     :class="buttonClass"
   >
     <!-- 라벨은 자리(폭)를 유지한 채 시각적으로만 숨긴다 — 로딩 중 버튼 폭이 흔들리지 않게 -->

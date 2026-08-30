@@ -121,7 +121,7 @@ src/shared/components/
 
 | 컴포넌트 | 역할 | 비고 |
 |---|---|---|
-| `BaseButton` | 버튼 | `variant` primary·accent·neutral·danger·ghost·hud·shutter / `size` sm(36)·md(48)·lg(56)·content(최소 48) / `shape` default·circle / `padding` default·compact·none. **하단 고정 주 CTA는 lg, 리스트 행 안의 인라인 액션은 sm**. 비동기 진행 표기는 `loading`(§6.3) |
+| `BaseButton` | 버튼 | `variant` primary·accent·neutral·danger·ghost·hud·shutter / `size` sm(36)·md(48)·lg(56)·content(최소 48) / `shape` default·circle / `padding` default·compact·none. **하단 고정 주 CTA는 lg, 리스트 행 안의 인라인 액션은 sm**. 나란히 놓인 버튼끼리는 같은 size(§6.4). 비동기 진행 표기는 `loading`(§6.3) |
 | `BaseBadge` | 상태·팀 표식 | `tone` brand·accent·success·warning·danger·info·neutral. `flex` 컨테이너 안에 둘 때는 `self-start` 필수(stretch로 폭이 늘어난다) |
 | `BaseInput` / `BaseSegmented` / `BaseSwitch` | 입력·선택·토글 | |
 | `BaseDialog` / `BaseBottomSheet` / `BaseToast`(+`useToast`) | 오버레이 | |
@@ -181,6 +181,29 @@ src/shared/components/
 ```
 
 화면 전체가 로딩인 경우(진입 대기 등)는 버튼이 아니라 `role="status"` 문구로 알린다 — 버튼 스피너는 "그 버튼이 누른 일을 처리 중"만 의미한다.
+
+### 6.4 나란히 놓인 버튼은 같은 size
+
+`size`는 사용처가 고른다. 다만 **한 묶음 안에서는 하나로 통일한다** — 다이얼로그의 확인/취소, 하단 액션 행처럼 나란히 놓여 같이 보이는 버튼들이다. 그 사이의 위계는 높이가 아니라 `variant`(채운 배경 vs ghost)와 순서로 준다.
+
+```vue
+<!-- ❌ Avoid — 주 액션만 lg. 같은 모달 안에서 56px과 48px이 섞인다 -->
+<BaseButton variant="primary" size="lg">다음 팀 배정하기</BaseButton>
+<BaseButton variant="ghost" size="md">그대로 다시 시작</BaseButton>
+
+<!-- ✅ Correct — size는 같고, 위계는 색과 순서 -->
+<BaseButton variant="primary" size="lg">다음 팀 배정하기</BaseButton>
+<BaseButton variant="ghost" size="lg">그대로 다시 시작</BaseButton>
+```
+
+섞였을 때 실제로 생긴 문제(2026-08-30 스크린샷 실측, 렌더 높이 56.4 / 48.0px):
+
+- **위험한 쪽이 오히려 작아** 누르기 어려웠다(그대로 재실행·라운드 종료가 md였다).
+- 화면마다 어느 쪽을 크게 할지 기준이 달랐다. 대기실 모달은 주 액션이 컸고 라운드 운영 모달은 보조 액션이 컸다 — 한쪽에서 익힌 손이 다른 쪽에서 어긋난다.
+
+높이 차이로 위계를 주는 것이 맞는 자리는 **화면 하단 CTA 영역**이다(주 CTA lg + 보조 md, `WaitingRoomPage` 하단 스택). 스크롤되는 페이지의 마지막 블록이라 주 CTA가 지배해야 하고, 보조 액션은 굳이 찾아 누르는 것이라 한 묶음으로 읽히지 않는다.
+
+**size는 컨테이너와 무관하게 지켜진다.** `BaseButton` 루트가 `shrink-0`을 들고 있어 flex 컨테이너의 공간이 모자라도 선언한 높이 아래로 눌리지 않는다 — 사용처가 감싸는 요소에 `shrink-0`을 붙여 챙기지 않아도 된다.
 
 > ⚠️ 현재 알려진 한계(2026-07-25 실측, `docs/qa/button-loading.md`): 로딩 중 네이티브 `disabled`가 붙어 `bg-disabled`가 적용되므로 **스피너가 배경과 2.02:1 대비**(비텍스트 3:1 미달)이고, 라벨의 `visibility:hidden` 때문에 **접근성 이름이 사라진다**. §7 후속 과제로 등록.
 

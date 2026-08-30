@@ -650,7 +650,7 @@ onUnmounted(() => {
           </BaseButton>
           <BaseButton
             variant="danger"
-            size="md"
+            size="lg"
             class="w-full"
             :loading="pendingAction === 'end'"
             @click="finishRound"
@@ -674,7 +674,8 @@ onUnmounted(() => {
         </p>
 
         <!-- 위 = 안전(계속 진행), 아래 = 파괴(종료). 같은 화면의 킬샷 종료 다이얼로그와 순서·무게를
-             맞춘다 — 두 모달의 위치가 반대면 한쪽에서 익힌 손이 다른 쪽에서 오조작으로 이어진다 -->
+             맞춘다 — 두 모달의 위치가 반대면 한쪽에서 익힌 손이 다른 쪽에서 오조작으로 이어진다.
+             두 버튼의 size는 같게 유지하고 위계는 variant로만 준다 -->
         <div class="flex flex-col gap-3">
           <BaseButton
             variant="ghost"
@@ -686,7 +687,7 @@ onUnmounted(() => {
           </BaseButton>
           <BaseButton
             variant="danger"
-            size="md"
+            size="lg"
             class="w-full"
             :loading="pendingAction === 'end'"
             @click="endGame"

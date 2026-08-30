@@ -435,8 +435,9 @@ async function copyInviteLink() {
       </template>
     </div>
 
-    <!-- 같은 차수 재실행 확인 — 안전한 경로(다음 배정)를 위·크게 두고, 위험을 감수하는 경로
-         (그대로 재실행)는 아래·작게 둔다(기존 종료 확인 다이얼로그들과 같은 위계) -->
+    <!-- 같은 차수 재실행 확인 — 안전한 경로(다음 배정)를 위에 채운 배경으로, 위험을 감수하는
+         경로(그대로 재실행)는 아래에 ghost로 둔다(기존 종료 확인 다이얼로그들과 같은 위계).
+         두 버튼의 size는 같게 유지한다 — 높이가 갈리면 위험한 쪽이 오히려 누르기 어려워진다 -->
     <BaseDialog
       v-model:open="isRestartRoundDialogOpen"
       title="이번 차수는 이미 진행했어요"
@@ -446,7 +447,7 @@ async function copyInviteLink() {
         <BaseButton variant="primary" size="lg" class="w-full" @click="goNextAssignment">
           다음 팀 배정하기
         </BaseButton>
-        <BaseButton variant="ghost" size="md" class="w-full" @click="restartSameRound">
+        <BaseButton variant="ghost" size="lg" class="w-full" @click="restartSameRound">
           그대로 다시 시작
         </BaseButton>
       </div>
