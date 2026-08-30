@@ -26,6 +26,8 @@ vi.mock('firebase/firestore', () => ({
   doc: (_db: unknown, ...segments: string[]): FakeRef => ({ path: segments.join('/') }),
   query: (source: FakeRef, ...constraints: unknown[]) => ({ source, constraints }),
   where: (field: string, op: string, value: unknown) => ({ where: field, op, value }),
+  orderBy: (field: string, direction: string) => ({ orderBy: field, direction }),
+  limit: (n: number) => ({ limit: n }),
   onSnapshot: (
     query: unknown,
     onNext: (snapshot: unknown) => void,
@@ -38,6 +40,7 @@ vi.mock('firebase/firestore', () => ({
 }))
 
 import {
+  RECORD_LOG_LIMIT,
   SUBMISSION_PHOTO_MAX_LENGTH,
   SUBMISSION_PHOTO_PREFIX,
   approveSubmission,
@@ -45,6 +48,7 @@ import {
   rejectSubmission,
   submitKillshot,
   subscribeToPendingSubmissions,
+  subscribeToSubmissionLog,
 } from '../api/submissions'
 
 beforeEach(() => {
@@ -166,6 +170,114 @@ describe('subscribeToPendingSubmissions', () => {
     const onError = vi.fn<(error: Error) => void>()
 
     subscribeToPendingSubmissions('AB2C', 2, vi.fn(), onError)
+
+    expect(onSnapshotMock.mock.calls[0]![2]).toBe(onError)
+  })
+})
+
+describe('subscribeToSubmissionLog', () => {
+  it('createdAt 내림차순 + 최근 RECORD_LOG_LIMIT건으로 구독하고 판정 결과까지 SubmissionRecord로 매핑한다', () => {
+    const unsubscribe = vi.fn<() => void>()
+    onSnapshotMock.mockReturnValue(unsubscribe)
+    const onChange = vi.fn<(records: unknown) => void>()
+
+    const result = subscribeToSubmissionLog('AB2C', onChange)
+
+    // 무제한 구독 대신 서버 정렬(createdAt desc) + limit으로 최근 건만 받는다(모바일 메모리·과금 위험 완화)
+    const [logQuery, onNext] = onSnapshotMock.mock.calls[0]!
+    expect(logQuery).toEqual({
+      source: { path: 'rooms/AB2C/submissions' },
+      constraints: [
+        { orderBy: 'createdAt', direction: 'desc' },
+        { limit: RECORD_LOG_LIMIT },
+      ],
+    })
+
+    onNext({
+      docs: [
+        pendingDoc('s1', { toMillis: () => 1_000 }, {
+          status: 'approved',
+          targetTeam: 'A',
+          targetParticipantUid: 'u1',
+          judgedAt: { toMillis: () => 2_000 },
+        }),
+      ],
+    })
+    expect(onChange).toHaveBeenCalledWith([
+      {
+        id: 's1',
+        uid: 'player1',
+        team: 'B',
+        round: 2,
+        photo: 'data:image/jpeg;base64,killshot',
+        status: 'approved',
+        createdAtMs: 1_000,
+        targetTeam: 'A',
+        judgedAtMs: 2_000,
+      },
+    ])
+    expect(result).toBe(unsubscribe)
+  })
+
+  it('확정이 아닌 문서의 targetTeam은 신뢰하지 않고 null로 남긴다', () => {
+    onSnapshotMock.mockReturnValue(vi.fn<() => void>())
+    const onChange = vi.fn<(records: Array<{ targetTeam: string | null }>) => void>()
+
+    subscribeToSubmissionLog('AB2C', onChange)
+    const onNext = onSnapshotMock.mock.calls[0]![1]
+
+    onNext({
+      docs: [
+        pendingDoc('rejected', null, { status: 'rejected', targetTeam: 'A' }),
+        pendingDoc('pending', null),
+      ],
+    })
+
+    expect(
+      onChange.mock.calls[0]![0].map((record) => record.targetTeam),
+    ).toEqual([null, null])
+  })
+
+  it('라운드 내림차순, 라운드 안에서는 최신 제출부터 — 서버 시각 반영 전(null)은 맨 앞', () => {
+    onSnapshotMock.mockReturnValue(vi.fn<() => void>())
+    const onChange = vi.fn<(records: Array<{ id: string }>) => void>()
+
+    subscribeToSubmissionLog('AB2C', onChange)
+    const onNext = onSnapshotMock.mock.calls[0]![1]
+
+    onNext({
+      docs: [
+        pendingDoc('r1-old', { toMillis: () => 1_000 }, { round: 1 }),
+        pendingDoc('r2-new', { toMillis: () => 3_000 }, { round: 2 }),
+        pendingDoc('r2-just-sent', null, { round: 2 }),
+        pendingDoc('r2-old', { toMillis: () => 2_000 }, { round: 2 }),
+      ],
+    })
+
+    expect(onChange.mock.calls[0]![0].map((record) => record.id)).toEqual([
+      'r2-just-sent',
+      'r2-new',
+      'r2-old',
+      'r1-old',
+    ])
+  })
+
+  it('스키마가 깨진 문서는 타입 단언하지 않고 기록에서 제외한다', () => {
+    onSnapshotMock.mockReturnValue(vi.fn<() => void>())
+    const onChange = vi.fn<(records: Array<{ id: string }>) => void>()
+
+    subscribeToSubmissionLog('AB2C', onChange)
+    const onNext = onSnapshotMock.mock.calls[0]![1]
+    onNext({ docs: [pendingDoc('invalid', null, { status: 'broken' })] })
+
+    expect(onChange).toHaveBeenCalledWith([])
+  })
+
+  it('영구 Listen 오류 콜백을 Firestore에 전달한다', () => {
+    onSnapshotMock.mockReturnValue(vi.fn<() => void>())
+    const onError = vi.fn<(error: Error) => void>()
+
+    subscribeToSubmissionLog('AB2C', vi.fn(), onError)
 
     expect(onSnapshotMock.mock.calls[0]![2]).toBe(onError)
   })

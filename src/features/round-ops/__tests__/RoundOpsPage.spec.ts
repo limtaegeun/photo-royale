@@ -4,7 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import type { Participant, RoomInfo, RoundState } from '@/features/waiting-room'
 import type { Notice } from '../api/notices'
-import type { Submission } from '../api/submissions'
+import type { Submission, SubmissionRecord } from '../api/submissions'
 
 // 세션 상실(로그아웃)까지 재현해야 하므로 실제 스토어처럼 반응형 ref로 둔다
 const authUser = ref<{ uid: string } | null>(null)
@@ -88,6 +88,14 @@ const subscribeSubmissionsMock =
       onError?: (error: Error) => void,
     ) => () => void
   >()
+const subscribeRecordsMock =
+  vi.fn<
+    (
+      code: string,
+      onChange: (records: SubmissionRecord[]) => void,
+      onError?: (error: Error) => void,
+    ) => () => void
+  >()
 
 vi.mock('../api/submissions', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/submissions')>()
@@ -108,6 +116,11 @@ vi.mock('../api/submissions', async (importOriginal) => {
       onChange: (submissions: Submission[]) => void,
       onError?: (error: Error) => void,
     ) => subscribeSubmissionsMock(code, round, onChange, onError),
+    subscribeToSubmissionLog: (
+      code: string,
+      onChange: (records: SubmissionRecord[]) => void,
+      onError?: (error: Error) => void,
+    ) => subscribeRecordsMock(code, onChange, onError),
   }
 })
 
@@ -117,8 +130,14 @@ vi.mock('@/shared/composables/useToast', () => ({
 }))
 
 const replaceMock = vi.fn<(to: unknown) => void>()
+/** 진입 쿼리 — 대기실이 붙이는 `?tab=log`를 테스트가 재현할 수 있게 밖에 둔다 */
+const routeQuery: Record<string, string> = {}
 vi.mock('vue-router', () => ({
-  useRoute: () => ({ params: { roomCode: 'ab2c' }, fullPath: '/round-ops/ab2c' }),
+  useRoute: () => ({
+    params: { roomCode: 'ab2c' },
+    query: routeQuery,
+    fullPath: '/round-ops/ab2c',
+  }),
   useRouter: () => ({ replace: replaceMock, push: vi.fn<() => void>() }),
 }))
 
@@ -131,6 +150,8 @@ function captureSnapshotCallbacks() {
   let deliverNotice: (notice: Notice | null) => void = () => {}
   let deliverSubmissions: (submissions: Submission[]) => void = () => {}
   let failSubmissions: (error: Error) => void = () => {}
+  let deliverRecords: (records: SubmissionRecord[]) => void = () => {}
+  let failRecords: (error: Error) => void = () => {}
   subscribeRoomMock.mockImplementation((_code, onChange) => {
     deliverRoom = onChange
     return unsubscribeMock
@@ -148,12 +169,19 @@ function captureSnapshotCallbacks() {
     failSubmissions = onError ?? (() => {})
     return unsubscribeMock
   })
+  subscribeRecordsMock.mockImplementation((_code, onChange, onError) => {
+    deliverRecords = onChange
+    failRecords = onError ?? (() => {})
+    return unsubscribeMock
+  })
   return {
     room: (room: RoomInfo | null) => deliverRoom(room),
     participants: (participants: Participant[]) => deliverParticipants(participants),
     notice: (notice: Notice | null) => deliverNotice(notice),
     submissions: (submissions: Submission[]) => deliverSubmissions(submissions),
     submissionsError: (error: Error) => failSubmissions(error),
+    records: (records: SubmissionRecord[]) => deliverRecords(records),
+    recordsError: (error: Error) => failRecords(error),
   }
 }
 
@@ -234,6 +262,7 @@ describe('RoundOpsPage', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     authUser.value = { uid: 'me' }
+    for (const key of Object.keys(routeQuery)) delete routeQuery[key]
     toastMock.mockReset()
     replaceMock.mockReset()
     unsubscribeMock.mockReset()
@@ -246,6 +275,7 @@ describe('RoundOpsPage', () => {
     rejectSubmissionMock.mockReset().mockResolvedValue(undefined)
     getSubmissionStatusFromServerMock.mockReset().mockResolvedValue('pending')
     subscribeSubmissionsMock.mockReset().mockReturnValue(unsubscribeMock)
+    subscribeRecordsMock.mockReset().mockReturnValue(unsubscribeMock)
   })
   afterEach(() => {
     while (mounted.length > 0) mounted.pop()!.unmount()
@@ -300,7 +330,7 @@ describe('RoundOpsPage', () => {
       expect(findButton(wrapper, '재개')!.attributes('disabled')).toBeUndefined()
     })
 
-    it('남은 시간이 0이면 종료로 표시하고 다시 시작할 수 있게 한다', async () => {
+    it('남은 시간이 0이면 종료로 표시하고 주 액션을 라운드 종료로 바꾼다', async () => {
       const deliver = captureSnapshotCallbacks()
       const wrapper = mountPage()
 
@@ -309,15 +339,64 @@ describe('RoundOpsPage', () => {
 
       expect(wrapper.text()).toContain('00:00')
       expect(wrapper.text()).toContain('종료')
-      expect(findButton(wrapper, '라운드 시작')).toBeDefined()
-      expect(wrapper.text()).not.toContain('시간 조정')
+      expect(findButton(wrapper, '라운드 종료')).toBeDefined()
+      // 되돌릴 타이머가 없는 일시정지/재개만 감춘다
+      expect(findButton(wrapper, '일시정지')).toBeUndefined()
+      expect(findButton(wrapper, '재개')).toBeUndefined()
     })
 
-    it('아직 시작되지 않은 방에서는 컨트롤 대신 안내를 보여준다', async () => {
+    /**
+     * −1분 오조작으로 0에 닿으면 복구할 수단이 전무했다. rules는 방이 playing이면 round 쓰기를
+     * 허용하므로 종료 표시 상태에서도 +N분 반영이 그대로 성립한다.
+     */
+    it('종료 상태에서도 시간 조정으로 라운드를 되살릴 수 있다', async () => {
       const deliver = captureSnapshotCallbacks()
       const wrapper = mountPage()
 
-      deliver.room(hostRoom({ status: 'waiting' }))
+      deliver.room(hostRoom({ round: ended() }))
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('시간 조정')
+
+      await findButton(wrapper, '+1분')!.trigger('click')
+      await findButton(wrapper, '반영')!.trigger('click')
+      await flushPromises()
+
+      expect(adjustRoundMock).toHaveBeenCalledExactlyOnceWith(
+        'AB2C',
+        'running',
+        expect.any(Number),
+        60_000,
+      )
+    })
+
+    /**
+     * 재시작을 남겨 두면 startRound가 assignmentRound를 올리지 않으므로 직전 라운드의 미판정
+     * 킬샷이 새 20분의 판정 큐에 그대로 남고 기록도 두 라운드가 한 라운드로 뭉친다. 기획서
+     * 타임테이블도 "게임 20분 → 다음 팀편성"이라 종료 다음에 오는 것은 재편성이다.
+     */
+    it('종료 상태에는 타이머를 재시작하는 경로가 없다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+
+      deliver.room(hostRoom({ round: ended() }))
+      await flushPromises()
+
+      expect(findButton(wrapper, '라운드 시작')).toBeUndefined()
+      // 쓰기가 완전히 같은 버튼이 둘 보이지 않게 '게임 종료'는 감춘다
+      expect(findButton(wrapper, '게임 종료')).toBeUndefined()
+    })
+
+    /**
+     * assignmentRound=0(한 번도 배정된 적 없는 방)만 이 카피를 쓴다. hostRoom()의 기본값(2)은
+     * "이미 배정을 치른 방"을 뜻하므로 명시적으로 0을 줘야 이 시나리오가 된다 — assignmentRound>0
+     * 인 waiting 방의 새 카피는 아래 '라운드 종료 후 대기 안내'에서 검증한다.
+     */
+    it('한 번도 배정되지 않은 방에서는 컨트롤 대신 기존 안내를 보여준다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+
+      deliver.room(hostRoom({ status: 'waiting', assignmentRound: 0 }))
       await flushPromises()
 
       expect(wrapper.text()).toContain('게임이 아직 시작되지 않았어요')
@@ -524,6 +603,12 @@ describe('RoundOpsPage', () => {
       expect(document.body.textContent).toContain('게임을 종료할까요?')
       expect(document.body.textContent).toContain('참가자 전원이 대기실로 돌아가고')
       expect(endGameMock).not.toHaveBeenCalled()
+      // 위 = 안전, 아래 = 파괴. 킬샷 종료 다이얼로그와 순서를 맞춰 학습 전이 오조작을 막는다
+      // (라벨 없는 닫기 아이콘 버튼은 위계 비교 대상이 아니다)
+      const labels = [...document.body.querySelectorAll('button')]
+        .map((button) => button.textContent?.trim())
+        .filter((label) => label !== '')
+      expect(labels).toEqual(['계속 진행', '게임 종료'])
     })
 
     it('다이얼로그에서 계속 진행을 누르면 아무 일도 일어나지 않는다', async () => {
@@ -583,7 +668,8 @@ describe('RoundOpsPage', () => {
       const deliver = captureSnapshotCallbacks()
       const wrapper = mountPage()
 
-      deliver.room(hostRoom({ status: 'waiting', round: null }))
+      // '처음부터' waiting이라는 시나리오라 assignmentRound도 0(한 번도 배정 안 됨)으로 명시한다
+      deliver.room(hostRoom({ status: 'waiting', round: null, assignmentRound: 0 }))
       await flushPromises()
 
       expect(replaceMock).not.toHaveBeenCalled()
@@ -686,7 +772,11 @@ describe('RoundOpsPage', () => {
   })
 
   describe('탭', () => {
-    it('기록 탭은 준비 중 안내로 대체되고 운영 컨트롤을 숨긴다', async () => {
+    /**
+     * 첫 스냅샷 전에는 빈 배열이 "기록 없음"으로 읽혀 "아직 기록이 없어요"라는 확언이 도착 전에
+     * 떴다. 빈 상태는 실제로 빈 스냅샷을 받은 뒤에만 단언해야 한다.
+     */
+    it('기록 탭은 운영 컨트롤을 숨기고, 스냅샷이 오기 전에는 빈 상태를 단언하지 않는다', async () => {
       const deliver = captureSnapshotCallbacks()
       const wrapper = mountPage()
       deliver.room(hostRoom({ round: running() }))
@@ -694,11 +784,405 @@ describe('RoundOpsPage', () => {
 
       await wrapper.find('[data-value="log"]').trigger('click')
 
-      expect(wrapper.text()).toContain('기록 화면 준비 중')
+      expect(wrapper.text()).toContain('기록을 불러오는 중…')
+      expect(wrapper.text()).not.toContain('아직 기록이 없어요.')
       expect(findButton(wrapper, '일시정지')).toBeUndefined()
+
+      deliver.records([])
+      await flushPromises()
+      expect(wrapper.text()).toContain('아직 기록이 없어요.')
 
       await wrapper.find('[data-value="ops"]').trigger('click')
       expect(findButton(wrapper, '일시정지')).toBeDefined()
+    })
+
+    /** 대기실의 '지난 라운드 기록 보기'가 붙이는 쿼리 — 진입 즉시 기록 탭이어야 한다 */
+    it('?tab=log로 들어오면 기록 탭에서 시작한다', async () => {
+      routeQuery.tab = 'log'
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      deliver.room(hostRoom({ round: running() }))
+      await flushPromises()
+
+      expect(findButton(wrapper, '일시정지')).toBeUndefined()
+      expect(subscribeRecordsMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('모르는 tab 쿼리는 무시하고 운영 탭으로 연다', async () => {
+      routeQuery.tab = 'nope'
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      deliver.room(hostRoom({ round: running() }))
+      await flushPromises()
+
+      expect(findButton(wrapper, '일시정지')).toBeDefined()
+    })
+  })
+
+  describe('기록 탭', () => {
+    /** 판정 이력 픽스처 — 제출자 u3(팀 B)의 킬샷. 기본은 이번 라운드(2)의 확정 건 */
+    function submissionRecord(overrides: Partial<SubmissionRecord> = {}): SubmissionRecord {
+      return {
+        id: 'r1',
+        uid: 'u3',
+        team: 'B',
+        round: 2,
+        photo: 'data:image/jpeg;base64,killshot',
+        status: 'approved',
+        createdAtMs: Date.now(),
+        targetTeam: 'A',
+        judgedAtMs: Date.now(),
+        ...overrides,
+      }
+    }
+
+    /** 기록 탭을 열고(로그 구독 시작) 기록 스냅샷과 배정 명단을 채운다 */
+    async function openLogTab(records: SubmissionRecord[]) {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      deliver.room(hostRoom({ round: running() }))
+      deliver.participants([assigned('u1', 'A'), assigned('u2', 'A'), assigned('u3', 'B')])
+      await flushPromises()
+      await wrapper.find('[data-value="log"]').trigger('click')
+      deliver.records(records)
+      await flushPromises()
+      return { deliver, wrapper }
+    }
+
+    it('기록 탭 첫 활성화에서만 로그를 구독한다 — 탭을 오가도 다시 열지 않는다', async () => {
+      const { wrapper } = await openLogTab([])
+
+      expect(subscribeRecordsMock).toHaveBeenCalledExactlyOnceWith(
+        'AB2C',
+        expect.any(Function),
+        expect.any(Function),
+      )
+
+      await wrapper.find('[data-value="ops"]').trigger('click')
+      await wrapper.find('[data-value="log"]').trigger('click')
+      expect(subscribeRecordsMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('전 라운드 기록을 라운드 구분·상태와 함께 보여준다', async () => {
+      const { wrapper } = await openLogTab([
+        submissionRecord({ id: 'r2', round: 2, status: 'pending', targetTeam: null, judgedAtMs: null }),
+        submissionRecord({ id: 'r1', round: 1 }),
+      ])
+
+      const text = wrapper.text()
+      expect(text).toContain('라운드 2')
+      expect(text).toContain('라운드 1')
+      expect(text).toContain('u3')
+      expect(wrapper.find('button[data-record="r2"]').text()).toContain('대기')
+      expect(wrapper.find('button[data-record="r1"]').text()).toContain('확정')
+      expect(wrapper.find('button[data-record="r1"]').text()).toContain('팀 A · 파랑')
+    })
+
+    it('판정된 기록을 누르면 읽기 전용 상세 시트가 열린다', async () => {
+      const { wrapper } = await openLogTab([submissionRecord()])
+
+      await wrapper.find('button[data-record="r1"]').trigger('click')
+      await flushPromises()
+
+      expect(document.body.textContent).toContain('킬샷 기록')
+      expect(document.body.textContent).toContain('잡힌 팀')
+      // 판정 시트가 아니다 — 확정/반려 액션이 없어야 읽기 전용이다
+      expect(document.body.textContent).not.toContain('판정 확정')
+    })
+
+    it('이번 라운드의 대기 기록을 누르면 판정 시트가 바로 열린다', async () => {
+      const { wrapper } = await openLogTab([
+        submissionRecord({ status: 'pending', targetTeam: null, judgedAtMs: null }),
+      ])
+
+      await wrapper.find('button[data-record="r1"]').trigger('click')
+      await flushPromises()
+
+      expect(document.body.textContent).toContain('킬샷 판정')
+      expect(document.body.textContent).toContain('잡힌 팀 선택')
+    })
+
+    it('라운드가 지난 대기 기록은 판정할 수 없어 상세 시트로 연다', async () => {
+      const { wrapper } = await openLogTab([
+        submissionRecord({ round: 1, status: 'pending', targetTeam: null, judgedAtMs: null }),
+      ])
+
+      await wrapper.find('button[data-record="r1"]').trigger('click')
+      await flushPromises()
+
+      expect(document.body.textContent).toContain('킬샷 기록')
+      expect(document.body.textContent).toContain('판정되지 않은 채 라운드가 지난 제출이에요.')
+      expect(document.body.textContent).not.toContain('킬샷 판정')
+    })
+
+    it('기록 Listen 오류는 오류 카드와 토스트로 알린다', async () => {
+      const { deliver, wrapper } = await openLogTab([submissionRecord()])
+
+      deliver.recordsError(new Error('permission-denied'))
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('기록 연결 오류')
+      expect(toastMock).toHaveBeenCalledWith({
+        title: '기록 연결이 끊겼어요. 화면을 새로고침해 주세요.',
+        tone: 'danger',
+      })
+    })
+
+    /**
+     * 라운드 종료는 방을 waiting으로 되돌린다 — 그 직후가 호스트가 지난 라운드를 되짚어 볼
+     * 유일한 시점이고, 대기실의 '지난 라운드 기록 보기'도 이 상태로 들어온다. 판정 탭은 playing
+     * 게이트를 유지하지만(판정 쓰기가 막힌다), 읽기 전용인 기록은 게이트를 두지 않는다.
+     */
+    it('대기(waiting) 상태에서도 지난 라운드 기록을 열람할 수 있다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      deliver.room(hostRoom({ status: 'waiting', round: null }))
+      deliver.participants([assigned('u3', 'B')])
+      await flushPromises()
+
+      await wrapper.find('[data-value="log"]').trigger('click')
+      deliver.records([submissionRecord({ round: 1 })])
+      await flushPromises()
+
+      expect(wrapper.text()).not.toContain('게임이 아직 시작되지 않았어요')
+      expect(wrapper.find('button[data-record="r1"]').exists()).toBe(true)
+    })
+
+    /** 필터는 페이지가 들고 있어야 판정하러 다녀와도 좁혀 둔 조건이 살아 있다 */
+    it('탭을 오갔다 돌아와도 상태 필터가 유지된다', async () => {
+      const { wrapper } = await openLogTab([
+        submissionRecord({ id: 'r1', status: 'approved' }),
+        submissionRecord({ id: 'r2', status: 'rejected', targetTeam: null }),
+      ])
+
+      await wrapper.find('[data-value="rejected"]').trigger('click')
+      expect(wrapper.find('button[data-record="r1"]').exists()).toBe(false)
+
+      await wrapper.find('[data-value="ops"]').trigger('click')
+      await wrapper.find('[data-value="log"]').trigger('click')
+
+      expect(wrapper.find('button[data-record="r2"]').exists()).toBe(true)
+      expect(wrapper.find('button[data-record="r1"]').exists()).toBe(false)
+    })
+  })
+
+  /**
+   * 라운드 종료 — 타이머가 0에 닿은 뒤 한 라운드를 닫고 대기실(재편성)로 넘기는 정규 경로.
+   * 쓰기는 '게임 종료'와 같은 endGame이지만, 중단이 아니라 타임테이블대로의 다음 단계라
+   * 확인을 묻지 않는다(판정이 남은 경우만 예외).
+   */
+  describe('라운드 종료', () => {
+    /** 종료 상태 + 대기 킬샷 n건인 화면 */
+    async function openEndedRound(pendingCount: number) {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      deliver.room(hostRoom({ round: ended() }))
+      await flushPromises()
+
+      deliver.submissions(
+        Array.from({ length: pendingCount }, (_unused, index) => ({
+          id: `s${index}`,
+          uid: 'u3',
+          team: 'B',
+          round: 2,
+          photo: 'data:image/jpeg;base64,killshot',
+          status: 'pending' as const,
+          createdAtMs: Date.now(),
+        })),
+      )
+      await flushPromises()
+      return { deliver, wrapper }
+    }
+
+    it('판정 대기가 없으면 바로 종료하고 다음 라운드 배정을 안내한다', async () => {
+      const { wrapper } = await openEndedRound(0)
+
+      await findButton(wrapper, '라운드 종료')!.trigger('click')
+      await flushPromises()
+
+      expect(endGameMock).toHaveBeenCalledExactlyOnceWith('AB2C')
+      expect(toastMock).toHaveBeenCalledWith({
+        title: '라운드를 종료했어요. 대기실에서 다음 라운드를 배정해 주세요.',
+        tone: 'success',
+      })
+    })
+
+    /** 종료 후에는 rules가 지난 라운드 판정을 막아 영구히 판정할 수 없게 된다 */
+    it('판정 대기가 남았으면 건수를 밝히고 확인을 받는다', async () => {
+      const { wrapper } = await openEndedRound(2)
+
+      await findButton(wrapper, '라운드 종료')!.trigger('click')
+      await flushPromises()
+
+      expect(document.body.textContent).toContain('판정하지 않은 킬샷이 있어요')
+      expect(document.body.textContent).toContain('킬샷 2건이 남았어요')
+      expect(endGameMock).not.toHaveBeenCalled()
+    })
+
+    /** 라벨이 약속한 대로 판정 탭까지 데려가야 한다 — 닫기만 하면 진행자가 탭을 손으로 찾는다 */
+    it('먼저 판정하기를 고르면 종료하지 않고 판정 탭으로 데려간다', async () => {
+      const { wrapper } = await openEndedRound(1)
+
+      await findButton(wrapper, '라운드 종료')!.trigger('click')
+      await flushPromises()
+
+      const keep = [...document.body.querySelectorAll<HTMLElement>('button')].find(
+        (button) => button.textContent?.trim() === '먼저 판정하기',
+      )!
+      keep.click()
+      await flushPromises()
+
+      expect(endGameMock).not.toHaveBeenCalled()
+      expect(document.body.textContent).not.toContain('판정하지 않은 킬샷이 있어요')
+      // 판정 탭으로 전환됐다 — 대기 큐 화면의 안내가 보인다
+      expect(wrapper.text()).toContain('사진 속 완장의 팀을 확인해 판정해 주세요.')
+    })
+
+    it('확인하면 대기 건을 남겨 둔 채 라운드를 종료한다', async () => {
+      const { wrapper } = await openEndedRound(1)
+
+      await findButton(wrapper, '라운드 종료')!.trigger('click')
+      await flushPromises()
+
+      const confirm = [...document.body.querySelectorAll<HTMLElement>('button')].find(
+        (button) => button.textContent?.trim() === '그대로 라운드 종료',
+      )!
+      confirm.click()
+      await flushPromises()
+
+      expect(endGameMock).toHaveBeenCalledExactlyOnceWith('AB2C')
+    })
+
+    /**
+     * 큐 리스너가 죽으면 store가 stale 큐를 비운다 — 건수만 보면 "알 수 없음"이 "0건"으로 위장해
+     * 확인 없이 종료되고, 남은 킬샷은 rules 때문에 영구히 판정할 수 없게 된다.
+     */
+    it('큐 연결이 끊긴 상태에서는 건수를 몰라도 확인을 받는다', async () => {
+      const { deliver, wrapper } = await openEndedRound(0)
+
+      deliver.submissionsError(new Error('permission-denied'))
+      await flushPromises()
+
+      await findButton(wrapper, '라운드 종료')!.trigger('click')
+      await flushPromises()
+
+      expect(document.body.textContent).toContain('대기 건수를 확인할 수 없어요')
+      expect(document.body.textContent).not.toContain('0건이 남았어요')
+      expect(endGameMock).not.toHaveBeenCalled()
+    })
+
+    /**
+     * uncertain일 때 '먼저 판정하기'가 판정 탭으로 데려가도 거기엔 "판정 큐 연결 오류" 카드뿐이라
+     * 막다른 길이었다. 재연결 수단이 없으므로 그 버튼을 감추고 닫기만 남겨, 닫아도 종료를
+     * 부르지 않는지까지 확인한다(재리뷰 F-3).
+     */
+    it('큐 연결이 끊긴 상태에서는 먼저 판정하기 대신 닫기만 보이고, 닫아도 종료를 호출하지 않는다', async () => {
+      const { deliver, wrapper } = await openEndedRound(0)
+
+      deliver.submissionsError(new Error('permission-denied'))
+      await flushPromises()
+
+      await findButton(wrapper, '라운드 종료')!.trigger('click')
+      await flushPromises()
+
+      expect(document.body.textContent).toContain('대기 건수를 확인할 수 없어요')
+      const buttonLabels = [...document.body.querySelectorAll<HTMLElement>('button')].map(
+        (button) => button.textContent?.trim(),
+      )
+      expect(buttonLabels).not.toContain('먼저 판정하기')
+      expect(buttonLabels).toContain('닫기')
+
+      const close = [...document.body.querySelectorAll<HTMLElement>('button')].find(
+        (button) => button.textContent?.trim() === '닫기',
+      )!
+      close.click()
+      await flushPromises()
+
+      expect(document.body.textContent).not.toContain('대기 건수를 확인할 수 없어요')
+      expect(endGameMock).not.toHaveBeenCalled()
+    })
+
+    /** 열려 있는 동안 문구가 바뀌면 진행자가 읽고 판단한 근거와 확인 대상이 어긋난다 */
+    it('다이얼로그가 열린 뒤 대기가 사라져도 건수는 열림 시점 값으로 고정된다', async () => {
+      const { deliver, wrapper } = await openEndedRound(2)
+
+      await findButton(wrapper, '라운드 종료')!.trigger('click')
+      await flushPromises()
+      expect(document.body.textContent).toContain('킬샷 2건이 남았어요')
+
+      // 다른 기기가 남은 판정을 모두 끝낸 스냅샷
+      deliver.submissions([])
+      await flushPromises()
+
+      expect(document.body.textContent).toContain('킬샷 2건이 남았어요')
+      expect(document.body.textContent).not.toContain('킬샷 0건이 남았어요')
+    })
+  })
+
+  /**
+   * 라운드 종료로 waiting에 돌아간 방(assignmentRound>0)의 안내 카드 — 판정 큐 구독은 status와
+   * 무관하게 차수 키로 유지되어 미판정 건이 배지에 계속 잡히는데, 본문이 "게임이 아직 시작되지
+   * 않았어요"인 옛 카피는 이미 라운드를 치른 방에서는 사실과 다르다. 그 모순이 대기실의 재실행
+   * 가드('그대로 다시 시작' 선택 유도)를 무력화하므로 assignmentRound로 분기해야 한다.
+   */
+  describe('라운드 종료 후 대기 안내', () => {
+    it('운영 탭은 라운드 종료 카피를 보여주고 대기실로 버튼을 유지한다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+
+      deliver.room(hostRoom({ status: 'waiting', round: null }))
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('라운드가 종료된 상태예요')
+      expect(wrapper.text()).toContain('대기실에서 다음 라운드를 배정하고 게임을 시작해 주세요.')
+      expect(wrapper.text()).not.toContain('게임이 아직 시작되지 않았어요')
+      expect(findButton(wrapper, '대기실로')).toBeDefined()
+    })
+
+    it('판정 탭은 미판정 건수를 밝히고, 기록 탭 열기를 누르면 기록 탭으로 전환된다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+
+      deliver.room(hostRoom({ status: 'waiting', round: null }))
+      deliver.submissions([
+        {
+          id: 's1',
+          uid: 'u3',
+          team: 'B',
+          round: 2,
+          photo: 'data:image/jpeg;base64,killshot',
+          status: 'pending' as const,
+          createdAtMs: Date.now(),
+        },
+      ])
+      await flushPromises()
+
+      await wrapper.find('[data-value="judge"]').trigger('click')
+
+      expect(wrapper.text()).toContain('판정은 라운드 진행 중에만 할 수 있어요')
+      expect(wrapper.text()).toContain('판정되지 않은 킬샷 1건은 기록 탭에서 확인할 수 있어요.')
+      expect(wrapper.text()).not.toContain('게임이 아직 시작되지 않았어요')
+
+      await findButton(wrapper, '기록 탭 열기')!.trigger('click')
+      await flushPromises()
+
+      // 기록 탭 첫 활성화 — 로그 구독이 시작되고 로딩 문구가 뜬다(판정 탭 안내는 사라진다)
+      expect(wrapper.text()).toContain('기록을 불러오는 중…')
+      expect(wrapper.text()).not.toContain('판정은 라운드 진행 중에만 할 수 있어요')
+      expect(subscribeRecordsMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('판정 탭은 미판정 건이 없으면 지난 기록 안내로 대체한다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+
+      deliver.room(hostRoom({ status: 'waiting', round: null }))
+      await flushPromises()
+
+      await wrapper.find('[data-value="judge"]').trigger('click')
+
+      expect(wrapper.text()).toContain('지난 라운드의 기록은 기록 탭에서 확인할 수 있어요.')
+      expect(wrapper.text()).not.toContain('판정되지 않은 킬샷')
     })
   })
 
@@ -772,10 +1256,11 @@ describe('RoundOpsPage', () => {
       expect(wrapper.text()).toContain('판정 대기 중인 킬샷이 없어요.')
     })
 
+    /** 한 번도 배정된 적 없는 방(assignmentRound=0)만 이 카피를 쓴다 — 기본값(2)은 이미 배정을 치른 방이다 */
     it('시작 전(waiting) 방에서는 큐 대신 안내를 보여준다', async () => {
       const deliver = captureSnapshotCallbacks()
       const wrapper = mountPage()
-      deliver.room(hostRoom({ status: 'waiting' }))
+      deliver.room(hostRoom({ status: 'waiting', assignmentRound: 0 }))
       await flushPromises()
 
       await wrapper.find('[data-value="judge"]').trigger('click')
