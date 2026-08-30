@@ -56,6 +56,7 @@ const routeRoomCode = computed(() => normalizeRoomCode(String(route.params.roomC
 
 const { nowMs, formatted, displayState } = useRoundTimer(round)
 const JUDGE_ERROR_MESSAGE = '판정을 처리하지 못했어요. 다시 시도해 주세요.'
+const END_GAME_ERROR_MESSAGE = '게임을 종료하지 못했어요. 다시 시도해 주세요.'
 
 /** 하단 탭 — 기록은 아직 화면이 없어 준비 중 안내만 보여준다.
  * 판정 탭은 다른 탭에서도 킬샷 도착을 알 수 있게 대기 건수 배지를 단다(도착 시 펄스). */
@@ -138,11 +139,19 @@ watch(submissionListenError, (message) => {
  * 게임 종료 — 성공하면 방 status가 waiting이 되고, 대기실 복귀는 아래 watch(스냅샷)가 맡는다.
  * 여기서 직접 라우팅하지 않는 이유: 호스트가 기기를 두 대 열어 둔 경우 한쪽에서 종료해도
  * 두 창이 모두 대기실로 돌아가야 하기 때문이다.
+ *
+ * 실패하면 다이얼로그를 닫지 않는다. 결과와 상관없이 닫으면, 다른 쓰기가 걸려 종료 요청이
+ * 아예 나가지 못한 경우에도 화면은 "눌렀더니 창만 닫히고 아무 일도 없는" 모습이 된다.
+ * 그대로 열어 둔 채 원인을 알려야 호스트가 같은 자리에서 다시 누를 수 있다.
  */
 async function endGame() {
   const ended = await store.finishGame()
+  if (!ended) {
+    toast({ title: END_GAME_ERROR_MESSAGE, tone: 'danger' })
+    return
+  }
   isEndGameDialogOpen.value = false
-  if (ended) toast({ title: '게임을 종료했어요.', tone: 'success' })
+  toast({ title: '게임을 종료했어요.', tone: 'success' })
 }
 
 /** 전송에 성공했을 때만 시트를 닫는다 — 실패하면 입력을 남겨 둔 채 재시도할 수 있어야 한다 */

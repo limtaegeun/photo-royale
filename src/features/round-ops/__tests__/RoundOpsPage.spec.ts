@@ -562,6 +562,60 @@ describe('RoundOpsPage', () => {
       expect(toastMock).toHaveBeenCalledWith({ title: '게임을 종료했어요.', tone: 'success' })
     })
 
+    it('종료 요청이 실패하면 다이얼로그를 닫지 않고 실패를 알린다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      deliver.room(hostRoom({ round: running() }))
+      await flushPromises()
+
+      endGameMock.mockRejectedValueOnce(new Error('permission denied'))
+      await findButton(wrapper, '게임 종료')!.trigger('click')
+      await flushPromises()
+      const confirm = [...document.body.querySelectorAll('button')].filter(
+        (b) => b.textContent?.trim() === '게임 종료',
+      ).pop()!
+      confirm.click()
+      await flushPromises()
+
+      expect(toastMock).toHaveBeenCalledWith({
+        title: '게임을 종료하지 못했어요. 다시 시도해 주세요.',
+        tone: 'danger',
+      })
+      expect(toastMock).not.toHaveBeenCalledWith({ title: '게임을 종료했어요.', tone: 'success' })
+      expect(document.body.textContent).toContain('게임을 종료할까요?')
+    })
+
+    /** 종료가 서버까지 가지도 못하는 경로 — 여기서 다이얼로그가 닫히면 "눌렀는데 아무 일도 없다"가 된다 */
+    it('다른 쓰기가 끝나기 전에 누른 종료도 다이얼로그를 열어 둔 채 실패를 알린다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      deliver.room(hostRoom({ round: running() }))
+      await flushPromises()
+
+      const request = deferred()
+      pauseRoundMock.mockReturnValueOnce(request.promise)
+      await findButton(wrapper, '일시정지')!.trigger('click')
+      await flushPromises()
+
+      await findButton(wrapper, '게임 종료')!.trigger('click')
+      await flushPromises()
+      const confirm = [...document.body.querySelectorAll('button')].filter(
+        (b) => b.textContent?.trim() === '게임 종료',
+      ).pop()!
+      confirm.click()
+      await flushPromises()
+
+      expect(endGameMock).not.toHaveBeenCalled()
+      expect(toastMock).toHaveBeenCalledWith({
+        title: '게임을 종료하지 못했어요. 다시 시도해 주세요.',
+        tone: 'danger',
+      })
+      expect(document.body.textContent).toContain('게임을 종료할까요?')
+
+      request.resolve()
+      await flushPromises()
+    })
+
     /** 종료 스냅샷이 오면 종료를 누른 창뿐 아니라 같은 계정의 다른 기기도 함께 돌아가야 한다 */
     it('playing → waiting 스냅샷이 오면 호스트를 대기실로 보낸다', async () => {
       const deliver = captureSnapshotCallbacks()

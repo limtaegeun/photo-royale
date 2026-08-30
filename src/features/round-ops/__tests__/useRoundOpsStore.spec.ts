@@ -573,7 +573,7 @@ describe('useRoundOpsStore', () => {
       expect(endGameMock).not.toHaveBeenCalled()
     })
 
-    it('실패하면 false와 안내를 남긴다 — 화면이 다이얼로그를 닫아도 상태는 그대로다', async () => {
+    it('실패해도 store는 안내를 세우지 않는다 — 안내는 화면이 반환값 하나로 처리한다', async () => {
       const deliver = captureSnapshotCallbacks()
       const store = useRoundOpsStore()
       store.enter('AB2C')
@@ -582,7 +582,26 @@ describe('useRoundOpsStore', () => {
       endGameMock.mockRejectedValueOnce(new Error('permission denied'))
 
       await expect(store.finishGame()).resolves.toBe(false)
-      expect(store.actionError).toBe('요청을 처리하지 못했어요. 다시 시도해 주세요.')
+      expect(store.actionError).toBeNull()
+    })
+
+    /** 이 경로가 서버 실패와 다르게 조용히 넘어가면 호스트는 종료가 나간 줄 안다 */
+    it('다른 쓰기가 끝나기 전에는 종료를 내보내지 않고 false를 돌려준다', async () => {
+      const request = deferred()
+      pauseRoundMock.mockReturnValueOnce(request.promise)
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room({ round: RUNNING }))
+
+      const pausing = store.pause()
+      await expect(store.finishGame()).resolves.toBe(false)
+      expect(endGameMock).not.toHaveBeenCalled()
+
+      request.resolve()
+      await pausing
+      await expect(store.finishGame()).resolves.toBe(true)
+      expect(endGameMock).toHaveBeenCalledExactlyOnceWith('AB2C')
     })
   })
 
