@@ -248,6 +248,11 @@ service cloud.firestore {
           && request.resource.data.keys().hasOnly(['uid', 'team', 'round', 'photo', 'status', 'createdAt'])
           && request.resource.data.uid == request.auth.uid
           && get(/databases/$(database)/documents/rooms/$(roomCode)).data.status == 'playing'
+          // 정지(paused) 중·라운드 시작 전 제출을 서버에서도 차단한다(클라 잠금과 같은 기준).
+          // 시간(0:00 경과)은 검사하지 않는다 — 종료 컷은 호스트의 '라운드 종료'가 정본이고,
+          // rules의 get은 같은 문서라 추가 비용이 없다.
+          && ('round' in get(/databases/$(database)/documents/rooms/$(roomCode)).data)
+          && get(/databases/$(database)/documents/rooms/$(roomCode)).data.round.status == 'running'
           && request.resource.data.round is int
           && request.resource.data.round
             == get(/databases/$(database)/documents/rooms/$(roomCode)).data.assignmentRound
