@@ -155,6 +155,7 @@ describe('getRoom', () => {
       status: 'waiting',
       assignmentRound: 2,
       gameMode: 'king-hunt',
+      roundModes: {},
       round: null,
     })
     expect(getDocMock).toHaveBeenCalledWith({ path: 'rooms/AB2C' })
@@ -259,6 +260,42 @@ describe('getRoom', () => {
       data: () => ({ hostUid: 'host-1', status: 'waiting', assignmentRound: 1, gameMode: 'bogus' }),
     })
     await expect(getRoom('AB2C')).resolves.toMatchObject({ gameMode: 'normal' })
+  })
+
+  /**
+   * roundModes는 gameMode가 덮어써 버리는 과거 라운드 모드의 유일한 근거다. 그래서 gameMode처럼
+   * 기본값으로 수렴시키지 않고, 오염된 엔트리만 버려 나머지 차수 이력을 살린다.
+   */
+  it('roundModes를 차수 문자열 → 모드 맵으로 정규화하고, 오염된 엔트리만 제외한다', async () => {
+    /** 이력 필드만 갈아 끼운 방 문서를 한 번 돌려준다 */
+    function mockRoomWithRoundModes(roundModes: unknown): void {
+      getDocMock.mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({
+          hostUid: 'host-1',
+          status: 'waiting',
+          assignmentRound: 2,
+          gameMode: 'king-hunt',
+          ...(roundModes === undefined ? {} : { roundModes }),
+        }),
+      })
+    }
+
+    // 이력을 남기기 전에 확정된 기존 방 — 필드 자체가 없다
+    mockRoomWithRoundModes(undefined)
+    expect((await getRoom('AB2C'))!.roundModes).toEqual({})
+
+    // 유효한 이력은 키(차수 문자열)와 값 그대로
+    mockRoomWithRoundModes({ 1: 'normal', 2: 'king-hunt' })
+    expect((await getRoom('AB2C'))!.roundModes).toEqual({ 1: 'normal', 2: 'king-hunt' })
+
+    // 모르는 모드 id·비문자열은 그 차수만 빠지고 나머지 라운드는 계속 읽힌다
+    mockRoomWithRoundModes({ 1: 'normal', 2: 'mafia', 3: 7, 4: null })
+    expect((await getRoom('AB2C'))!.roundModes).toEqual({ 1: 'normal' })
+
+    // 맵이 아닌 값이 들어온 경우는 이력 전체를 빈 객체로 수렴시킨다
+    mockRoomWithRoundModes('king-hunt')
+    expect((await getRoom('AB2C'))!.roundModes).toEqual({})
   })
 })
 
@@ -461,6 +498,7 @@ describe('subscribeToRoom', () => {
       status: 'waiting',
       assignmentRound: 1,
       gameMode: 'staff-chase',
+      roundModes: {},
       round: null,
     })
 

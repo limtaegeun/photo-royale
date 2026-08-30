@@ -4,6 +4,8 @@ import BaseBadge from '@/shared/components/BaseBadge.vue'
 import BaseCard from '@/shared/components/BaseCard.vue'
 import BaseSectionHeader from '@/shared/components/BaseSectionHeader.vue'
 import BaseSegmented from '@/shared/components/BaseSegmented.vue'
+// 모드 라벨은 game-mode 기능의 소유물이라 public API로만 가져온다(CameraPage 전례)
+import { GAME_MODES, type GameModeId } from '@/features/game-mode'
 import { displayGroup } from '@/features/team-assignment'
 import type { Participant } from '@/features/waiting-room'
 import type { SubmissionRecord } from '../api/submissions'
@@ -24,9 +26,14 @@ interface Props {
   participants: Participant[]
   /** 상대 시각 계산 기준 — 라운드 타이머의 1초 tick을 그대로 쓴다 */
   nowMs: number
+  /**
+   * 차수 → 확정 모드 이력(room.roundModes). 키는 차수 문자열이다.
+   * 이력을 남기기 전에 확정된 기존 방은 비어 있어 라운드 라벨이 예전처럼 차수만 보여준다.
+   */
+  roundModes?: Record<string, GameModeId>
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), { roundModes: () => ({}) })
 
 const emit = defineEmits<{
   /** 행 선택 — 상세 확인 또는(대기 건) 판정 */
@@ -86,6 +93,16 @@ const ROUND_CHIP_CLASS = {
 
 function roundChipClass(selected: boolean): string {
   return selected ? ROUND_CHIP_CLASS.selected : ROUND_CHIP_CLASS.selectable
+}
+
+/**
+ * 라운드 구분선 라벨 — 그 차수의 확정 모드가 이력에 있으면 함께 적는다. 차수만으로는 "라운드 3"이
+ * 그룹전이었는지 왕잡기였는지 되짚을 수 없다. 이력이 없는 기존 방은 예전처럼 차수만 보여준다
+ * (좁은 라운드 필터 칩은 모드까지 넣으면 넘치므로 손대지 않는다).
+ */
+function roundGroupLabel(round: number): string {
+  const mode = props.roundModes[String(round)]
+  return mode === undefined ? `라운드 ${round}` : `라운드 ${round} · ${GAME_MODES[mode].label}`
 }
 </script>
 
@@ -162,7 +179,7 @@ function roundChipClass(selected: boolean): string {
       <section v-for="group in roundGroups" :key="group.round" class="flex flex-col gap-3">
         <h3 class="flex items-center gap-3 text-caption font-semibold text-content-tertiary">
           <span aria-hidden="true" class="h-px flex-1 bg-stroke"></span>
-          라운드 {{ group.round }}
+          {{ roundGroupLabel(group.round) }}
           <span aria-hidden="true" class="h-px flex-1 bg-stroke"></span>
         </h3>
 

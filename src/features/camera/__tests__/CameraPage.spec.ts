@@ -107,6 +107,7 @@ function playingRoom(overrides: Partial<RoomInfo> = {}): RoomInfo {
     status: 'playing',
     assignmentRound: 1,
     gameMode: 'normal',
+    roundModes: {},
     round: RUNNING_ROUND,
     ...overrides,
   }
