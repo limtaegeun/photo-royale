@@ -248,6 +248,10 @@ watch(myId, (id) => {
 })
 
 watch([gameStatus, isRoundLive], ([status, roundLive]) => {
+  // 세션이 사라진 순간과 전이가 같은 tick에 겹치면, 위의 로그인 이동을 이 replace가 덮어쓴다.
+  // 그러면 돌아올 목적지(redirect)를 잃어 참가자가 방 코드를 다시 넣어야 한다 —
+  // 라운드 운영이 한 watch 안에서 myId를 먼저 보는 것과 같은 기준으로 여기서도 먼저 걸러낸다.
+  if (myId.value === null) return
   if (status !== 'playing') return
   if (isHost.value) {
     router.replace({ name: 'round-ops', params: { roomCode: roomCode.value } })
