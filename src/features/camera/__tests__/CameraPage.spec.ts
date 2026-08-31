@@ -355,11 +355,35 @@ describe('CameraPage 방 구독', () => {
  * 없다. 확정 스펙(라운드당 20분)이 표시로만 존재하지 않도록 두 진입점을 모두 고정해 둔다.
  */
 describe('CameraPage 라운드 종료 게이트', () => {
-  it('라운드가 종료되면 셔터가 비활성화된다', async () => {
+  /**
+   * 종료되면 셔터·아이템이 전부 잠긴 채 남는 대신 출구 하나로 바뀐다 — 잠긴 버튼만 남기면
+   * 호스트가 게임을 종료할 때까지 플레이어가 누를 것이 없는 화면에 갇힌다(A-4).
+   */
+  it('라운드가 종료되면 셔터 대신 대기실 출구가 자리를 넘겨받는다', async () => {
     mockDisplayState.value = 'ended'
     const wrapper = await mountWithActiveCamera()
 
-    expect(findShutter(wrapper).attributes('disabled')).toBeDefined()
+    expect(findShutter(wrapper).exists()).toBe(false)
+    expect(findButtonByText(wrapper, '대기실로 돌아가기')).toBeDefined()
+  })
+
+  it('출구를 누르면 방 코드를 담아 대기실로 이동한다', async () => {
+    mockDisplayState.value = 'ended'
+    const wrapper = await mountWithActiveCamera()
+
+    await findButtonByText(wrapper, '대기실로 돌아가기')!.trigger('click')
+
+    expect(replaceMock).toHaveBeenCalledWith({
+      name: 'waiting-room',
+      params: { roomCode: 'AB2C' },
+    })
+  })
+
+  it('라운드가 진행 중이면 출구를 노출하지 않는다', async () => {
+    const wrapper = await mountWithActiveCamera()
+
+    expect(findShutter(wrapper).exists()).toBe(true)
+    expect(findButtonByText(wrapper, '대기실로 돌아가기')).toBeUndefined()
   })
 
   it('확인 화면이 열린 채 라운드가 종료되면 제출을 막고 안내한다', async () => {
@@ -411,7 +435,10 @@ describe('CameraPage 라운드 종료 게이트', () => {
 
     const submitButton = findButtonByText(wrapper, '킬샷 제출')!
     expect(submitButton.attributes('disabled')).toBeDefined()
-    expect(wrapper.text()).toContain('라운드가 종료되어 제출할 수 없어요. 다시 찍기로 돌아가 주세요.')
+    expect(wrapper.text()).toContain('라운드가 종료되어 제출할 수 없어요. 돌아가면 대기실로 나갈 수 있어요.')
+    // 종료 뒤에는 다시 찍을 수 없으므로 버튼 라벨도 사실에 맞춘다
+    expect(findButtonByText(wrapper, '돌아가기')).toBeDefined()
+    expect(findButtonByText(wrapper, '다시 찍기')).toBeUndefined()
     // 팀 배정은 이미 확인됐으므로 미배정 안내와는 동시에 뜨지 않는다
     expect(wrapper.text()).not.toContain('이번 라운드 팀 배정을 확인하는 중이에요')
   })

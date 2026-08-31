@@ -129,6 +129,16 @@ function leaveCockpit(nextRoom: RoomInfo | null) {
   }
 }
 
+/**
+ * 대기실로 나가기 — 타이머가 0에 닿았지만 호스트가 아직 게임을 종료하지 않은 구간의 출구다.
+ * 대기실은 '남은 시간이 있는 라운드'에만 콕핏으로 되돌려 보내므로(isRoundLive) 나가면 그대로
+ * 머물고, 진행자가 시간을 더하거나 다음 라운드를 시작하면 그 스냅샷으로 자동 재진입한다.
+ * replace라 뒤로가기로 죽은 콕핏에 다시 들어오지 않는다(leaveCockpit과 같은 규칙).
+ */
+function returnToWaitingRoom() {
+  router.replace({ name: 'waiting-room', params: { roomCode } })
+}
+
 function handleSubscriptionError() {
   if (subscriptionFailed) return
   subscriptionFailed = true
@@ -393,7 +403,18 @@ onUnmounted(() => {
         >
           촬영에 실패했습니다. 다시 시도해주세요
         </p>
-        <div class="grid grid-cols-[1fr_auto_1fr] items-end gap-5 px-6 pb-5">
+        <!--
+          라운드가 끝나면 컨트롤 자리를 출구 하나로 바꾼다 — 셔터·아이템이 전부 잠긴 채 남아 있으면
+          플레이어는 누를 것이 없는 화면에 갇힌다(호스트가 게임을 종료해야 스스로 빠져나간다).
+          자동으로 내보내지는 않는다: 확인 화면에 들고 있던 사진이 사라지고, 종료 판정이 기기
+          시계 기준이라 시계가 앞선 기기만 혼자 빠져나가기 때문이다. 나갈지는 플레이어가 정한다.
+        -->
+        <div v-if="isRoundEnded" class="px-6 pb-5">
+          <BaseButton variant="primary" size="lg" class="w-full" @click="returnToWaitingRoom">
+            대기실로 돌아가기
+          </BaseButton>
+        </div>
+        <div v-else class="grid grid-cols-[1fr_auto_1fr] items-end gap-5 px-6 pb-5">
           <div
             v-for="(slots, columnIndex) in controlColumns"
             :key="columnIndex"
@@ -423,7 +444,7 @@ onUnmounted(() => {
             padding="none"
             aria-label="킬샷 촬영"
             class="shutter col-start-2 row-start-1 mb-7 min-h-20 w-20"
-            :disabled="isRoundEnded || isPaused"
+            :disabled="isPaused"
             @click="shoot"
           >
             <span class="size-14 rounded-full bg-brand"></span>
@@ -458,7 +479,7 @@ onUnmounted(() => {
           v-else-if="isRoundEnded"
           class="text-center text-caption break-keep text-content-secondary"
         >
-          라운드가 종료되어 제출할 수 없어요. 다시 찍기로 돌아가 주세요.
+          라운드가 종료되어 제출할 수 없어요. 돌아가면 대기실로 나갈 수 있어요.
         </p>
         <p
           v-else-if="isPaused"
@@ -474,7 +495,7 @@ onUnmounted(() => {
             :disabled="isSubmitting"
             @click="clear"
           >
-            다시 찍기
+            {{ isRoundEnded ? '돌아가기' : '다시 찍기' }}
           </BaseButton>
           <BaseButton
             variant="primary"
