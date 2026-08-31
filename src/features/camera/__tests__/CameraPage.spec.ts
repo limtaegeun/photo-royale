@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
+import { ref } from 'vue'
 import type { RoomInfo, RoundState } from '@/features/waiting-room'
 
 const replaceMock = vi.fn<(to: unknown) => void>()
@@ -22,6 +23,8 @@ const subscribeNoticeMock =
     ) => () => void
   >()
 const submitKillshotMock = vi.fn<(code: string, input: Record<string, unknown>) => Promise<void>>()
+/** 라운드 종료 게이트 테스트가 마운트 중간에 바꿔 끼울 수 있도록 실제 ref로 둔다 */
+const mockDisplayState = ref<'idle' | 'running' | 'paused' | 'ended'>('running')
 
 vi.mock('@/features/round-ops', async () => {
   const { computed } = await import('vue')
@@ -37,7 +40,7 @@ vi.mock('@/features/round-ops', async () => {
     ) => subscribeNoticeMock(code, onChange, onError),
     useRoundTimer: () => ({
       formatted: computed(() => '20:00'),
-      displayState: computed(() => 'running'),
+      displayState: mockDisplayState,
     }),
   }
 })
@@ -104,6 +107,7 @@ function playingRoom(overrides: Partial<RoomInfo> = {}): RoomInfo {
     status: 'playing',
     assignmentRound: 1,
     gameMode: 'normal',
+    roundModes: {},
     round: RUNNING_ROUND,
     ...overrides,
   }
@@ -224,6 +228,7 @@ beforeEach(() => {
     return unsubscribeNoticeMock
   })
   submitKillshotMock.mockReset().mockResolvedValue(undefined)
+  mockDisplayState.value = 'running'
 })
 
 afterEach(() => {
@@ -345,6 +350,164 @@ describe('CameraPage 방 구독', () => {
   })
 })
 
+/**
+ * 타이머가 00:00(ended)에 닿아도 셔터·제출이 계속 살아 있으면 게스트가 종료를 인지할 방법이
+ * 없다. 확정 스펙(라운드당 20분)이 표시로만 존재하지 않도록 두 진입점을 모두 고정해 둔다.
+ */
+describe('CameraPage 라운드 종료 게이트', () => {
+  it('라운드가 종료되면 셔터가 비활성화된다', async () => {
+    mockDisplayState.value = 'ended'
+    const wrapper = await mountWithActiveCamera()
+
+    expect(findShutter(wrapper).attributes('disabled')).toBeDefined()
+  })
+
+  it('확인 화면이 열린 채 라운드가 종료되면 제출을 막고 안내한다', async () => {
+    stubCanvas()
+    stubKillshotEncoding()
+    deliverAssignedParticipants()
+    const deliverRoom = captureRoomSnapshot()
+    const wrapper = await mountWithActiveCamera()
+    deliverRoom(playingRoom())
+    await flushPromises()
+
+    // 사진은 라운드가 아직 진행 중일 때 찍어 확인 화면을 열어 둔다
+    await findShutter(wrapper).trigger('click')
+    await flushPromises()
+
+    // 확인 화면을 보는 도중 타이머가 00:00에 닿는다. 리렌더(disabled 반영)를 기다리지 않고
+    // 곧바로 클릭한다 — VTU의 trigger는 현재 DOM의 disabled 여부만 보고 이벤트 발송 자체를
+    // 건너뛰므로, 여기서 flush를 끼우면 버튼 disabled 경로만 검증하게 되어 submitPhoto의
+    // 진입 가드(이중 방어: 리렌더가 아직 반영되지 않은 순간의 클릭)를 더는 확인할 수 없다.
+    mockDisplayState.value = 'ended'
+    await findButtonByText(wrapper, '킬샷 제출')!.trigger('click')
+    await flushPromises()
+
+    expect(toastMock).toHaveBeenCalledWith({
+      title: '라운드가 종료되어 제출할 수 없어요.',
+      tone: 'danger',
+    })
+    expect(submitKillshotMock).not.toHaveBeenCalled()
+  })
+
+  /**
+   * HUD 종료 안내는 뷰파인더(v-if="!photo") 쪽에만 있어 확인 화면이 열리면 보이지 않았다.
+   * 셔터만 잠그고 제출 버튼을 열어 두면 확인 화면에서는 종료를 인지할 방법이 없어, 버튼
+   * disabled와 안내 문구를 확인 화면 자체에도 고정해 둔다.
+   */
+  it('확인 화면에서 라운드가 종료되면 제출 버튼이 비활성화되고 종료 안내를 보여준다', async () => {
+    stubCanvas()
+    deliverAssignedParticipants()
+    const deliverRoom = captureRoomSnapshot()
+    const wrapper = await mountWithActiveCamera()
+    deliverRoom(playingRoom())
+    await flushPromises()
+
+    await findShutter(wrapper).trigger('click')
+    await flushPromises()
+
+    mockDisplayState.value = 'ended'
+    await flushPromises()
+
+    const submitButton = findButtonByText(wrapper, '킬샷 제출')!
+    expect(submitButton.attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('라운드가 종료되어 제출할 수 없어요. 다시 찍기로 돌아가 주세요.')
+    // 팀 배정은 이미 확인됐으므로 미배정 안내와는 동시에 뜨지 않는다
+    expect(wrapper.text()).not.toContain('이번 라운드 팀 배정을 확인하는 중이에요')
+  })
+})
+
+/**
+ * 호스트가 일시정지(올스탑)를 눌러도 셔터·제출이 계속 살아 있으면 정지 중 촬영한 킬샷이
+ * 판정 큐에 그대로 도착한다 — 안전을 위한 전원 정지가 게임적으로는 지켜지지 않는 셈이다.
+ * ended 게이트와 같은 이유로 paused도 셔터·제출 두 진입점을 모두 고정해 둔다.
+ */
+describe('CameraPage 일시정지 게이트', () => {
+  it('라운드가 일시정지되면 셔터가 비활성화되고 목표는 그대로 둔 채 일시정지 안내를 따로 보여준다', async () => {
+    mockDisplayState.value = 'paused'
+    const wrapper = await mountWithActiveCamera()
+
+    expect(findShutter(wrapper).attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('진행자가 게임을 멈췄어요. 자리에 멈춰 안내를 기다려 주세요.')
+    // 일시정지는 별도 블록이라 목표 문구를 밀어내지 않는다 — 재개 후 다시 읽을 필요가 없어야 한다
+    expect(wrapper.text()).toContain('상대 완장 알파벳을 찍어 제출하세요.')
+  })
+
+  it('진행 중에는 일시정지 안내를 띄우지 않는다', async () => {
+    const wrapper = await mountWithActiveCamera()
+
+    expect(wrapper.text()).not.toContain('진행자가 게임을 멈췄어요.')
+  })
+
+  it('라운드가 진행 중이면 셔터가 활성화된다', async () => {
+    const wrapper = await mountWithActiveCamera()
+
+    expect(findShutter(wrapper).attributes('disabled')).toBeUndefined()
+  })
+
+  it('일시정지가 재개되면 셔터가 다시 활성화된다', async () => {
+    mockDisplayState.value = 'paused'
+    const wrapper = await mountWithActiveCamera()
+    expect(findShutter(wrapper).attributes('disabled')).toBeDefined()
+
+    // isPaused는 displayState 파생값이라 이전 정지 상태를 기억하지 않는다 — 재개되면 곧바로 풀린다
+    mockDisplayState.value = 'running'
+    await flushPromises()
+
+    expect(findShutter(wrapper).attributes('disabled')).toBeUndefined()
+    expect(wrapper.text()).not.toContain('진행자가 게임을 멈췄어요.')
+  })
+
+  it('확인 화면에서 라운드가 일시정지되면 제출 버튼이 비활성화되고 일시정지 안내를 보여준다', async () => {
+    stubCanvas()
+    deliverAssignedParticipants()
+    const deliverRoom = captureRoomSnapshot()
+    const wrapper = await mountWithActiveCamera()
+    deliverRoom(playingRoom())
+    await flushPromises()
+
+    await findShutter(wrapper).trigger('click')
+    await flushPromises()
+
+    mockDisplayState.value = 'paused'
+    await flushPromises()
+
+    const submitButton = findButtonByText(wrapper, '킬샷 제출')!
+    expect(submitButton.attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('일시정지 중이라 제출할 수 없어요. 재개되면 다시 제출해 주세요.')
+    // 팀 배정은 이미 확인됐으므로 미배정 안내와는 동시에 뜨지 않는다
+    expect(wrapper.text()).not.toContain('이번 라운드 팀 배정을 확인하는 중이에요')
+  })
+
+  it('확인 화면이 열린 채 일시정지가 걸리면 제출을 막고 안내한다', async () => {
+    stubCanvas()
+    stubKillshotEncoding()
+    deliverAssignedParticipants()
+    const deliverRoom = captureRoomSnapshot()
+    const wrapper = await mountWithActiveCamera()
+    deliverRoom(playingRoom())
+    await flushPromises()
+
+    // 사진은 라운드가 아직 진행 중일 때 찍어 확인 화면을 열어 둔다
+    await findShutter(wrapper).trigger('click')
+    await flushPromises()
+
+    // 확인 화면을 보는 도중 호스트가 일시정지를 건다. 리렌더(disabled 반영)를 기다리지 않고
+    // 곧바로 클릭한다 — VTU의 trigger는 현재 DOM의 disabled 여부만 보고 이벤트 발송 자체를
+    // 건너뛰므로, 여기서 flush를 끼우면 버튼 disabled 경로만 검증하게 되어 submitPhoto의
+    // 진입 가드(이중 방어: 리렌더가 아직 반영되지 않은 순간의 클릭)를 더는 확인할 수 없다.
+    mockDisplayState.value = 'paused'
+    await findButtonByText(wrapper, '킬샷 제출')!.trigger('click')
+    await flushPromises()
+
+    expect(toastMock).toHaveBeenCalledWith({
+      title: '일시정지 중에는 제출할 수 없어요.',
+      tone: 'danger',
+    })
+    expect(submitKillshotMock).not.toHaveBeenCalled()
+  })
+})
+
 describe('CameraPage', () => {
   it('마운트 시 카메라를 켜고 비디오에 스트림을 연결한다', async () => {
     const stream = createFakeStream()
@@ -411,7 +574,7 @@ describe('CameraPage', () => {
     expect(wrapper.text()).toContain('상대 완장 알파벳을 찍어 제출하세요.')
     expect(wrapper.text()).toContain('20:00')
     expect(wrapper.text()).toContain('팀 A · 하린')
-    expect(wrapper.text()).toContain('2팀 생존')
+    expect(wrapper.text()).toContain('2팀 참가')
     expect(wrapper.text()).toContain('아이템')
     expect(wrapper.text()).toContain('지도')
     expect(wrapper.text()).toContain('기록')
@@ -544,7 +707,7 @@ describe('CameraPage', () => {
       photo: 'data:image/jpeg;base64,killshot',
     })
     expect(toastMock).toHaveBeenCalledWith({
-      title: '킬샷을 제출했어요. 호스트 판정을 기다려 주세요.',
+      title: '킬샷을 제출했어요.',
       tone: 'success',
     })
     // 미리보기가 닫히고 콕핏으로 돌아가 다음 킬샷을 이어서 찍을 수 있다

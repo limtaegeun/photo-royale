@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { useTeamAssignmentStore } from '@/features/team-assignment'
@@ -53,13 +53,15 @@ vi.mock('@/shared/composables/useToast', () => ({
 }))
 
 const replaceMock = vi.fn<() => void>()
+const pushMock = vi.fn<() => void>()
 vi.mock('vue-router', () => ({
   useRoute: () => ({ params: { roomCode: 'ab2c' } }),
-  useRouter: () => ({ replace: replaceMock, push: vi.fn<() => void>() }),
+  useRouter: () => ({ replace: replaceMock, push: pushMock }),
 }))
 
 import { RoomNotFoundError } from '../api/rooms'
 import WaitingRoomPage from '../WaitingRoomPage.vue'
+import { markRoundPlayed } from '../roundPlayMarker'
 import PlayerChip from '@/shared/components/PlayerChip.vue'
 import { useAppHeader } from '@/shared/composables/useAppHeader'
 
@@ -81,10 +83,18 @@ function captureSnapshotCallbacks() {
   }
 }
 
+/**
+ * 마운트한 화면은 afterEach에서 언마운트한다 — 게임 시작 재실행 확인 다이얼로그(BaseDialog)가
+ * Teleport로 document.body에 렌더되므로, 언마운트하지 않으면 이전 테스트의 다이얼로그 DOM이
+ * 다음 테스트의 document.body.textContent 검사에 그대로 남아 섞인다.
+ */
+const mounted: ReturnType<typeof mount>[] = []
 function mountPage() {
-  return mount(WaitingRoomPage, {
+  const wrapper = mount(WaitingRoomPage, {
     global: { plugins: [createPinia()] },
   })
+  mounted.push(wrapper)
+  return wrapper
 }
 
 function findButton(wrapper: ReturnType<typeof mountPage>, text: string) {
@@ -96,6 +106,7 @@ const GUEST_ROOM: RoomInfo = {
   status: 'waiting',
   assignmentRound: 0,
   gameMode: 'normal',
+  roundModes: {},
   round: null,
 }
 const MY_ROOM: RoomInfo = {
@@ -103,6 +114,7 @@ const MY_ROOM: RoomInfo = {
   status: 'waiting',
   assignmentRound: 0,
   gameMode: 'normal',
+  roundModes: {},
   round: null,
 }
 
@@ -155,10 +167,17 @@ describe('WaitingRoomPage', () => {
     unsubscribeParticipantsMock.mockReset()
     unsubscribeRoomMock.mockReset()
     replaceMock.mockReset()
+    pushMock.mockReset()
     toastMock.mockReset()
     dismissAllMock.mockReset()
     // 앱 셸 헤더 오버라이드는 모듈 싱글턴이라 케이스 간 누수를 막기 위해 매번 비운다
     useAppHeader().clearHeader()
+    // 라운드 재실행 마커는 세션 스토리지에 쌓이므로 케이스 간 누수를 막기 위해 매번 비운다
+    sessionStorage.clear()
+  })
+
+  afterEach(() => {
+    while (mounted.length > 0) mounted.pop()!.unmount()
   })
 
   it('라우트의 초대 코드를 정규화해 입장하고 룸 카드와 명단을 렌더한다', async () => {
@@ -181,6 +200,41 @@ describe('WaitingRoomPage', () => {
     // 인원 수는 명단 헤더 한 곳에서만 노출한다(룸 카드의 중복 캡션 제거) — 용어도 '준비'로 통일
     expect(wrapper.text()).toContain('3명 입장 · 2명 준비')
     expect(wrapper.text()).not.toContain('참가자 3명')
+  })
+
+  /**
+   * 배정 확정 전에는 room.gameMode가 기본값('일반전')으로 채워져 있어도 표시하지 않는다 —
+   * 진행자가 고르지 않은 모드를 확정된 것처럼 알리는 것이기 때문이다.
+   */
+  it('배정 확정 전에는 룸 카드에 차수·모드를 표시하지 않는다', async () => {
+    captureSnapshotCallbacks()
+    const wrapper = mountPage()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('ROOM AB2C')
+    expect(wrapper.text()).not.toContain('차 라운드')
+    expect(wrapper.text()).not.toContain('일반전')
+  })
+
+  /** '게임 시작'이 무슨 모드를 켜는지 대기실에서 확인할 수 있어야 한다(호스트·게스트 공통) */
+  it('배정 확정 후에는 룸 카드에 차수와 게임 모드를 표시한다', async () => {
+    getRoomMock.mockResolvedValue(MY_ROOM)
+    const deliver = captureSnapshotCallbacks()
+    const wrapper = mountPage()
+    await flushPromises()
+
+    deliver.room({
+      hostUid: 'me',
+      status: 'waiting',
+      assignmentRound: 3,
+      gameMode: 'group',
+      roundModes: {},
+      round: null,
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('3차 라운드')
+    expect(wrapper.text()).toContain('그룹전')
   })
 
   it('참가자가 없으면 명단 대신 초대 안내 문구를 보여준다', async () => {
@@ -301,6 +355,7 @@ describe('WaitingRoomPage', () => {
       status: 'playing',
       assignmentRound: 1,
       gameMode: 'normal',
+      roundModes: {},
       round: null,
     })
     deliver.participants([{ ...ROSTER[0]!, team: 'A', assignedRound: 1, isReady: true }])
@@ -321,6 +376,7 @@ describe('WaitingRoomPage', () => {
       status: 'playing' as const,
       assignmentRound: 1,
       gameMode: 'normal' as const,
+      roundModes: {},
       round: null,
     }
     deliver.room(playing)
@@ -342,7 +398,7 @@ describe('WaitingRoomPage', () => {
     mountPage()
     await flushPromises()
 
-    deliver.room({ hostUid: 'me', status: 'playing', assignmentRound: 1, gameMode: 'normal', round: null })
+    deliver.room({ hostUid: 'me', status: 'playing', assignmentRound: 1, gameMode: 'normal', roundModes: {}, round: null })
     await flushPromises()
 
     expect(replaceMock).toHaveBeenCalledWith({
@@ -450,6 +506,7 @@ describe('WaitingRoomPage', () => {
       status: 'waiting',
       assignmentRound: 1,
       gameMode: 'normal',
+      roundModes: {},
       round: null,
     })
     const wrapper = mountPage()
@@ -481,6 +538,7 @@ describe('WaitingRoomPage', () => {
       status: 'waiting',
       assignmentRound: 2,
       gameMode: 'group',
+      roundModes: {},
       round: null,
     })
     // mountPage 대신 명시적 pinia로 마운트해 같은 인스턴스의 팀 배정 스토어를 조회한다
@@ -500,7 +558,7 @@ describe('WaitingRoomPage', () => {
     expect(taStore.draftGameMode).toBe('group')
 
     // 다른 탭이 확정해 room 스냅샷의 assignmentRound가 올라가도(3) 드래프트 차수는 그대로 3
-    deliver.room({ hostUid: 'me', status: 'waiting', assignmentRound: 3, gameMode: 'group', round: null })
+    deliver.room({ hostUid: 'me', status: 'waiting', assignmentRound: 3, gameMode: 'group', roundModes: {}, round: null })
     await flushPromises()
     expect(taStore.draftRound).toBe(3)
   })
@@ -537,6 +595,7 @@ describe('WaitingRoomPage', () => {
       status: 'waiting',
       assignmentRound: 1,
       gameMode: 'normal',
+      roundModes: {},
       round: null,
     }
     getRoomMock.mockResolvedValue(hostRound1)
@@ -563,6 +622,7 @@ describe('WaitingRoomPage', () => {
       status: 'waiting',
       assignmentRound: 1,
       gameMode: 'normal',
+      roundModes: {},
       round: null,
     }
     getRoomMock.mockResolvedValue(hostRound1)
@@ -578,5 +638,163 @@ describe('WaitingRoomPage', () => {
     await flushPromises()
 
     expect(startGameMock).not.toHaveBeenCalled()
+  })
+
+  /**
+   * 라운드 종료는 status만 waiting으로 되돌리고 assignmentRound·전원 레디는 보존한다 — 그대로
+   * '게임 시작'을 다시 누르면 같은 차수가 재실행되어 직전 라운드의 미판정 킬샷이 판정 큐에
+   * 부활한다. 세션 로컬 마커(roundPlayMarker)가 있을 때만 확인 다이얼로그로 막는다.
+   */
+  it('호스트: 이 차수를 이미 플레이한 마커가 있으면 게임 시작이 즉시 실행되지 않고 재실행 확인 다이얼로그가 뜬다', async () => {
+    markRoundPlayed('AB2C', 1)
+    const deliver = captureSnapshotCallbacks()
+    const hostRound1: RoomInfo = {
+      hostUid: 'me',
+      status: 'waiting',
+      assignmentRound: 1,
+      gameMode: 'normal',
+      roundModes: {},
+      round: null,
+    }
+    getRoomMock.mockResolvedValue(hostRound1)
+    const wrapper = mountPage()
+    await flushPromises()
+    deliver.room(hostRound1)
+    deliver.participants([{ ...ROSTER[1]!, team: 'A', assignedRound: 1 }])
+    await flushPromises()
+
+    await findButton(wrapper, '게임 시작')!.trigger('click')
+    await flushPromises()
+
+    // BaseDialog는 Teleport로 document.body에 렌더되어 wrapper.text()에 잡히지 않는다
+    expect(document.body.textContent).toContain('이번 차수는 이미 진행했어요')
+    expect(startGameMock).not.toHaveBeenCalled()
+  })
+
+  it('호스트: 재실행 확인 다이얼로그에서 "그대로 다시 시작"을 누르면 게임 시작이 호출된다', async () => {
+    markRoundPlayed('AB2C', 1)
+    const deliver = captureSnapshotCallbacks()
+    const hostRound1: RoomInfo = {
+      hostUid: 'me',
+      status: 'waiting',
+      assignmentRound: 1,
+      gameMode: 'normal',
+      roundModes: {},
+      round: null,
+    }
+    getRoomMock.mockResolvedValue(hostRound1)
+    const wrapper = mountPage()
+    await flushPromises()
+    deliver.room(hostRound1)
+    deliver.participants([{ ...ROSTER[1]!, team: 'A', assignedRound: 1 }])
+    await flushPromises()
+
+    await findButton(wrapper, '게임 시작')!.trigger('click')
+    await flushPromises()
+    // 다이얼로그 본문 버튼도 Teleport 대상(document.body)에서 찾아 네이티브로 클릭한다
+    const restartButton = [...document.body.querySelectorAll<HTMLElement>('button')].find(
+      (button) => button.textContent?.trim() === '그대로 다시 시작',
+    )!
+    restartButton.click()
+    await flushPromises()
+
+    expect(startGameMock).toHaveBeenCalledExactlyOnceWith('AB2C')
+  })
+
+  it('호스트: 재실행 확인 다이얼로그에서 "다음 팀 배정하기"를 누르면 배정 보드가 열린다', async () => {
+    markRoundPlayed('AB2C', 1)
+    const deliver = captureSnapshotCallbacks()
+    const hostRound1: RoomInfo = {
+      hostUid: 'me',
+      status: 'waiting',
+      assignmentRound: 1,
+      gameMode: 'normal',
+      roundModes: {},
+      round: null,
+    }
+    getRoomMock.mockResolvedValue(hostRound1)
+    const wrapper = mountPage()
+    await flushPromises()
+    deliver.room(hostRound1)
+    deliver.participants([{ ...ROSTER[1]!, team: 'A', assignedRound: 1 }])
+    await flushPromises()
+
+    await findButton(wrapper, '게임 시작')!.trigger('click')
+    await flushPromises()
+    // 다이얼로그 본문 버튼도 Teleport 대상(document.body)에서 찾아 네이티브로 클릭한다
+    const nextAssignmentButton = [...document.body.querySelectorAll<HTMLElement>('button')].find(
+      (button) => button.textContent?.trim() === '다음 팀 배정하기',
+    )!
+    nextAssignmentButton.click()
+    await flushPromises()
+
+    // 보드 전환은 일반 컴포넌트 트리라 wrapper.text()로 확인할 수 있다(Teleport 대상이 아니다)
+    expect(wrapper.text()).toContain('팀 편성')
+    expect(startGameMock).not.toHaveBeenCalled()
+  })
+
+  it('호스트: 이 차수를 플레이한 마커가 없으면 다이얼로그 없이 기존처럼 게임 시작이 즉시 호출된다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    const hostRound1: RoomInfo = {
+      hostUid: 'me',
+      status: 'waiting',
+      assignmentRound: 1,
+      gameMode: 'normal',
+      roundModes: {},
+      round: null,
+    }
+    getRoomMock.mockResolvedValue(hostRound1)
+    const wrapper = mountPage()
+    await flushPromises()
+    deliver.room(hostRound1)
+    deliver.participants([{ ...ROSTER[1]!, team: 'A', assignedRound: 1 }])
+    await flushPromises()
+
+    await findButton(wrapper, '게임 시작')!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('이번 차수는 이미 진행했어요')
+    expect(startGameMock).toHaveBeenCalledExactlyOnceWith('AB2C')
+  })
+
+  /** 라운드 종료 후 기록을 확인할 유일한 경로 — 최소 한 번 배정된 방에서 호스트에게만 보인다 */
+  it('호스트: 배정 확정 전에는 "지난 라운드 기록 보기"가 보이지 않고, 확정 후에는 기록 탭 쿼리로 이동한다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    getRoomMock.mockResolvedValue(MY_ROOM) // assignmentRound: 0
+    const wrapper = mountPage()
+    await flushPromises()
+
+    expect(findButton(wrapper, '지난 라운드 기록 보기')).toBeUndefined()
+
+    deliver.room({ ...MY_ROOM, assignmentRound: 2 })
+    await flushPromises()
+
+    const recordButton = findButton(wrapper, '지난 라운드 기록 보기')
+    expect(recordButton).toBeDefined()
+    await recordButton!.trigger('click')
+
+    expect(pushMock).toHaveBeenCalledWith({
+      name: 'round-ops',
+      params: { roomCode: 'AB2C' },
+      query: { tab: 'log' },
+    })
+  })
+
+  it('게스트: 배정이 확정돼도 "지난 라운드 기록 보기"는 보이지 않는다(호스트 전용)', async () => {
+    const deliver = captureSnapshotCallbacks()
+    getRoomMock.mockResolvedValue({
+      hostUid: 'host9',
+      status: 'waiting',
+      assignmentRound: 1,
+      gameMode: 'normal',
+      roundModes: {},
+      round: null,
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+    deliver.participants(ROSTER)
+    await flushPromises()
+
+    expect(findButton(wrapper, '지난 라운드 기록 보기')).toBeUndefined()
   })
 })

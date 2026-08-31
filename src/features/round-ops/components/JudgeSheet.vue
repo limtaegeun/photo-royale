@@ -7,14 +7,14 @@ import {
   GROUP_LABELS,
   TEAM_GROUP_ORDER,
   displayGroup,
-  groupLabelKo,
   groupSolidBgClass,
   groupTextClass,
   type TeamGroup,
 } from '@/features/team-assignment'
 import { isAssignedInRound, type Participant } from '@/features/waiting-room'
 import type { Submission, SubmissionTarget } from '../api/submissions'
-import { formatRelativeTime } from '../relativeTime'
+import KillshotPhotoHeader from './KillshotPhotoHeader.vue'
+import { participantName } from '../submissionDisplay'
 
 /**
  * 킬샷 판정 시트 — 사진을 크게 확인하고 "사진 속 완장이 어떤 팀·그룹인지"를 선택해 확정하거나,
@@ -111,17 +111,7 @@ const groupSections = computed<GroupSection[]>(() => {
   }).filter((section) => section.teams.length > 0)
 })
 
-const submitterName = computed(() => {
-  const uid = props.submission?.uid
-  return props.participants.find((participant) => participant.id === uid)?.name ?? '알 수 없음'
-})
-
-const submitterChipLabel = computed(() => {
-  const team = props.submission?.team
-  if (team === undefined) return ''
-  const label = groupLabelKo(team)
-  return label === '' ? `팀 ${team}` : `팀 ${team} · ${label}`
-})
+const submitterName = computed(() => participantName(props.participants, props.submission?.uid))
 
 /**
  * 옵션 행 상태별 클래스 — 보더 "폭"은 어느 상태에서도 1px로 고정하고 색만 바꾼다
@@ -160,21 +150,14 @@ function handleReject() {
 <template>
   <BaseBottomSheet v-model:open="open" title="킬샷 판정" :dismissible="!judging">
     <div v-if="submission" class="flex flex-col gap-5">
-      <img
-        :src="submission.photo"
-        alt="판정할 킬샷"
-        class="max-h-72 w-full rounded-lg border border-stroke bg-surface object-contain"
+      <KillshotPhotoHeader
+        :photo="submission.photo"
+        photo-alt="판정할 킬샷"
+        :team="submission.team"
+        :submitter-name="submitterName"
+        :created-at-ms="submission.createdAtMs"
+        :now-ms="nowMs"
       />
-
-      <div class="flex items-center gap-2">
-        <BaseBadge :team="displayGroup(submission.team) ?? undefined" class="self-auto">
-          {{ submitterChipLabel }}
-        </BaseBadge>
-        <span class="min-w-0 truncate text-label text-content">{{ submitterName }}</span>
-        <span class="ml-auto shrink-0 text-caption text-content-secondary">
-          {{ formatRelativeTime(submission.createdAtMs, nowMs) }} 제출
-        </span>
-      </div>
 
       <div class="flex flex-col gap-3">
         <div>

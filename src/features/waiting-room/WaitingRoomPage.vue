@@ -5,9 +5,10 @@ import { useRoute, useRouter } from 'vue-router'
 import BaseBadge from '@/shared/components/BaseBadge.vue'
 import BaseButton from '@/shared/components/BaseButton.vue'
 import BaseCard from '@/shared/components/BaseCard.vue'
+import BaseDialog from '@/shared/components/BaseDialog.vue'
 import BaseSectionHeader from '@/shared/components/BaseSectionHeader.vue'
 import PlayerChip from '@/shared/components/PlayerChip.vue'
-import { DEFAULT_GAME_MODE } from '@/features/game-mode'
+import { DEFAULT_GAME_MODE, GAME_MODES } from '@/features/game-mode'
 import {
   AssignmentBoard,
   MAX_ASSIGNABLE_MEMBERS,
@@ -18,6 +19,7 @@ import {
 import { useToast } from '@/shared/composables/useToast'
 import { useAppHeader } from '@/shared/composables/useAppHeader'
 import { normalizeRoomCode, type Participant } from './api/rooms'
+import { hasPlayedRound } from './roundPlayMarker'
 import { useWaitingRoomStore } from './stores/useWaitingRoomStore'
 
 const route = useRoute()
@@ -47,9 +49,30 @@ const {
   isRoundStarted,
 } = storeToRefs(store)
 
+/**
+ * 확정된 라운드의 차수·모드 요약 — 배정 확정 전(assignmentRound 0)에는 null이다.
+ *
+ * **기본값을 표시하지 않는 것이 핵심이다.** room.gameMode는 필드가 없는 방에서 normalizeRoom이
+ * DEFAULT_GAME_MODE로 채우므로(rooms.ts), 배정 전에도 값은 '일반전'으로 읽힌다 — 그대로 보여주면
+ * 진행자가 고르지도 않은 모드를 확정된 것처럼 알리게 된다. 모드가 실제로 정해지는 시점은
+ * 배정 확정(assignmentRound와 gameMode를 원자적으로 커밋)뿐이다.
+ *
+ * 차수를 모드와 붙여 쓴다 — 하단 CTA가 '다음 차수 배정'이라, 이 줄이 차수를 빼고 모드만 말하면
+ * 진행자가 '게임 시작'이 이번 차수 재실행인지 다음 차수인지 구분할 근거를 잃는다.
+ */
+const confirmedRoundSummary = computed(() => {
+  if (assignmentRound.value === 0) return null
+  return {
+    round: assignmentRound.value,
+    modeLabel: GAME_MODES[room.value?.gameMode ?? DEFAULT_GAME_MODE].label,
+  }
+})
+
 // 호스트 팀 배정 보드 — 드래프트는 로컬 스토어에만 쌓이고 "배정 확정"만 서버에 쓴다
 const taStore = useTeamAssignmentStore()
 const showAssignmentBoard = ref(false)
+/** 같은 차수 재실행 확인 — hasPlayedRound가 true일 때만 연다(requestStartGame 참조) */
+const isRestartRoundDialogOpen = ref(false)
 
 /** 참가자 → 배정 드래프트 멤버(배정 로직에 필요한 필드만 추린다) */
 function toDraftMember(participant: Participant): DraftMember {
@@ -114,6 +137,34 @@ function startAssignment() {
   showAssignmentBoard.value = true
 }
 
+/**
+ * '게임 시작' 클릭 — 이 기기가 이번 차수를 이미 플레이했으면(hasPlayedRound) 즉시 시작하지
+ * 않고 재실행 확인 다이얼로그를 연다. 라운드 종료는 status만 waiting으로 되돌리고
+ * assignmentRound·전원 레디는 보존하므로, 그대로 다시 누르면 같은 차수가 재실행되며 직전
+ * 라운드의 미판정 킬샷이 판정 큐에 부활하고 새 제출·기록이 한 라운드로 뭉친다(서버 rules는
+ * 아직 이를 막지 않는다 — 후속 과제). 마커가 없으면(첫 시작이거나 다음 차수로 배정을 새로
+ * 확정한 경우) 기존과 동일하게 즉시 시작한다.
+ */
+function requestStartGame() {
+  if (roomCode.value !== null && hasPlayedRound(roomCode.value, assignmentRound.value)) {
+    isRestartRoundDialogOpen.value = true
+    return
+  }
+  store.startPlaying()
+}
+
+/** 재실행 확인 다이얼로그 — 안전한 경로(다음 차수 배정)를 고르면 기존 팀 배정 시작 경로를 그대로 탄다 */
+function goNextAssignment() {
+  isRestartRoundDialogOpen.value = false
+  startAssignment()
+}
+
+/** 재실행 확인 다이얼로그 — 위험을 감수하고 같은 차수를 그대로 다시 시작한다 */
+function restartSameRound() {
+  isRestartRoundDialogOpen.value = false
+  store.startPlaying()
+}
+
 /** 확정 완료 — 보드를 닫고 기존 대기실 뷰로 복귀한다(명단에 완장 보더가 반영된다) */
 function onAssignmentConfirmed() {
   showAssignmentBoard.value = false
@@ -172,6 +223,16 @@ watch([gameStatus, isRoundStarted], ([status, roundStarted]) => {
   }
 })
 
+/**
+ * 지난 라운드 기록 보기 — 라운드 종료 후 이번 방의 제출·판정 이력을 확인할 유일한 경로다.
+ * 라운드 운영 화면의 기록 탭으로 쿼리(?tab=log)를 붙여 이동한다 — 그 화면은 대기 상태에서도
+ * 기록 탭을 열람할 수 있게 바뀐다(round-ops 담당, 이 파일 범위 밖).
+ */
+function viewPastRecords() {
+  if (!roomCode.value) return
+  router.push({ name: 'round-ops', params: { roomCode: roomCode.value }, query: { tab: 'log' } })
+}
+
 /** 초대는 링크 복사 단일 채널 — 링크의 ?code=가 입장 화면의 자동 입장으로 이어진다 */
 async function copyInviteLink() {
   if (!roomCode.value) return
@@ -220,16 +281,36 @@ async function copyInviteLink() {
                담당하므로 이 카드는 코드·상태·초대에만 집중한다(같은 숫자를 두 번 보여주지 않는다).
                코드는 카드 내 주요 정보(text-heading)로, display(카운트다운용)는 과하다 -->
           <BaseCard>
-            <div class="flex items-center justify-between gap-3">
-              <!-- 방 코드는 받아 적어 입력하는 값이라 mono + 자간으로 0/O·1/I 오독을 줄인다 -->
-              <p class="text-heading text-content">
-                ROOM <span class="font-mono tracking-widest">{{ roomCode }}</span>
-              </p>
-              <BaseBadge tone="info" appearance="outline" size="sm">대기 중</BaseBadge>
+            <!-- 카드 안 블록 간격도 mt-* 대신 gap으로 준다 — 모드 줄이 조건부라 마진 체인이면
+                 배정 전/후로 초대 버튼 위 여백이 달라진다 -->
+            <div class="flex flex-col gap-4">
+              <!-- 코드·상태·모드는 "이 방의 지금 상태"라 한 덩어리로 묶고 gap-2로 붙인다 -->
+              <div class="flex flex-col gap-2">
+                <div class="flex items-center justify-between gap-3">
+                  <!-- 방 코드는 받아 적어 입력하는 값이라 mono + 자간으로 0/O·1/I 오독을 줄인다 -->
+                  <p class="text-heading text-content">
+                    ROOM <span class="font-mono tracking-widest">{{ roomCode }}</span>
+                  </p>
+                  <BaseBadge tone="info" appearance="outline" size="sm">대기 중</BaseBadge>
+                </div>
+
+                <!-- 진행자가 모드를 바꾸지 않으면 직전 라운드 모드가 그대로 반복되므로(배정 보드의
+                     기본값), '게임 시작'이 무슨 모드를 켜는지 이 줄에서 확인할 수 있어야 한다.
+                     이 줄을 실제로 보는 건 호스트와 **이번 라운드에 배정되지 않은 게스트**다 —
+                     배정된 게스트는 이 카드가 RoundAssignmentCard로 대체되므로 보지 못하고,
+                     그쪽 규칙서('이번 게임 규칙서')가 모드명을 이미 보여준다(live-qa W-03 실측). -->
+                <p v-if="confirmedRoundSummary !== null" class="text-caption text-content-secondary">
+                  {{ confirmedRoundSummary.round }}차 라운드 ·
+                  <span class="font-semibold text-content">
+                    {{ confirmedRoundSummary.modeLabel }}
+                  </span>
+                </p>
+              </div>
+
+              <BaseButton variant="ghost" size="md" class="w-full" @click="copyInviteLink">
+                초대 링크 복사
+              </BaseButton>
             </div>
-            <BaseButton variant="ghost" size="md" class="mt-4 w-full" @click="copyInviteLink">
-              초대 링크 복사
-            </BaseButton>
           </BaseCard>
 
           <!-- 입장 명단 -->
@@ -313,7 +394,7 @@ async function copyInviteLink() {
           class="w-full"
           :loading="isStartingGame"
           :disabled="!canStartGame"
-          @click="store.startPlaying()"
+          @click="requestStartGame"
         >
           게임 시작
         </BaseButton>
@@ -324,6 +405,16 @@ async function copyInviteLink() {
           @click="startAssignment"
         >
           {{ assignmentRound > 0 ? `${assignmentRound + 1}차 팀 배정` : '팀 배정 시작' }}
+        </BaseButton>
+        <!-- 라운드 종료 후 기록을 확인할 유일한 경로 — 최소 한 번 배정된 방에서만 의미가 있다 -->
+        <BaseButton
+          v-if="assignmentRound > 0"
+          variant="ghost"
+          size="md"
+          class="w-full"
+          @click="viewPastRecords"
+        >
+          지난 라운드 기록 보기
         </BaseButton>
       </template>
 
@@ -343,5 +434,23 @@ async function copyInviteLink() {
         </BaseButton>
       </template>
     </div>
+
+    <!-- 같은 차수 재실행 확인 — 안전한 경로(다음 배정)를 위에 채운 배경으로, 위험을 감수하는
+         경로(그대로 재실행)는 아래에 ghost로 둔다(기존 종료 확인 다이얼로그들과 같은 위계).
+         두 버튼의 size는 같게 유지한다 — 높이가 갈리면 위험한 쪽이 오히려 누르기 어려워진다 -->
+    <BaseDialog
+      v-model:open="isRestartRoundDialogOpen"
+      title="이번 차수는 이미 진행했어요"
+      description="같은 차수로 다시 시작하면 지난 라운드의 판정하지 않은 킬샷이 판정 큐에 다시 나타나고, 새 기록이 같은 라운드로 합쳐져요."
+    >
+      <div class="flex flex-col gap-3">
+        <BaseButton variant="primary" size="lg" class="w-full" @click="goNextAssignment">
+          다음 팀 배정하기
+        </BaseButton>
+        <BaseButton variant="ghost" size="lg" class="w-full" @click="restartSameRound">
+          그대로 다시 시작
+        </BaseButton>
+      </div>
+    </BaseDialog>
   </section>
 </template>

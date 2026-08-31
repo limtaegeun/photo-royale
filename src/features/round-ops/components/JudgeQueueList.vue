@@ -2,10 +2,11 @@
 import BaseBadge from '@/shared/components/BaseBadge.vue'
 import BaseCard from '@/shared/components/BaseCard.vue'
 import BaseSectionHeader from '@/shared/components/BaseSectionHeader.vue'
-import { displayGroup, groupLabelKo } from '@/features/team-assignment'
+import { displayGroup } from '@/features/team-assignment'
 import type { Participant } from '@/features/waiting-room'
 import type { Submission } from '../api/submissions'
 import { formatRelativeTime } from '../relativeTime'
+import { participantName, teamChipLabel } from '../submissionDisplay'
 
 /**
  * 판정 대기 큐 — 참가자들이 제출한 킬샷을 오래된 순으로 나열한다. 행을 누르면 판정 시트가
@@ -20,23 +21,12 @@ interface Props {
   nowMs: number
 }
 
-const props = defineProps<Props>()
+defineProps<Props>()
 
 const emit = defineEmits<{
   /** 판정 시트 열기 */
   select: [submission: Submission]
 }>()
-
-/** 명단 유실(경계 상황) 시에도 큐가 깨지지 않게 안전 문구로 흡수한다 */
-function submitterName(uid: string): string {
-  return props.participants.find((participant) => participant.id === uid)?.name ?? '알 수 없음'
-}
-
-/** 색+라벨 병기 규칙 — 완장 알파벳과 그룹 한글 라벨을 항상 함께 쓴다 */
-function teamChipLabel(team: string): string {
-  const label = groupLabelKo(team)
-  return label === '' ? `팀 ${team}` : `팀 ${team} · ${label}`
-}
 </script>
 
 <template>
@@ -83,7 +73,7 @@ function teamChipLabel(team: string): string {
             >
               {{ teamChipLabel(submission.team) }}
             </BaseBadge>
-            <span class="truncate text-label text-content">{{ submitterName(submission.uid) }}</span>
+            <span class="truncate text-label text-content">{{ participantName(participants, submission.uid) }}</span>
             <span class="text-caption text-content-secondary">
               {{ formatRelativeTime(submission.createdAtMs, nowMs) }} 제출
             </span>

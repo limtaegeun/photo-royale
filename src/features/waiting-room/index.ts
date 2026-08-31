@@ -5,3 +5,5 @@ export { ROOM_CODE_LENGTH, createRoom, normalizeRoomCode, roomExists } from './a
 // 라운드 운영(H04)이 방 문서·명단을 구독한다 — 방 데이터의 소유자는 여기다
 export { endGame, isAssignedInRound, subscribeToParticipants, subscribeToRoom } from './api/rooms'
 export type { Participant, RoomInfo, RoomStatus, RoundState } from './api/rooms'
+// 라운드 재실행 세션 가드 — round-ops가 라운드 시작 성공 시 markRoundPlayed를 호출한다(best-effort)
+export { hasPlayedRound, markRoundPlayed } from './roundPlayMarker'
