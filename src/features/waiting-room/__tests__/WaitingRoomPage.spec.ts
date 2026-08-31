@@ -1,10 +1,23 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { ref } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { useTeamAssignmentStore } from '@/features/team-assignment'
 import type { Participant, RoomInfo } from '../api/rooms'
 
-const authState = { user: null as { uid: string; displayName: string } | null }
+/**
+ * 로그인 사용자 — 화면이 세션 상실(로그아웃·만료)에 반응하는지 보려면 반응형이어야 한다.
+ * 기존 테스트가 쓰는 `authState.user = …` 대입을 그대로 유지하려고 getter/setter로 감쌌다.
+ */
+const authUser = ref<{ uid: string; displayName: string } | null>(null)
+const authState = {
+  get user() {
+    return authUser.value
+  },
+  set user(next: { uid: string; displayName: string } | null) {
+    authUser.value = next
+  },
+}
 const fetchMyGenderMock = vi.fn<(uid: string) => Promise<'male' | 'female' | null>>()
 vi.mock('@/features/auth', () => ({
   useAuthStore: () => ({
@@ -55,7 +68,7 @@ vi.mock('@/shared/composables/useToast', () => ({
 const replaceMock = vi.fn<() => void>()
 const pushMock = vi.fn<() => void>()
 vi.mock('vue-router', () => ({
-  useRoute: () => ({ params: { roomCode: 'ab2c' } }),
+  useRoute: () => ({ params: { roomCode: 'ab2c' }, fullPath: '/waiting-room/ab2c' }),
   useRouter: () => ({ replace: replaceMock, push: pushMock }),
 }))
 
@@ -450,6 +463,42 @@ describe('WaitingRoomPage', () => {
     await flushPromises()
 
     expect(replaceMock).toHaveBeenCalledWith({ name: 'camera', params: { roomCode: 'AB2C' } })
+  })
+
+  /**
+   * 세션이 끊기면 방·참가자 구독이 권한 오류로 죽는데 화면에는 마지막 스냅샷이 그대로 남는다.
+   * 그대로 두면 참가자가 멀쩡해 보이는 화면에서 준비를 눌러도 아무 일이 일어나지 않고,
+   * 진행자 명단에는 계속 미준비로 남아 양쪽 다 원인을 모른다(2026-08-31 실측).
+   */
+  it('머무는 동안 로그인이 사라지면 로그인 화면으로 보내고 목적지를 보존한다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    mountPage()
+    await flushPromises()
+    deliver.room({ hostUid: 'host9', status: 'waiting', assignmentRound: 0, gameMode: 'normal', roundModes: {}, round: null })
+    await flushPromises()
+    replaceMock.mockClear()
+
+    // 다른 기기·탭에서 로그아웃 → 이 화면의 세션도 함께 사라진다
+    authState.user = null
+    await flushPromises()
+
+    expect(replaceMock).toHaveBeenCalledWith({
+      name: 'login',
+      query: { redirect: '/waiting-room/ab2c' },
+    })
+  })
+
+  it('세션이 살아 있는 동안에는 로그인 화면으로 보내지 않는다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    mountPage()
+    await flushPromises()
+    deliver.room({ hostUid: 'host9', status: 'waiting', assignmentRound: 0, gameMode: 'normal', roundModes: {}, round: null })
+    deliver.participants([{ id: 'me', name: '나', gender: null, isReady: false, team: null, assignedRound: 0, isXTeam: false, sameGenderStreak: 0, previousPartnerIds: [] }])
+    await flushPromises()
+
+    expect(replaceMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'login' }),
+    )
   })
 
   it('게스트: 올스탑(정지) 중에는 콕핏에 그대로 둔다', async () => {
