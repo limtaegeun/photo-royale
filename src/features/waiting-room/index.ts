@@ -7,3 +7,5 @@ export { endGame, isAssignedInRound, subscribeToParticipants, subscribeToRoom } 
 export type { Participant, RoomInfo, RoomStatus, RoundState } from './api/rooms'
 // 라운드 재실행 세션 가드 — round-ops가 라운드 시작 성공 시 markRoundPlayed를 호출한다(best-effort)
 export { hasPlayedRound, markRoundPlayed } from './roundPlayMarker'
+// 라운드 시계 — 방 문서의 round를 남은 시간으로 읽는 해석은 방 데이터 소유자인 여기가 갖는다
+export { computeRoundRemainingMs, isRoundLive } from './roundClock'
