@@ -1,12 +1,22 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { observeRoundAnchor, resetServerClock, serverClockOffsetMs, serverNow } from '../serverClock'
+import {
+  createRoundAnchorObserver,
+  resetServerClock,
+  serverClockOffsetMs,
+  serverNow,
+  type RoundAnchorObserver,
+} from '../serverClock'
 
 /** 기기 시각 — 테스트는 "기기가 서버보다 얼마나 앞서 있나"를 이 값으로 만든다 */
 const DEVICE_NOW = new Date('2026-08-31T10:00:00Z').getTime()
 const MINUTE = 60_000
 
+/** 테스트 하나 = 구독 하나. 관측 이력은 구독마다 새로 시작한다 */
+let observeRoundAnchor: RoundAnchorObserver
+
 beforeEach(() => {
   resetServerClock()
+  observeRoundAnchor = createRoundAnchorObserver()
 })
 
 describe('observeRoundAnchor', () => {
@@ -76,6 +86,18 @@ describe('observeRoundAnchor', () => {
     observeRoundAnchor(DEVICE_NOW - 3 * MINUTE, false, DEVICE_NOW) // 다음 라운드 시작
 
     expect(serverClockOffsetMs()).toBe(-3 * MINUTE)
+  })
+
+  it('방을 갈아타 새 구독이 열리면 그 첫 스냅샷도 샘플이 아니다', () => {
+    // 앞 방에서는 라운드가 없어 앵커를 한 번도 못 봤다
+    observeRoundAnchor(null, false, DEVICE_NOW)
+
+    // 다른 방으로 옮겨 새로 구독한다 — 21분 전에 시작된 라운드가 이미 돌고 있다.
+    // 이전 구독의 이력을 이어 쓰면 이 과거 앵커가 '구독 중의 변화'로 보여 샘플이 된다
+    const nextSubscription = createRoundAnchorObserver()
+    nextSubscription(DEVICE_NOW - 21 * MINUTE, false, DEVICE_NOW)
+
+    expect(serverClockOffsetMs()).toBeNull()
   })
 
   it('serverTimestamp 반영 전(앵커 null) 스냅샷만 이어지면 잴 것이 없다', () => {

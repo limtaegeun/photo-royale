@@ -15,7 +15,7 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore'
 import { db } from '@/shared/api/firebase'
-import { observeRoundAnchor } from '../serverClock'
+import { createRoundAnchorObserver } from '../serverClock'
 import type { Gender } from '@/features/auth'
 // 게임 모드는 game-mode 기능의 소유물이라 public API로만 가져온다(내부 파일 직접 import 금지)
 import { DEFAULT_GAME_MODE, isGameModeId, type GameModeId } from '@/features/game-mode'
@@ -311,6 +311,10 @@ export function subscribeToRoom(
   onChange: (room: RoomInfo | null) => void,
   onError?: (error: Error) => void,
 ): Unsubscribe {
+  // 방 문서를 구독하는 모든 화면이 이 경로를 지난다 — 서버 시각 보정을 여기서 한 번만 채운다.
+  // 관측자는 구독마다 새로 만든다: '첫 스냅샷은 샘플이 아니다'가 구독 단위 판정이라, 방을
+  // 갈아탄 새 구독이 이전 이력을 이어 쓰면 진행 중이던 라운드의 과거 앵커를 샘플로 잡는다
+  const observeRoundAnchor = createRoundAnchorObserver()
   return onSnapshot(
     doc(db, 'rooms', code),
     (snapshot) => {
@@ -319,7 +323,6 @@ export function subscribeToRoom(
         return
       }
       const room = toRoomInfo(snapshot.data())
-      // 방 문서를 구독하는 모든 화면이 이 경로를 지난다 — 서버 시각 보정을 여기서 한 번만 채운다
       observeRoundAnchor(room.round?.startedAtMs ?? null, snapshot.metadata.fromCache)
       onChange(room)
     },
