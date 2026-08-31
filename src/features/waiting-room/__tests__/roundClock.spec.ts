@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { RoundState } from '../api/rooms'
-import { computeRoundRemainingMs, isRoundLive } from '../roundClock'
+import { computeRoundRemainingMs, isRoundLiveAt } from '../roundClock'
 
 const NOW = new Date('2026-08-31T10:00:00Z').getTime()
 
@@ -36,34 +36,34 @@ describe('computeRoundRemainingMs', () => {
   })
 })
 
-describe('isRoundLive', () => {
+describe('isRoundLiveAt', () => {
   it('라운드 자체가 없으면(시작 전·종료 후) 살아 있지 않다', () => {
-    expect(isRoundLive(null, NOW)).toBe(false)
+    expect(isRoundLiveAt(null, NOW)).toBe(false)
   })
 
   it('남은 시간이 있으면 살아 있다', () => {
-    expect(isRoundLive(runningRound(NOW, 1_200_000), NOW + 60_000)).toBe(true)
+    expect(isRoundLiveAt(runningRound(NOW, 1_200_000), NOW + 60_000)).toBe(true)
   })
 
   it('타이머가 0에 닿으면 round 필드가 남아 있어도 살아 있지 않다', () => {
     // 호스트가 게임을 종료하기 전 구간 — 여기서 콕핏 복귀를 막는 것이 A-4 수정의 핵심이다
-    expect(isRoundLive(runningRound(NOW, 1_200_000), NOW + 1_200_000)).toBe(false)
+    expect(isRoundLiveAt(runningRound(NOW, 1_200_000), NOW + 1_200_000)).toBe(false)
   })
 
   it('진행자가 시간을 더하면 다시 살아난다', () => {
     const expired = runningRound(NOW, 1_200_000)
-    expect(isRoundLive(expired, NOW + 1_200_000)).toBe(false)
+    expect(isRoundLiveAt(expired, NOW + 1_200_000)).toBe(false)
 
     const extended = runningRound(NOW, 1_500_000)
-    expect(isRoundLive(extended, NOW + 1_200_000)).toBe(true)
+    expect(isRoundLiveAt(extended, NOW + 1_200_000)).toBe(true)
   })
 
   it('올스탑(정지) 중에는 남은 시간이 보존되므로 살아 있다', () => {
     // 정지는 진행자가 곧 푸는 일시 상태라 플레이어가 콕핏을 떠날 이유가 없다
-    expect(isRoundLive(pausedRound(300_000), NOW + 600_000)).toBe(true)
+    expect(isRoundLiveAt(pausedRound(300_000), NOW + 600_000)).toBe(true)
   })
 
   it('정지 상태로 남은 시간이 0이면 살아 있지 않다', () => {
-    expect(isRoundLive(pausedRound(0), NOW)).toBe(false)
+    expect(isRoundLiveAt(pausedRound(0), NOW)).toBe(false)
   })
 })

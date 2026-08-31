@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { resetServerClock, serverClockOffsetMs } from '../serverClock'
 
 vi.mock('@/shared/api/firebase', () => ({ db: {} }))
 
@@ -474,6 +475,36 @@ describe('subscribeToParticipants', () => {
 })
 
 describe('subscribeToRoom', () => {
+  it('라운드 앵커를 서버 시계 보정에 넘긴다 — 방을 구독하는 모든 화면이 이 경로를 지난다', () => {
+    resetServerClock()
+    onSnapshotMock.mockReturnValue(vi.fn<() => void>())
+    subscribeToRoom('AB2C', vi.fn())
+    const onNext = onSnapshotMock.mock.calls[0]![1]
+
+    const deviceNow = Date.now()
+    const room = (startedAt: { toMillis: () => number }) => ({
+      exists: () => true,
+      metadata: { fromCache: false, hasPendingWrites: false },
+      data: () => ({
+        hostUid: 'host-1',
+        status: 'playing',
+        assignmentRound: 1,
+        gameMode: 'normal',
+        round: { status: 'running', startedAt, durationMs: 1_200_000 },
+      }),
+    })
+
+    // 합류 시점의 첫 앵커는 과거라 샘플이 아니다
+    onNext(room({ toMillis: () => deviceNow - 21 * 60_000 }))
+    expect(serverClockOffsetMs()).toBeNull()
+
+    // 진행자가 라운드를 다시 걸면 그 값이 곧 서버의 '지금'이다 — 기기가 앞선 만큼 음수로 잡힌다
+    onNext(room({ toMillis: () => Date.now() - 15 * 60_000 }))
+    expect(serverClockOffsetMs()).toBeLessThan(-14 * 60_000)
+    resetServerClock()
+  })
+
+
   it('방 문서 스냅샷을 RoomInfo로 매핑하고, 문서가 없으면 null을 전달한다', () => {
     const unsubscribe = vi.fn<() => void>()
     onSnapshotMock.mockReturnValue(unsubscribe)
@@ -486,6 +517,7 @@ describe('subscribeToRoom', () => {
 
     onNext({
       exists: () => true,
+      metadata: { fromCache: false, hasPendingWrites: false },
       data: () => ({
         hostUid: 'host-1',
         status: 'waiting',
@@ -502,7 +534,7 @@ describe('subscribeToRoom', () => {
       round: null,
     })
 
-    onNext({ exists: () => false })
+    onNext({ exists: () => false, metadata: { fromCache: false, hasPendingWrites: false } })
     expect(onChange).toHaveBeenLastCalledWith(null)
     expect(result).toBe(unsubscribe)
   })

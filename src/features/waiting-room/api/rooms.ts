@@ -15,6 +15,7 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore'
 import { db } from '@/shared/api/firebase'
+import { observeRoundAnchor } from '../serverClock'
 import type { Gender } from '@/features/auth'
 // 게임 모드는 game-mode 기능의 소유물이라 public API로만 가져온다(내부 파일 직접 import 금지)
 import { DEFAULT_GAME_MODE, isGameModeId, type GameModeId } from '@/features/game-mode'
@@ -317,7 +318,10 @@ export function subscribeToRoom(
         onChange(null)
         return
       }
-      onChange(toRoomInfo(snapshot.data()))
+      const room = toRoomInfo(snapshot.data())
+      // 방 문서를 구독하는 모든 화면이 이 경로를 지난다 — 서버 시각 보정을 여기서 한 번만 채운다
+      observeRoundAnchor(room.round?.startedAtMs ?? null, snapshot.metadata.fromCache)
+      onChange(room)
     },
     onError,
   )

@@ -13,8 +13,8 @@ import {
   type Participant,
   type RoomInfo,
 } from '../api/rooms'
-// 파생값 이름(isRoundLive)과 겹치지 않게 별칭으로 받는다 — 시각을 받아 판정하는 순수 함수다
-import { isRoundLive as isRoundLiveAt } from '../roundClock'
+import { isRoundLiveAt } from '../roundClock'
+import { serverNow } from '../serverClock'
 
 /**
  * joining: 입장 처리 중(입장 직후 로딩) / joined: 명단 구독 중 /
@@ -62,11 +62,14 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
    * 남아 있어서, 종료 뒤 콕핏에서 나온 게스트를 대기실이 즉시 콕핏으로 되밀어 낸다(A-4).
    * 시간을 함께 보므로 진행자가 시간을 더하면 이 값이 다시 참이 되어 자동 재진입도 살아난다.
    *
-   * 방 스냅샷이 바뀔 때만 다시 계산한다(Date.now()는 반응형이 아니다) — 이걸로 충분하다.
+   * 판정 시각은 기기 시계가 아니라 **서버 보정 시각**이다 — 시계가 앞선 기기만 라운드를 일찍
+   * 끝난 것으로 보고 혼자 이탈해 돌아오지 못하던 문제를 막는다(QA M-07, serverClock 참조).
+   *
+   * 방 스냅샷이 바뀔 때만 다시 계산한다(시각은 반응형이 아니다) — 이걸로 충분하다.
    * 남은 시간이 있는 동안 게스트는 이미 콕핏에 있고, 0이 된 뒤 이 값을 되살리는 것은
    * 시간 추가·다음 라운드 시작 같은 방 문서 쓰기뿐이다.
    */
-  const isRoundLive = computed(() => isRoundLiveAt(room.value?.round ?? null, Date.now()))
+  const isRoundLive = computed(() => isRoundLiveAt(room.value?.round ?? null, serverNow()))
   /** 확정된 팀편성 차수 — 0이면 아직 배정 전 */
   const assignmentRound = computed(() => room.value?.assignmentRound ?? 0)
 

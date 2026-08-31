@@ -25,6 +25,6 @@ export function computeRoundRemainingMs(round: RoundState, nowMs: number): numbe
  * 올스탑(paused)은 남은 시간이 그대로 보존되므로 여기서는 살아 있는 라운드로 친다 —
  * 정지는 진행자가 곧 푸는 일시 상태라 플레이어가 콕핏을 떠날 이유가 없다.
  */
-export function isRoundLive(round: RoundState | null, nowMs: number): boolean {
+export function isRoundLiveAt(round: RoundState | null, nowMs: number): boolean {
   return round !== null && computeRoundRemainingMs(round, nowMs) > 0
 }

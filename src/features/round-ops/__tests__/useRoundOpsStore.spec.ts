@@ -51,6 +51,8 @@ vi.mock('@/features/waiting-room', async (importOriginal) => ({
   // 화면 카운트다운과 같은 함수에서 나와야 한다(방 문서 해석의 단일 기준)
   computeRoundRemainingMs: (await importOriginal<typeof import('@/features/waiting-room')>())
     .computeRoundRemainingMs,
+  // 서버 보정을 못 잰 상태(=기기 시각 그대로)가 이 스펙의 전제다 — 남은 시간 기대값이 고정된다
+  serverNow: () => Date.now(),
   endGame: (code: string) => endGameMock(code),
   markRoundPlayed: (code: string, round: number) => markRoundPlayedMock(code, round),
   subscribeToRoom: (code: string, onChange: (room: RoomInfo | null) => void) =>

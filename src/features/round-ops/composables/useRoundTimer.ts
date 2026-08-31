@@ -1,5 +1,5 @@
 import { computed, onUnmounted, ref, type Ref } from 'vue'
-import { computeRoundRemainingMs, type RoundState } from '@/features/waiting-room'
+import { computeRoundRemainingMs, serverNow, type RoundState } from '@/features/waiting-room'
 import { ROUND_DURATION_DEFAULT_MS } from '../api/round'
 
 /** 화면이 구분해야 하는 라운드 표시 상태 — 배지 톤·타이머 색·주 액션이 여기서 갈린다 */
@@ -43,10 +43,12 @@ export function resolveDisplayState(round: RoundState | null, isEnded: boolean):
  * 직후 보는 값이 몇 초 어긋나면 올스탑 판단이 흔들린다(QA G-01).
  */
 export function useRoundTimer(round: Ref<RoundState | null>) {
-  const nowMs = ref(Date.now())
+  // 기기 시계가 아니라 서버 보정 시각으로 흐른다 — 시계가 어긋난 기기만 다른 순간에 라운드를
+  // 끝난 것으로 보지 않게 한다(serverClock 참조)
+  const nowMs = ref(serverNow())
 
   function tick() {
-    nowMs.value = Date.now()
+    nowMs.value = serverNow()
   }
 
   const intervalId = setInterval(tick, TICK_INTERVAL_MS)
