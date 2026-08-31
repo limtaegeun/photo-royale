@@ -13,7 +13,7 @@ import {
   type Participant,
   type RoomInfo,
 } from '../api/rooms'
-import { isRoundLiveAt } from '../roundClock'
+import { isRoundLiveAt, isRoundOverAt } from '../roundClock'
 import { serverNow } from '../serverClock'
 
 /**
@@ -70,6 +70,14 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
    * 시간 추가·다음 라운드 시작 같은 방 문서 쓰기뿐이다.
    */
   const isRoundLive = computed(() => isRoundLiveAt(room.value?.round ?? null, serverNow()))
+  /**
+   * 라운드가 시작됐는데 남은 시간이 없는 상태 — 게스트가 콕핏에서 나와 대기실에 있는 구간이다.
+   *
+   * `isRoundLive`의 부정으로 대신할 수 없다. 게임만 시작하고 라운드는 아직 시작하지 않은 구간
+   * (진행자가 인원을 세고 공지하는 동안)도 '살아 있지 않은' 상태라, 부정으로 가르면 시작도 안 한
+   * 라운드를 끝났다고 알린다.
+   */
+  const isRoundOver = computed(() => isRoundOverAt(room.value?.round ?? null, serverNow()))
   /** 확정된 팀편성 차수 — 0이면 아직 배정 전 */
   const assignmentRound = computed(() => room.value?.assignmentRound ?? 0)
 
@@ -252,6 +260,7 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
     isHost,
     gameStatus,
     isRoundLive,
+    isRoundOver,
     assignmentRound,
     roster,
     myAssignment,

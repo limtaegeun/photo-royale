@@ -28,3 +28,14 @@ export function computeRoundRemainingMs(round: RoundState, nowMs: number): numbe
 export function isRoundLiveAt(round: RoundState | null, nowMs: number): boolean {
   return round !== null && computeRoundRemainingMs(round, nowMs) > 0
 }
+
+/**
+ * 시작은 했는데 더 뛸 시간이 없는 라운드인가 — 대기실이 "라운드 종료" 안내를 띄우는 기준이다.
+ *
+ * `isRoundLiveAt`의 부정이 아니다. 라운드가 아직 없는 것(진행자가 게임만 열고 '라운드 시작'을
+ * 누르기 전)과 라운드가 끝난 것은 게스트에게 전혀 다른 상황인데, 둘 다 '살아 있지 않은' 상태라
+ * 부정만으로 가르면 시작도 안 한 라운드를 끝났다고 알리게 된다(I-22).
+ */
+export function isRoundOverAt(round: RoundState | null, nowMs: number): boolean {
+  return round !== null && !isRoundLiveAt(round, nowMs)
+}

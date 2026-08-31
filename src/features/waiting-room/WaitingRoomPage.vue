@@ -47,6 +47,7 @@ const {
   myId,
   gameStatus,
   isRoundLive,
+  isRoundOver,
 } = storeToRefs(store)
 
 /**
@@ -94,9 +95,13 @@ const showGuestAssignment = computed(() => !isHost.value && myAssignment.value !
 /**
  * 게스트가 "라운드는 끝났지만 게임은 아직 안 끝난" 구간에 대기실로 나와 있는 상태.
  * 호스트는 playing이면 라운드 운영 화면으로 가므로 이 조건에 걸리지 않는다.
+ *
+ * `!isRoundLive`가 아니라 `isRoundOver`를 본다 — 게임만 시작하고 라운드는 아직 시작하지 않은
+ * 구간(진행자가 인원을 세고 공지하는 동안)에도 라운드는 살아 있지 않아서, 부정으로 가르면
+ * 시작도 안 한 라운드를 끝났다고 알린다(I-22).
  */
 const isRoundOverAwaitingHost = computed(
-  () => !isHost.value && gameStatus.value === 'playing' && !isRoundLive.value,
+  () => !isHost.value && gameStatus.value === 'playing' && isRoundOver.value,
 )
 
 /**

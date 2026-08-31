@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { RoundState } from '../api/rooms'
-import { computeRoundRemainingMs, isRoundLiveAt } from '../roundClock'
+import { computeRoundRemainingMs, isRoundLiveAt, isRoundOverAt } from '../roundClock'
 
 const NOW = new Date('2026-08-31T10:00:00Z').getTime()
 
@@ -65,5 +65,25 @@ describe('isRoundLiveAt', () => {
 
   it('정지 상태로 남은 시간이 0이면 살아 있지 않다', () => {
     expect(isRoundLiveAt(pausedRound(0), NOW)).toBe(false)
+  })
+})
+
+describe('isRoundOverAt', () => {
+  it('라운드가 아직 없으면 끝난 것이 아니다 — 시작 전과 종료 후를 뭉개지 않는다', () => {
+    // 진행자가 게임만 열고 '라운드 시작'을 누르기 전 구간. 여기서 true를 주면 대기실이
+    // 시작도 안 한 라운드를 끝났다고 알린다(I-22)
+    expect(isRoundOverAt(null, NOW)).toBe(false)
+  })
+
+  it('남은 시간이 있으면 끝난 것이 아니다', () => {
+    expect(isRoundOverAt(runningRound(NOW, 1_200_000), NOW + 60_000)).toBe(false)
+  })
+
+  it('시작된 라운드의 타이머가 0에 닿으면 끝난 것이다', () => {
+    expect(isRoundOverAt(runningRound(NOW, 1_200_000), NOW + 1_200_000)).toBe(true)
+  })
+
+  it('올스탑(정지) 중에는 남은 시간이 보존되므로 끝난 것이 아니다', () => {
+    expect(isRoundOverAt(pausedRound(300_000), NOW + 600_000)).toBe(false)
   })
 })

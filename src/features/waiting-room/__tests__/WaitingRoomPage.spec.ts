@@ -362,6 +362,10 @@ describe('WaitingRoomPage', () => {
     await flushPromises()
 
     expect(replaceMock).not.toHaveBeenCalled()
+    // 아직 시작도 안 한 라운드를 끝났다고 알리지 않는다 — 진행자가 인원을 세고 공지하는 구간이라
+    // 종료 안내가 뜨면 게스트는 게임이 끝난 줄 안다(I-22)
+    expect(wrapper.text()).not.toContain('라운드 종료')
+    expect(wrapper.text()).not.toContain('진행자가 게임을 마칠 때까지')
     // 라운드 배정 카드가 그대로 보인다
     expect(wrapper.text()).toContain('완장')
   })
