@@ -347,6 +347,22 @@ describe('firestore.rules 킬샷 규칙 동기화 가드', () => {
     expect(rules).toContain(`photo.matches('^${SUBMISSION_PHOTO_PREFIX}.*')`)
   })
 
+  /**
+   * 마감 컷은 rules에만 있는 규칙이라 클라 상수와 대조할 대상이 없다. 대신 검사의 존재 자체를
+   * 못 박는다 — 이 줄이 빠지면 라운드가 끝난 뒤 올라온 사진이 조용히 접수된다(2026-08-31 실측:
+   * 화면이 00:00 종료인 상태에서 제출 2건이 그대로 통과해 판정 대기가 2건 → 4건이 됐다).
+   *
+   * 기준 시각은 `round.startedAt + round.durationMs`다. writeRound가 모든 전이를 "지금부터
+   * 남은 시간만큼"으로 재앵커하므로 이 식 하나가 시간 조정까지 따라온다.
+   */
+  it('마감(startedAt + durationMs) 이후 도착한 제출을 거부한다', () => {
+    const submissionsBlock = rules.match(/match \/submissions\/\{submissionId\}[\s\S]*?\n {6}\}/)!
+    expect(submissionsBlock).not.toBeNull()
+    expect(submissionsBlock[0]).toContain('request.time <')
+    expect(submissionsBlock[0]).toContain('.round.startedAt')
+    expect(submissionsBlock[0]).toContain(".round.durationMs, 'ms')")
+  })
+
   it('submissions 갈래가 존재하고 판정은 pending에서만, 삭제는 불가다', () => {
     expect(rules).toContain('match /submissions/{submissionId}')
     const submissionsBlock = rules.match(/match \/submissions\/\{submissionId\}[\s\S]*?\n {6}\}/)!
