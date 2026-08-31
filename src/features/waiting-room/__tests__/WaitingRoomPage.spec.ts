@@ -392,6 +392,86 @@ describe('WaitingRoomPage', () => {
     expect(replaceMock).toHaveBeenCalledWith({ name: 'camera', params: { roomCode: 'AB2C' } })
   })
 
+  it('게스트: 타이머가 0에 닿은 라운드로는 콕핏으로 되밀어 내지 않는다(A-4)', async () => {
+    // 호스트가 게임을 종료하기 전까지 round 필드는 남아 있다. '시작됐다'만 보면 콕핏에서
+    // 나온 게스트가 즉시 되돌려 보내져 나갈 방법이 없어진다.
+    const deliver = captureSnapshotCallbacks()
+    const wrapper = mountPage()
+    await flushPromises()
+
+    deliver.room({
+      hostUid: 'host9',
+      status: 'playing',
+      assignmentRound: 1,
+      gameMode: 'normal',
+      roundModes: {},
+      round: {
+        status: 'running',
+        startedAtMs: Date.now() - 1_200_000,
+        durationMs: 1_200_000,
+        pausedRemainingMs: null,
+      },
+    })
+    deliver.participants([{ ...ROSTER[0]!, team: 'A', assignedRound: 1, isReady: true }])
+    await flushPromises()
+
+    expect(replaceMock).not.toHaveBeenCalledWith({ name: 'camera', params: { roomCode: 'AB2C' } })
+    expect(wrapper.text()).toContain('라운드 종료')
+    expect(wrapper.text()).toContain('다음 라운드가 시작되면 촬영 화면이 자동으로 열려요')
+  })
+
+  it('게스트: 진행자가 시간을 더하면 콕핏으로 자동 재진입한다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    mountPage()
+    await flushPromises()
+
+    const startedAtMs = Date.now() - 1_200_000
+    const expired = {
+      hostUid: 'host9',
+      status: 'playing' as const,
+      assignmentRound: 1,
+      gameMode: 'normal' as const,
+      roundModes: {},
+      round: { status: 'running' as const, startedAtMs, durationMs: 1_200_000, pausedRemainingMs: null },
+    }
+    deliver.room(expired)
+    await flushPromises()
+    expect(replaceMock).not.toHaveBeenCalledWith({ name: 'camera', params: { roomCode: 'AB2C' } })
+
+    // 진행자가 +5분 — 총량이 늘면 남은 시간이 다시 생긴다
+    deliver.room({
+      ...expired,
+      round: { ...expired.round, durationMs: 1_500_000 },
+    })
+    await flushPromises()
+
+    expect(replaceMock).toHaveBeenCalledWith({ name: 'camera', params: { roomCode: 'AB2C' } })
+  })
+
+  it('게스트: 올스탑(정지) 중에는 콕핏에 그대로 둔다', async () => {
+    // 정지는 진행자가 곧 푸는 일시 상태라 남은 시간이 보존된다 — 대기실로 내보낼 이유가 없다
+    const deliver = captureSnapshotCallbacks()
+    mountPage()
+    await flushPromises()
+
+    deliver.room({
+      hostUid: 'host9',
+      status: 'playing',
+      assignmentRound: 1,
+      gameMode: 'normal',
+      roundModes: {},
+      round: {
+        status: 'paused',
+        startedAtMs: Date.now() - 600_000,
+        durationMs: 1_200_000,
+        pausedRemainingMs: 600_000,
+      },
+    })
+    await flushPromises()
+
+    expect(replaceMock).toHaveBeenCalledWith({ name: 'camera', params: { roomCode: 'AB2C' } })
+  })
+
   it('호스트(진행자): playing 전이 시 카메라가 아니라 라운드 운영 화면으로 replace 이동한다', async () => {
     const deliver = captureSnapshotCallbacks()
     getRoomMock.mockResolvedValue(MY_ROOM)

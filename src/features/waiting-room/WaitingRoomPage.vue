@@ -46,7 +46,7 @@ const {
   startGameError,
   myId,
   gameStatus,
-  isRoundStarted,
+  isRoundLive,
 } = storeToRefs(store)
 
 /**
@@ -91,6 +91,13 @@ function toDraftMember(participant: Participant): DraftMember {
  * 내려간 참가자가 유령 완장 카드를 보고 팀원 목록까지 오염시키던 문제의 수정.
  */
 const showGuestAssignment = computed(() => !isHost.value && myAssignment.value !== null)
+/**
+ * 게스트가 "라운드는 끝났지만 게임은 아직 안 끝난" 구간에 대기실로 나와 있는 상태.
+ * 호스트는 playing이면 라운드 운영 화면으로 가므로 이 조건에 걸리지 않는다.
+ */
+const isRoundOverAwaitingHost = computed(
+  () => !isHost.value && gameStatus.value === 'playing' && !isRoundLive.value,
+)
 
 /**
  * 게스트 CTA 문구 — 확정된 상태는 어느 뷰에서나 '준비 완료' 하나로 통일하고, 누를 수 있는
@@ -212,13 +219,17 @@ onUnmounted(() => {
 // 게스트는 **호스트가 라운드를 실제로 시작할 때까지** 대기실(배정 카드)에 머문다. playing만으로
 // 넘기면 진행자가 인원을 세고 공지하는 동안 플레이어들은 켜진 뷰파인더만 보며 기다리게 되고,
 // 그 사이 배정된 완장·팀원을 다시 확인할 방법도 사라진다.
-watch([gameStatus, isRoundStarted], ([status, roundStarted]) => {
+//
+// 기준은 '라운드가 시작됐다'가 아니라 '뛸 시간이 남았다'다(isRoundLive). 타이머가 0에 닿아도
+// round 필드는 호스트가 종료할 때까지 남으므로, 시작 여부만 보면 종료 뒤 콕핏에서 나온 게스트를
+// 여기서 즉시 되밀어 낸다. 진행자가 시간을 더하면 이 값이 다시 참이 되어 자동 재진입도 살아난다.
+watch([gameStatus, isRoundLive], ([status, roundLive]) => {
   if (status !== 'playing') return
   if (isHost.value) {
     router.replace({ name: 'round-ops', params: { roomCode: roomCode.value } })
     return
   }
-  if (roundStarted) {
+  if (roundLive) {
     router.replace({ name: 'camera', params: { roomCode: roomCode.value } })
   }
 })
@@ -255,8 +266,22 @@ async function copyInviteLink() {
   <section class="flex flex-1 flex-col bg-canvas px-6 pt-3 pb-(--pr-inset-bottom-safe)">
     <!-- 콘텐츠 영역은 flex 컨테이너여야 한다 — 블록이면 자식(배정 보드)의 flex-1·mt-auto가 죽어
          보드의 액션 영역이 화면 하단에 붙지 않는다. 세 뷰의 상단 여백은 여기서 한 번만 준다 -->
-    <div class="flex flex-1 flex-col pt-3">
+    <div class="flex flex-1 flex-col gap-4 pt-3">
       <template v-if="phase === 'joined'">
+        <!-- 라운드는 끝났는데 진행자가 아직 게임을 닫지 않은 구간 — 게스트가 콕핏에서 나와
+             여기로 돌아오는 유일한 경로다(A-4). 게임 중(playing)인데 대기실에 있는 이유와,
+             다음 라운드가 시작되면 화면이 알아서 넘어간다는 것을 같이 알린다.
+             배정 카드는 그대로 아래 남아 완장·팀원을 계속 확인할 수 있다. -->
+        <BaseCard v-if="isRoundOverAwaitingHost" role="status">
+          <div class="flex items-start gap-3">
+            <BaseBadge tone="warning">라운드 종료</BaseBadge>
+            <p class="min-w-0 flex-1 text-caption text-pretty break-keep text-content-secondary">
+              진행자가 게임을 마칠 때까지 기다려 주세요. 다음 라운드가 시작되면 촬영 화면이 자동으로
+              열려요.
+            </p>
+          </div>
+        </BaseCard>
+
         <!-- 호스트: 팀 배정 보드(대기실 콘텐츠·하단 CTA를 대체) -->
         <AssignmentBoard
           v-if="showAssignmentBoard"
