@@ -249,10 +249,20 @@ service cloud.firestore {
           && request.resource.data.uid == request.auth.uid
           && get(/databases/$(database)/documents/rooms/$(roomCode)).data.status == 'playing'
           // 정지(paused) 중·라운드 시작 전 제출을 서버에서도 차단한다(클라 잠금과 같은 기준).
-          // 시간(0:00 경과)은 검사하지 않는다 — 종료 컷은 호스트의 '라운드 종료'가 정본이고,
           // rules의 get은 같은 문서라 추가 비용이 없다.
           && ('round' in get(/databases/$(database)/documents/rooms/$(roomCode)).data)
           && get(/databases/$(database)/documents/rooms/$(roomCode)).data.round.status == 'running'
+          // 마감(0:00) 이후 도착분은 거부한다 — 라운드가 끝난 뒤 올라온 사진은 킬로 인정하지 않는다.
+          // 클라(카메라)는 이미 셔터·제출을 잠그지만 그것만으로는 클라를 우회한 쓰기가 통과하고,
+          // 마감 직전 제출이 업로드 지연으로 늦게 도착하는 경우도 걸러지지 않는다.
+          //
+          // 마감 시각은 `startedAt + durationMs` 하나로 정해진다 — writeRound가 모든 전이
+          // (시작·정지·재개·시간 반영)를 "지금부터 남은 시간만큼"으로 다시 앵커하기 때문에,
+          // 진행자가 ±N분을 반영하면 이 식이 그대로 따라온다. 판정 기준 시각은 호스트 기기가
+          // 아니라 요청이 서버에 닿은 시각(request.time)이라 참가자 기기 시계는 개입하지 못한다.
+          // 경계는 클라의 종료 판정(remainingMs == 0 → 'ended')과 같다.
+          && request.time < get(/databases/$(database)/documents/rooms/$(roomCode)).data.round.startedAt
+            + duration.value(get(/databases/$(database)/documents/rooms/$(roomCode)).data.round.durationMs, 'ms')
           && request.resource.data.round is int
           && request.resource.data.round
             == get(/databases/$(database)/documents/rooms/$(roomCode)).data.assignmentRound

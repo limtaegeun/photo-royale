@@ -417,6 +417,87 @@ describe('RoundOpsPage', () => {
     })
   })
 
+  /**
+   * 타이머와 종료 버튼이 운영 탭 안에만 있으면, 판정·기록 탭을 보는 진행자는 시간이 다 가도
+   * 화면에서 아무 변화를 보지 못해 라운드가 끝난 줄 모르고 계속 판정한다(QA A-3).
+   */
+  describe('상태 줄', () => {
+    it('판정·기록 탭에서도 남은 시간과 라운드 상태가 남는다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+
+      deliver.room(hostRoom({ round: running() }))
+      await flushPromises()
+
+      await wrapper.find('[data-value="judge"]').trigger('click')
+      expect(wrapper.find('[aria-label="라운드 남은 시간"]').text()).toMatch(/^\d{2}:\d{2}$/)
+      expect(wrapper.text()).toContain('LIVE')
+      // 운영 컨트롤은 탭을 따라 사라져도 상태 줄은 남는다
+      expect(findButton(wrapper, '일시정지')).toBeUndefined()
+
+      await wrapper.find('[data-value="log"]').trigger('click')
+      expect(wrapper.find('[aria-label="라운드 남은 시간"]').exists()).toBe(true)
+      expect(wrapper.text()).toContain('AB2C')
+    })
+
+    it('라운드가 없으면 상태 줄에 시간을 띄우지 않는다 — 20분 미리보기는 타이머 카드의 몫', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+
+      deliver.room(hostRoom())
+      await flushPromises()
+
+      expect(wrapper.find('[aria-label="라운드 남은 시간"]').exists()).toBe(false)
+      expect(wrapper.text()).toContain('20:00')
+    })
+
+    it('종료는 시작 전과 같은 회색이 아니라 danger 톤으로 구분한다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+
+      deliver.room(hostRoom({ round: running() }))
+      await flushPromises()
+      expect(wrapper.find('[data-tone="danger"]').exists()).toBe(false)
+
+      deliver.room(hostRoom({ round: ended() }))
+      await flushPromises()
+
+      expect(wrapper.find('[data-tone="danger"]').exists()).toBe(true)
+    })
+
+    it('시간이 0에 닿는 순간을 토스트로 알린다 — 다른 탭을 보고 있어도 놓치지 않게', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+
+      deliver.room(hostRoom({ round: running() }))
+      await flushPromises()
+      await wrapper.find('[data-value="judge"]').trigger('click')
+      toastMock.mockClear()
+
+      deliver.room(hostRoom({ round: ended() }))
+      await flushPromises()
+
+      expect(toastMock).toHaveBeenCalledWith(
+        expect.objectContaining({ title: expect.stringContaining('라운드 시간이 끝났어요') }),
+      )
+      expect(wrapper.find('[aria-label="라운드 남은 시간"]').text()).toBe('00:00')
+    })
+
+    /** 이미 끝나 있던 방을 지금 연 것은 방금 일어난 사건이 아니고, 그 순간 화면은 보고 있다 */
+    it('이미 종료된 방으로 들어올 때는 종료 알림을 띄우지 않는다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+
+      deliver.room(hostRoom({ round: ended() }))
+      await flushPromises()
+
+      expect(toastMock).not.toHaveBeenCalledWith(
+        expect.objectContaining({ title: expect.stringContaining('라운드 시간이 끝났어요') }),
+      )
+      expect(wrapper.text()).toContain('종료')
+    })
+  })
+
   describe('컨트롤', () => {
     it('일시정지·재개는 방 문서에 쓴다', async () => {
       const deliver = captureSnapshotCallbacks()

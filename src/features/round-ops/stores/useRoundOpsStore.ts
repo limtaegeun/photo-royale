@@ -8,6 +8,7 @@ import {
   subscribeToRoom,
   type Participant,
   type RoomInfo,
+  serverNow,
 } from '@/features/waiting-room'
 import {
   NOTICE_TEXT_MAX_LENGTH,
@@ -268,14 +269,14 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
   /** 올스탑 — 진행 중일 때만. 클릭 순간의 남은 시간을 서버에 고정한다 */
   async function pause() {
     if (!canWriteRound() || round.value?.status !== 'running') return
-    const remainingMs = computeRemainingMs(round.value, Date.now())
+    const remainingMs = computeRemainingMs(round.value, serverNow())
     await runAction('pause', () => pauseRound(roomCode.value!, remainingMs))
   }
 
   /** 재개 — 정지 중일 때만. 고정해 둔 남은 시간부터 다시 흐른다 */
   async function resume() {
     if (!canWriteRound() || round.value?.status !== 'paused') return
-    const remainingMs = computeRemainingMs(round.value, Date.now())
+    const remainingMs = computeRemainingMs(round.value, serverNow())
     await runAction('resume', () => resumeRound(roomCode.value!, remainingMs))
   }
 
@@ -288,7 +289,7 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
   async function applyAdjust() {
     const currentRound = round.value
     if (!canWriteRound() || currentRound === null || pendingAdjustMinutes.value === 0) return
-    const remainingMs = computeRemainingMs(currentRound, Date.now())
+    const remainingMs = computeRemainingMs(currentRound, serverNow())
     const appliedMinutes = pendingAdjustMinutes.value
     const deltaMs = appliedMinutes * ROUND_ADJUST_STEP_MS
     const applied = await runAction('adjust', () =>
