@@ -3,6 +3,7 @@
 - 브랜치: `feat/p04-camera-cockpit`
 - 작성일: 2026-07-25
 - 전수 재검증: 2026-07-26 — 기존 완료 표시는 근거로 재사용하지 않고 모든 TC를 새 실행으로 다시 판정한다.
+- 미커밋 반영 갱신: 2026-08-31 — 마감(00:00) 이후 도착한 킬샷을 서버 규칙에서 거부한다(K-06~K-11 신규 6건). 기존에 "서버는 시간을 검증하지 않는다"고 적혀 있던 설계 노트·운영 체크리스트·알려진 한계를 함께 뒤집었다. rules 컴파일은 `--dry-run`으로 통과했고, 실동작은 배포 후 K-06으로 확인한다.
 - 미커밋 반영 갱신: 2026-08-09 — 라운드 종료(ended) 게이트(K), HUD "생존"→"참가"·1인 팀 라벨(B-03/B-06), 제출 성공 토스트 문구 정리(E-06). **2026-08-10 live-qa**(local dev·실 Firebase·headless Chrome, 방 8CWJ)로 K-01~K-03·E-06·B-03 실측 통과, K-04·K-05는 unit 갈음, B-06은 1인 팀 미조성으로 미검증.
 - 반영 갱신: 2026-08-31 (2차) — **서버 시각 보정(`serverClock`)** 도입. 라운드 종료 판정이 기기 시계가 아니라 서버 보정 시각(`serverNow()`)을 쓴다. 방 문서의 `round.startedAt`이 호스트의 모든 라운드 전이에서 `serverTimestamp()`로 찍히는 점을 이용해, 구독 중 그 값이 바뀐 순간의 기기 시각과 비교해 오프셋을 잰다. M-07이 ❌에서 ✅로 바뀌었고 M-01~M-06·M-08~M-13과 대기실 I-17~I-21, 운영 I-06 회귀를 다시 실측했다(방 98DP).
 - 반영 갱신: 2026-08-31 — 라운드 종료 후 콕핏 출구(M) 추가: ended면 셔터·아이템 자리를 `대기실로 돌아가기` 하나로 교체하고, 대기실의 콕핏 복귀 판정을 '라운드가 있다'에서 '남은 시간이 있다'(`isRoundLive`)로 좁혀 되밀림을 막았다. K-01·K-03 기대 결과가 이 변경으로 갱신됐다. **2026-08-31 live-qa**(수정 전/후 dev 2대 대조, 실 Firebase, 방 UTT7)로 M-01~M-05 실측 통과. 수정 전 결함도 재현했다 — 대기실로 나가면 `/waiting-room/UTT7 → /camera/UTT7`로 되밀렸다. 같은 날 qa-flow로 TC를 재도출해 M-06~M-13(실기기 자연 종료·**기기 시계 오차로 인한 조기 이탈**·왕복 누수·오프라인·히스토리·접근성)을 추가했고 이 8건은 미검증이다.
@@ -31,7 +32,7 @@
 4. 킬샷은 브라우저 메모리의 Blob URL만 만들며 기기 갤러리 저장·호스트 전송은 의도적으로 하지 않는다. (E-02, F-01)
 5. 상·하단 HUD가 작은 화면/큰 글자에서 뷰파인더를 과도하게 가릴 수 있다. (G-01, G-02)
 6. `BaseButton`의 패딩·배경은 사용처 클래스 덮어쓰기가 아닌 `padding` prop과 `shutter` variant로 선택한다. (J-01, J-02)
-7. `round.status`는 `running`/`paused`만 저장하고 `ended`는 클라이언트가 타이머로 파생한 표시 상태라 서버에는 없다. `submissions` 생성 규칙(`firestore.rules`)은 방 상태(`playing`)·라운드 존재·`round.status == 'running'`·팀·차수 일치를 검사한다(P06: paused·라운드 시작 전 REST/SDK 직접 제출은 서버에서도 차단). 다만 시간 초과(00:00 경과, 서버 `status`는 여전히 `running`)는 검증하지 않으므로 라운드 종료 후 직접 제출은 여전히 가능하다 — 그 구간은 `isRoundEnded` 클라이언트 게이트가 유일한 방어선이다. (K-04, K-05, L-04)
+7. `round.status`는 `running`/`paused`만 저장하고 `ended`는 클라이언트가 타이머로 파생한 표시 상태라 서버에는 없다. 그래도 마감 시각은 서버에 있는 값(`round.startedAt + round.durationMs`)으로 정해지므로, `submissions` 생성 규칙(`firestore.rules`)은 방 상태(`playing`)·라운드 존재·`round.status == 'running'`·**마감 이전(`request.time` 기준)**·팀·차수 일치를 검사한다. paused·라운드 시작 전·마감 후 REST/SDK 직접 제출은 모두 서버에서 차단된다. 클라이언트 게이트(`isRoundEnded`)와 서버 규칙이 같은 경계를 보므로, 마감 뒤 도착한 사진은 킬로 인정되지 않는다. (K-04~K-06, L-04)
 
 ## 테스트 환경·사전 조건
 
@@ -42,7 +43,10 @@
 - 브라우저: 데스크톱 Chrome fake camera + iOS Safari/Android Chrome 실기기 후속 확인
 - 카메라 자동화: Chrome `--use-fake-device-for-media-stream --use-fake-ui-for-media-stream`
 - 네트워크: Firestore Listen/Write 응답과 DOM을 함께 판정. 콘솔 직접 수정은 rules를 우회하므로 rules 근거로 사용하지 않음
-- 라운드 종료(ended) 재현: 단위 테스트는 `useRoundTimer`의 `displayState`를 모킹하지만, live-qa는 방 `round.durationMs`를 짧게 설정하거나 타이머가 자연 종료될 때까지 대기해 재현한다. REST/SDK 직접 쓰기는 rules를 우회하므로 결과 판정 근거로는 쓰지 않는다
+- 라운드 종료(ended) 재현: 단위 테스트는 `useRoundTimer`의 `displayState`를 모킹하지만, live-qa는 방 `round.durationMs`를 짧게 설정하거나 타이머가 자연 종료될 때까지 대기해 재현한다.
+- **rules 판정에 쓸 수 있는 수단**: 참가자·호스트 **본인 토큰**으로 부른 REST/SDK 쓰기는 rules가 그대로 적용되므로 서버 규칙 판정 근거로 쓸 수 있다(K-06~K-10이 이 수단을 쓴다). rules를 우회하는 것은 admin 권한(Firebase 콘솔·Admin SDK)이며, 그쪽 조작은 전제 상태를 만드는 데만 쓰고 판정 근거로 삼지 않는다.
+- **rules 검증 환경(권장 — 설치·배포 없음)**: Firebase **Security Rules API의 `TestRuleset`**(`POST https://firebaserules.googleapis.com/v1/projects/photo-royale-scc:test`)에 `firestore.rules` 원문과 테스트 케이스를 보내면 Google 서버가 규칙을 그대로 평가해 ALLOW/DENY를 돌려준다. 배포도 에뮬레이터(Java)도 필요 없고, `request.time`을 임의 시각으로 줄 수 있어 마감 경계를 정확히 찍을 수 있다. 인증은 firebase CLI의 refresh token을 OAuth로 교환해 얻는다. 주의 두 가지 — ① `get()`은 실제 DB를 읽지 않으므로 `functionMocks`로 방·참가자 문서를 넣어 준다(mock의 timestamp는 **ISO 문자열**로 줘야 timestamp로 인식된다). ② `update` 케이스는 기존 문서를 `TestCase.resource`에, 쓰려는 값을 `TestCase.request.resource`에 **따로** 넣는다(한쪽만 주면 `resource.data.status == 'pending'` 같은 조건이 어긋나 오탐이 난다).
+- **rules 검증 환경**: 배포 없이 확인하려면 Firestore 에뮬레이터(`npx -y firebase-tools@latest emulators:start --only firestore`)에 이 저장소의 `firestore.rules`를 물려 REST로 호출한다. 배포된 프로젝트에서 확인하려면 `firebase deploy --only firestore:rules`가 선행돼야 하고, **배포 전까지 규칙 변경은 무효**다(K-06)
 
 ## A. 진입·카메라 권한
 
@@ -150,6 +154,12 @@
 | K-03 [unit] | P1       | ✅ 완료 (2026-08-10 — disabled+안내 실측) | 킬샷 확인 화면이 열린 팀 배정 확인된 참가자, 라운드 종료 | 확인 화면 하단 확인           | `킬샷 제출`에 `disabled`가 적용되고 `라운드가 종료되어 제출할 수 없어요. 돌아가면 대기실로 나갈 수 있어요.`가 표시되며, 왼쪽 버튼 라벨이 `다시 찍기` → `돌아가기`로 바뀐다(종료 뒤에는 다시 찍을 수 없다). 팀 미배정 안내와 동시에 뜨지 않는다 |
 | K-04 [unit] | P1       | ✅ unit (live에선 disabled로 클릭 도달 불가 — 가드는 unit이 고정) | 확인 화면이 열린 채 라운드가 막 종료(리렌더 반영 전)     | `킬샷 제출` 클릭              | `submitPhoto` 진입 가드가 서버 제출 전에 막아 `submitKillshot`이 호출되지 않고, 토스트 `라운드가 종료되어 제출할 수 없어요.`(tone: danger)가 표시된다 |
 | K-05        | P2       | ✅ unit (idle/paused는 live 미조성 — `resolveDisplayState` unit 갈음) | 라운드가 idle(시작 전) 또는 paused(일시정지)            | 셔터·`킬샷 제출` 가능 여부 확인 | `isRoundEnded`는 `displayState === 'ended'`일 때만 true라 idle·paused에서는 잠기지 않는다(paused는 기존처럼 경고색만 유지) |
+| K-06        | P1       | ✅ (2026-08-31 rules-test 실평가 — 경계 4케이스) | running 라운드가 마감(00:00 경과), 방 `status`는 여전히 `playing`·`round.status`는 `running`. 실제 사용자 토큰으로 REST/SDK `submissions` create 직접 시도 | rules 배포 후 create 요청 2회 — 마감 직전 1회(대조군), 마감 후 1회 | 마감 직전은 200으로 접수되고, 마감 후는 `request.time < round.startedAt + round.durationMs` 검사에 걸려 403으로 거부된다. 판정 큐 대기 건수가 늘지 않는다 — `firebase deploy --only firestore:rules` 배포 후 live-qa 실측이 필요하다 |
+| K-07        | P1       | ✅ (2026-08-31 rules-test 실평가) | 마감이 지나 제출이 거부되는 방에서 진행자가 `시간 조정`으로 `+1분`을 반영 | 반영 직후 같은 참가자 토큰으로 create 재시도 | 200으로 접수된다. `writeRound`가 `startedAt`을 서버 시각으로 다시 앵커하고 `durationMs`를 남은 시간으로 새로 쓰므로 마감 시각이 그만큼 미뤄진다 — 진행자의 복구 경로가 막히지 않는다 |
+| K-08        | P2       | ✅ (2026-08-31 rules-test 실평가 — 라운드 부재 갈래 포함) | 마감 **이전**이지만 진행자가 일시정지(`round.status='paused'`)를 건 방 | 참가자 토큰으로 create 시도 | 403으로 거부된다. 마감 검사보다 앞선 `round.status == 'running'` 갈래가 그대로 유효하다(이번 변경이 기존 정지 차단을 약화시키지 않았는지 확인하는 회귀) |
+| K-09        | P1       | ✅ (2026-08-31 rules-test 실평가 — 확정·반려 + 마감 전 대조군) | 마감 전에 도착해 `pending`으로 쌓인 킬샷이 있고, 라운드는 마감(00:00)을 지난 상태. 방 `status`는 아직 `playing` | 호스트 토큰으로 해당 문서 update(확정 또는 반려) | 200으로 판정된다 — 이번 변경은 create만 막고 update는 건드리지 않았다. **이 경로가 막히면 마감 직전 도착분을 영영 판정할 수 없다**(회귀 확인의 핵심) |
+| K-10        | P2       | ✅ (2026-08-31 rules-test 실평가) | 마감이 지난 방. 참가자 기기 시각을 마감 이전으로 되돌림(OS 시계 조작 또는 `Date.now` 패치) | 참가자 토큰으로 create 시도 | 403으로 거부된다. 판정 기준은 요청이 서버에 닿은 시각(`request.time`)이라 참가자 기기 시계가 개입하지 못한다 |
+| K-11        | P2       | ⏸ 미검증 (rules 배포 후에만 재현 가능 — 규칙이 배포돼 있어야 서버가 거부한다) | 마감 3초 전, 느린 회선(DevTools Slow 3G 등)에서 실제 앱으로 촬영 후 `킬샷 제출` | 압축·업로드가 마감을 넘겨 도착하는 상황을 만든다 | 서버가 403으로 거부하고 화면에 `제출에 실패했어요. 다시 시도해 주세요.`(danger)가 뜬다. 사진은 확인 화면에 보존된다. **정책상 의도된 손실**이며(마감 뒤 도착분 불인정), 참가자가 이 화면을 만났을 때 무엇을 보게 되는지 확인하는 것이 이 TC의 목적이다 |
 
 ## L. 일시정지 게이트
 
@@ -203,7 +213,7 @@
 | H 강인성        |      4 |      0/2 |         1 | 실기기·네트워크·수명주기  |
 | I 리허설        |      1 |      1/0 |         0 | 전체 한 판                |
 | J 공용 버튼     |      4 |      0/3 |         0 | computed style·기존 회귀  |
-| K 종료 게이트   |      5 |      0/4 |         3 | 실시간 00:00 반영, 확인화면 열어둔 채 종료, idle·paused 비잠금, REST 직접 제출 한계 |
+| K 종료 게이트   |     11 |      0/7 |         8 | 실시간 00:00 반영, 확인화면 열어둔 채 종료, idle·paused 비잠금, 서버 마감 검사 5건(K-06 거부+대조군 · K-07 시간조정 복구 · K-08 정지 회귀 · K-09 판정 회귀 · K-10 기기시계 무효) + 업로드 지연 실사용(K-11). 전부 rules 배포 또는 에뮬레이터 필요 |
 | L 일시정지 게이트 |      4 |      0/3 |         3 | 재개 후 실제 촬영, rules 배포 후 서버 차단 실측 |
 | **합계**        | **56** | **1/34** |    **26** |                           |
 
@@ -213,7 +223,7 @@
 - 호스트와 참가자 기기 시간이 자동 설정인지 확인한다.
 - 팀 배정·라운드 시작·공지 1건·촬영/재촬영을 스모크한다.
 - 카메라 복구 실패 시 브라우저 재진입, HUD 구독 실패 시 대기실 재입장을 백업 절차로 안내한다.
-- 라운드가 0:00에 닿으면 셔터·제출이 즉시 잠기는지 스모크로 확인한다. 서버는 시간 초과를 검증하지 않으므로(K-04/K-05), 종료 후 늦게 들어오는 제출이 판정 큐에 남지 않는지 호스트가 육안으로 확인한다.
+- 라운드가 0:00에 닿으면 셔터·제출이 즉시 잠기는지 스모크로 확인한다. 서버 규칙도 마감 시각을 보므로(K-06) 종료 후 도착분은 접수되지 않는다. 대신 마감 직전에 누른 제출이 업로드 지연으로 마감을 넘겨 실패할 수 있으니, 참가자에게 제출 실패가 뜨는 경우를 한 번 확인해 둔다.
 - `I-01` 실패 시 게임 시작을 보류한다.
 
 ## 알려진 한계
@@ -222,7 +232,37 @@
 - 아이템 1·2, 지도 3, 기록 4는 후속 PR용 비활성 mock이다.
 - 탈락/생존 상태 저장 모델이 없어 HUD의 참가 팀 수는 현재 차수에 배정된 고유 팀 수다(생존 여부와 무관).
 - 자동화 브라우저는 데스크톱 Chrome fake camera만 보장한다. iOS/Android 실기기는 별도 현장 검증이 필요하다.
-- `round.status`는 `running`/`paused`만 저장하고 `ended`는 클라이언트가 타이머로 파생한 표시 상태다(서버에 저장되지 않음). `submissions` 생성 규칙은 방 상태(`playing`)·라운드 존재·`round.status == 'running'`·팀·차수 일치를 검사해 paused·라운드 시작 전 직접 제출은 서버에서도 막지만, 시간 초과(00:00 경과, 서버 `status`는 여전히 `running`)는 검증하지 않으므로 라운드 종료 후 REST/SDK 직접 제출은 여전히 가능하다 — 그 구간은 클라이언트 게이트가 유일한 방어선이며 서버 측 시간 검증 추가는 후속 과제다. rules 변경은 `firebase deploy --only firestore:rules` 배포 전까지는 적용되지 않는다(L-04).
+- `round.status`는 `running`/`paused`만 저장하고 `ended`는 클라이언트가 타이머로 파생한 표시 상태다(서버에 저장되지 않음). `submissions` 생성 규칙은 방 상태(`playing`)·라운드 존재·`round.status == 'running'`·마감 이전(`request.time < round.startedAt + round.durationMs`)·팀·차수 일치를 검사하므로, paused·라운드 시작 전·마감 후 직접 제출이 모두 서버에서 막힌다. 남는 한계는 두 가지다. ① 마감 직전에 촬영·제출했더라도 업로드가 마감을 넘겨 도착하면 거부된다(정책상 의도된 손실 — 마감 뒤 도착분은 인정하지 않는다). ② rules 변경은 `firebase deploy --only firestore:rules` 배포 전까지 적용되지 않는다(K-06, L-04).
+
+## 2026-08-31 rules 검증 결과 — 마감 게이트(K-06~K-11)
+
+- **대상**: 브랜치 `fix/submission-cutoff-at-zero` — `submissions` create에 마감 검사(`request.time < round.startedAt + duration.value(round.durationMs, 'ms')`) 추가
+- **수단**: Firebase Security Rules API `TestRuleset` — 저장소의 `firestore.rules` 원문을 그대로 보내 Google 서버가 평가했다. **배포하지 않았고 에뮬레이터도 쓰지 않았다.** `get()`은 `functionMocks`로 방·참가자 문서를 주입했으므로, 검증된 것은 **규칙의 판정 로직**이고 실제 문서 값과의 정합은 배포 후 K-11에서 확인한다.
+- **baseline 재현**: 수정 전(`main`) 규칙으로 같은 요청(마감 1분 후 제출)을 평가하면 **ALLOW** — 2026-08-31 실서버 실측(00:00 상태에서 킬샷 2건이 접수돼 판정 대기 2건→4건)과 일치한다. 수정 후 같은 요청은 **DENY**로 뒤집혔다.
+
+| 케이스 | 조건 | 기대 | 결과 |
+|---|---|---|---|
+| K-06a | 마감 10분 전 제출(대조군) | ALLOW | ✅ |
+| K-06b | 마감 1분 후 제출 | DENY | ✅ |
+| K-06c | 정확히 마감 시각(경계) | DENY | ✅ |
+| K-06d | 마감 1ms 전(경계) | ALLOW | ✅ |
+| K-07 | 시간 조정 +1분으로 재앵커한 뒤 30초 경과 | ALLOW | ✅ |
+| K-08 | 마감 전이지만 일시정지(paused) | DENY | ✅ |
+| K-08b | 라운드 시작 전(`round` 필드 없음) | DENY | ✅ |
+| K-09a | 마감 후 이미 도착한 킬샷 확정(approved) | ALLOW | ✅ |
+| K-09b | 마감 후 반려(rejected) | ALLOW | ✅ |
+| K-09c | 마감 전 확정(대조군) | ALLOW | ✅ |
+| K-10 | `createdAt`을 마감 이전으로 위조 | DENY | ✅ |
+
+**확인된 것**
+- 경계가 클라이언트 종료 판정과 정확히 같다 — 마감 1ms 전은 통과, 마감 시각 자체는 거부.
+- 진행자의 복구 경로가 살아 있다(K-07). `writeRound`가 `startedAt`을 서버 시각으로 다시 앵커하므로 시간 조정이 마감을 그대로 밀어 준다.
+- **판정 경로에 회귀가 없다**(K-09). 마감 전에 도착한 사진은 마감 뒤에도 확정·반려할 수 있다 — 이 경로가 막혔다면 마감 직전 도착분을 영영 판정하지 못했을 것이다.
+- 참가자 기기 시계는 개입하지 못한다(K-10). `createdAt`을 과거로 위조하면 `createdAt == request.time` 조건에서 먼저 걸린다.
+
+**남은 것**
+- **K-11 (⏸)**: 마감 직전 제출이 업로드 지연으로 늦게 도착하는 실사용 케이스. 규칙이 **배포된 뒤에야** 재현되므로 배포 후 실기기로 확인한다. 정책상 의도된 손실이지만(마감 뒤 도착분 불인정), 참가자가 `제출에 실패했어요. 다시 시도해 주세요.`를 보게 되는 상황이라 안내가 충분한지 판단이 필요하다.
+- 규칙은 `firebase deploy --only firestore:rules` 배포 전까지 무효다. 배포 전에는 마감 후 제출이 그대로 접수된다.
 
 ## 2026-08-30 live-qa 결과 — 일시정지 게이트(L)
 
