@@ -19,7 +19,7 @@ import RecordLogList from './components/RecordLogList.vue'
 import RoundTimerCard from './components/RoundTimerCard.vue'
 import TimeAdjustCard from './components/TimeAdjustCard.vue'
 import { useRoundTimer } from './composables/useRoundTimer'
-import { ROUND_STATE_LABEL, ROUND_STATE_TONE } from './roundStateStyles'
+import { ROUND_STATE_LABEL, ROUND_STATE_TIME_CLASS, ROUND_STATE_TONE } from './roundStateStyles'
 import { useRoundOpsStore } from './stores/useRoundOpsStore'
 
 /**
@@ -181,6 +181,18 @@ watch(submissionListenError, (message) => {
 })
 watch(recordListenError, (message) => {
   if (message !== null) toast({ title: message, tone: 'danger' })
+})
+
+/**
+ * 시간이 0에 닿는 순간을 알린다 — 상단 상태 줄의 색 변화만으로는 판정 사진에 눈이 가 있는
+ * 진행자가 놓친다. 라운드가 끝난 줄 모르고 계속 판정하면 그 사이 들어온 킬샷까지 인정하게 된다.
+ *
+ * running·paused에서 넘어온 전이만 알린다. idle→ended는 이미 끝나 있던 방을 지금 연 것이라
+ * 방금 일어난 사건이 아니고, 그 순간 진행자는 화면을 보고 있다.
+ */
+watch(displayState, (state, previous) => {
+  if (state !== 'ended' || (previous !== 'running' && previous !== 'paused')) return
+  toast({ title: '라운드 시간이 끝났어요. 운영 탭에서 라운드를 종료해 주세요.', tone: 'warning' })
 })
 
 // 기록 로그는 사진 포함 전체 이력이라 무겁다 — 기록 탭이 처음 열릴 때 게으르게 구독을 시작한다
@@ -365,22 +377,40 @@ onUnmounted(() => {
   <!-- 하단 safe-area는 화면이 아니라 아래의 sticky 탭 바가 직접 갖는다 — sticky는 뷰포트 하단에
        붙으므로 부모 패딩으로는 홈 인디케이터를 피할 수 없다 -->
   <section class="flex flex-1 flex-col bg-canvas px-6 pt-3">
+    <!-- 상태 줄 — 방 코드·라운드 상태·남은 시간은 어느 탭에 있든 보여야 한다. 운영 탭 안에만
+         두면 판정·기록 탭을 보는 동안 시간이 다 가도 화면에 아무 변화가 없어, 진행자가 라운드가
+         끝난 줄 모르고 계속 판정한다(QA A-3). 목록이 길어져도 가려지지 않게 상단에 붙인다 -->
+    <div
+      class="sticky top-0 z-(--pr-z-hud) -mx-6 flex items-center justify-between gap-3
+             bg-canvas px-6 pb-3"
+    >
+      <!-- 방 코드는 받아 적는 값이라 mono + 자간으로 오독을 줄인다 -->
+      <p class="text-label text-content-secondary">
+        ROOM
+        <span class="font-mono tracking-widest text-content">
+          {{ roomCode ?? routeRoomCode }}
+        </span>
+      </p>
+      <div class="flex items-center gap-2">
+        <!-- 라운드가 없을 때는 숨긴다 — 시작 전 기본 20분 미리보기가 상태 줄에 상시로 떠 있으면
+             진행 중인 카운트다운으로 읽힌다. 그 미리보기는 운영 탭 타이머 카드의 몫이다 -->
+        <span
+          v-if="round !== null"
+          class="font-mono text-label tabular-nums"
+          :class="ROUND_STATE_TIME_CLASS[displayState]"
+          aria-label="라운드 남은 시간"
+        >
+          {{ formatted }}
+        </span>
+        <BaseBadge :tone="ROUND_STATE_TONE[displayState]" appearance="outline">
+          {{ ROUND_STATE_LABEL[displayState] }}
+        </BaseBadge>
+      </div>
+    </div>
+
     <!-- 블록 사이 여백은 mt-* 체인이 아니라 컨테이너 gap으로 준다 -->
     <div class="flex flex-1 flex-col gap-6 pt-3">
       <template v-if="activeTab === 'ops'">
-        <!-- 운영 중인 방 + 진행 상태. 방 코드는 받아 적는 값이라 mono + 자간으로 오독을 줄인다 -->
-        <div class="flex items-center justify-between gap-3">
-          <p class="text-label text-content-secondary">
-            ROOM
-            <span class="font-mono tracking-widest text-content">
-              {{ roomCode ?? routeRoomCode }}
-            </span>
-          </p>
-          <BaseBadge :tone="ROUND_STATE_TONE[displayState]" appearance="outline">
-            {{ ROUND_STATE_LABEL[displayState] }}
-          </BaseBadge>
-        </div>
-
         <template v-if="phase === 'ready' && isPlaying">
           <RoundTimerCard
             :formatted="formatted"
