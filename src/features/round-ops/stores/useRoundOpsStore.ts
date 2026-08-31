@@ -303,6 +303,10 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
    * 게임 종료 — 방을 대기 상태로 되돌리고 진행 중인 라운드를 지운다. 전원이 대기실로 돌아가는
    * 되돌릴 수 없는 액션이라, 확인 절차는 화면(다이얼로그)이 책임지고 여기서는 가드만 본다.
    * 라운드가 아직 시작되지 않았어도(round null) 게임 자체는 종료할 수 있다.
+   *
+   * 실패 안내는 판정과 같이 화면이 맡는다(reportError=false). 다른 쓰기가 진행 중이면 가드에
+   * 막혀 서버까지 가지도 못하는데, 이 경로에는 세울 안내가 없어 두 실패가 화면에서 서로 다르게
+   * 보인다. 성공 여부만 돌려주고 안내를 한 곳(화면)에 모아야 눌린 종료가 조용히 사라지지 않는다.
    */
   async function finishGame() {
     if (
@@ -313,7 +317,7 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     ) {
       return false
     }
-    return runAction('end', () => endGame(roomCode.value!))
+    return runAction('end', () => endGame(roomCode.value!), false)
   }
 
   /**

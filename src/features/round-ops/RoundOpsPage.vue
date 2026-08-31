@@ -62,6 +62,8 @@ const routeRoomCode = computed(() => normalizeRoomCode(String(route.params.roomC
 
 const { nowMs, formatted, displayState } = useRoundTimer(round)
 const JUDGE_ERROR_MESSAGE = '판정을 처리하지 못했어요. 다시 시도해 주세요.'
+const END_GAME_ERROR_MESSAGE = '게임을 종료하지 못했어요. 다시 시도해 주세요.'
+const END_ROUND_ERROR_MESSAGE = '라운드를 종료하지 못했어요. 다시 시도해 주세요.'
 
 /** 하단 탭 — 판정 탭은 다른 탭에서도 킬샷 도착을 알 수 있게 대기 건수 배지를 단다(도착 시 펄스). */
 const tabs = computed(() => [
@@ -207,11 +209,19 @@ watch([activeTab, phase], ([tab, currentPhase]) => {
  * 게임 종료 — 성공하면 방 status가 waiting이 되고, 대기실 복귀는 아래 watch(스냅샷)가 맡는다.
  * 여기서 직접 라우팅하지 않는 이유: 호스트가 기기를 두 대 열어 둔 경우 한쪽에서 종료해도
  * 두 창이 모두 대기실로 돌아가야 하기 때문이다.
+ *
+ * 실패하면 다이얼로그를 닫지 않는다. 결과와 상관없이 닫으면, 다른 쓰기가 걸려 종료 요청이
+ * 아예 나가지 못한 경우에도 화면은 "눌렀더니 창만 닫히고 아무 일도 없는" 모습이 된다.
+ * 그대로 열어 둔 채 원인을 알려야 호스트가 같은 자리에서 다시 누를 수 있다.
  */
 async function endGame() {
   const ended = await store.finishGame()
+  if (!ended) {
+    toast({ title: END_GAME_ERROR_MESSAGE, tone: 'danger' })
+    return
+  }
   isEndGameDialogOpen.value = false
-  if (ended) toast({ title: '게임을 종료했어요.', tone: 'success' })
+  toast({ title: '게임을 종료했어요.', tone: 'success' })
 }
 
 /**
@@ -219,13 +229,19 @@ async function endGame() {
  * 아니라 같은 액션에 다른 진입점을 준 것이다: 타이머가 0에 닿은 뒤에는 이게 중단이 아니라
  * 한 라운드를 정상적으로 닫는 정규 경로다. 배정 이력(assignmentRound·완장)은 남으므로 대기실이
  * 다음 차수 배정 CTA를 띄우고, 그 화면에서 다음 라운드의 게임 모드를 고른다.
+ *
+ * 실패 처리는 endGame과 같아야 한다 — 쓰기가 같으니 실패 방식도 같다. 특히 이 경로는 대기 건수가
+ * 0이면 다이얼로그 없이 바로 실행되므로(requestFinishRound), 안내가 없으면 화면에 아무 흔적도
+ * 남지 않는다. 진행자는 라운드가 닫힌 줄 알고 다음 순서로 넘어간다.
  */
 async function finishRound() {
   const finished = await store.finishGame()
-  isFinishRoundDialogOpen.value = false
-  if (finished) {
-    toast({ title: '라운드를 종료했어요. 대기실에서 다음 라운드를 배정해 주세요.', tone: 'success' })
+  if (!finished) {
+    toast({ title: END_ROUND_ERROR_MESSAGE, tone: 'danger' })
+    return
   }
+  isFinishRoundDialogOpen.value = false
+  toast({ title: '라운드를 종료했어요. 대기실에서 다음 라운드를 배정해 주세요.', tone: 'success' })
 }
 
 /**
