@@ -1,5 +1,6 @@
 import {
   collection,
+  deleteDoc,
   deleteField,
   doc,
   getDoc,
@@ -389,4 +390,14 @@ export function subscribeToParticipants(
 /** 내 참가자 문서의 레디 확정 — 스냅샷 구독이 화면 상태를 갱신한다 */
 export async function setReady(code: string, uid: string): Promise<void> {
   await updateDoc(doc(db, 'rooms', code, 'participants', uid), { isReady: true })
+}
+
+/**
+ * 강퇴(호스트 전용) — 참가자 문서를 삭제한다. firestore.rules가 "방 호스트 + 방이 대기
+ * 중(waiting)"일 때만 허용하므로 권한·시점 검증은 서버가 담당한다. 삭제는 멱등이라(이미
+ * 없는 문서 삭제도 성공) 다른 기기와 겹쳐 눌러도 안전하다. 내보낸 참가자의 화면 전환은
+ * 본인 기기의 명단 구독(subscribeToParticipants)이 감지한다 — 별도 알림 채널이 없다.
+ */
+export async function kickParticipant(code: string, uid: string): Promise<void> {
+  await deleteDoc(doc(db, 'rooms', code, 'participants', uid))
 }

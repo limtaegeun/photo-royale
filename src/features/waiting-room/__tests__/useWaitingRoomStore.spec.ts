@@ -24,6 +24,7 @@ const joinRoomMock =
   >()
 const setReadyMock = vi.fn<(code: string, uid: string) => Promise<void>>()
 const startGameMock = vi.fn<(code: string) => Promise<void>>()
+const kickParticipantMock = vi.fn<(code: string, uid: string) => Promise<void>>()
 const unsubscribeParticipantsMock = vi.fn<() => void>()
 const unsubscribeRoomMock = vi.fn<() => void>()
 const subscribeParticipantsMock =
@@ -45,6 +46,7 @@ vi.mock('../api/rooms', () => ({
   ) => joinRoomMock(code, member),
   setReady: (code: string, uid: string) => setReadyMock(code, uid),
   startGame: (code: string) => startGameMock(code),
+  kickParticipant: (code: string, uid: string) => kickParticipantMock(code, uid),
   subscribeToParticipants: (code: string, onChange: (participants: Participant[]) => void) =>
     subscribeParticipantsMock(code, onChange),
   subscribeToRoom: (code: string, onChange: (room: RoomInfo | null) => void) =>
@@ -122,6 +124,7 @@ describe('useWaitingRoomStore', () => {
     joinRoomMock.mockReset().mockResolvedValue(undefined)
     setReadyMock.mockReset().mockResolvedValue(undefined)
     startGameMock.mockReset().mockResolvedValue(undefined)
+    kickParticipantMock.mockReset().mockResolvedValue(undefined)
     subscribeParticipantsMock.mockReset().mockReturnValue(unsubscribeParticipantsMock)
     subscribeRoomMock.mockReset().mockReturnValue(unsubscribeRoomMock)
     unsubscribeParticipantsMock.mockReset()
@@ -298,6 +301,106 @@ describe('useWaitingRoomStore', () => {
     expect(store.participants).toEqual([])
     expect(store.phase).toBe('idle')
   })
+
+  describe('강퇴', () => {
+    const MY_ROOM_PLAYING: RoomInfo = { ...MY_ROOM, status: 'playing' }
+
+    it('게스트: 명단 스냅샷에 내가 없으면 kicked로 전환하고 구독을 해제한다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useWaitingRoomStore()
+      await store.enter('AB2C')
+      deliver.participants([ME_WAITING, OTHER_READY])
+      expect(store.phase).toBe('joined')
+
+      deliver.participants([OTHER_READY]) // 진행자가 내 참가자 문서를 삭제한 스냅샷
+
+      expect(store.phase).toBe('kicked')
+      expect(unsubscribeParticipantsMock).toHaveBeenCalledTimes(1)
+      expect(unsubscribeRoomMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('게스트: 명단에 내가 있는 동안은 kicked가 되지 않는다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useWaitingRoomStore()
+      await store.enter('AB2C')
+
+      deliver.participants([ME_WAITING]) // 다른 참가자가 전부 빠져도 나만 있으면 정상
+
+      expect(store.phase).toBe('joined')
+    })
+
+    it('호스트: 명단에 자신이 없어도 kicked가 되지 않는다(진행자는 참가자가 아니다)', async () => {
+      const deliver = captureSnapshotCallbacks()
+      getRoomMock.mockResolvedValue(MY_ROOM)
+      const store = useWaitingRoomStore()
+      await store.enter('AB2C')
+
+      deliver.participants([OTHER_READY])
+
+      expect(store.phase).toBe('joined')
+    })
+
+    it('강퇴 후 다시 enter하면 kicked가 풀리고 재입장한다(초대 코드 = 입장 자격)', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useWaitingRoomStore()
+      await store.enter('AB2C')
+      deliver.participants([])
+      expect(store.phase).toBe('kicked')
+
+      await store.enter('AB2C')
+
+      expect(store.phase).toBe('joined')
+      expect(joinRoomMock).toHaveBeenCalledTimes(2)
+    })
+
+    it('kick: 호스트가 대기 중에 호출하면 참가자 문서 삭제를 요청하고 true를 반환한다', async () => {
+      captureSnapshotCallbacks()
+      getRoomMock.mockResolvedValue(MY_ROOM)
+      const store = useWaitingRoomStore()
+      await store.enter('AB2C')
+
+      await expect(store.kick('u2')).resolves.toBe(true)
+
+      expect(kickParticipantMock).toHaveBeenCalledExactlyOnceWith('AB2C', 'u2')
+      expect(store.kickingId).toBeNull()
+    })
+
+    it('kick: 게스트가 호출하면 아무 요청도 하지 않는다', async () => {
+      captureSnapshotCallbacks()
+      const store = useWaitingRoomStore()
+      await store.enter('AB2C')
+
+      await expect(store.kick('u2')).resolves.toBe(false)
+
+      expect(kickParticipantMock).not.toHaveBeenCalled()
+    })
+
+    it('kick: 게임 중(playing)에는 요청하지 않는다 — rules와 같은 기준', async () => {
+      captureSnapshotCallbacks()
+      getRoomMock.mockResolvedValue(MY_ROOM_PLAYING)
+      const store = useWaitingRoomStore()
+      await store.enter('AB2C')
+
+      await expect(store.kick('u2')).resolves.toBe(false)
+
+      expect(kickParticipantMock).not.toHaveBeenCalled()
+    })
+
+    it('kick: 실패하면 false를 반환하고 다시 시도할 수 있다', async () => {
+      captureSnapshotCallbacks()
+      getRoomMock.mockResolvedValue(MY_ROOM)
+      kickParticipantMock.mockRejectedValueOnce(new Error('permission denied'))
+      const store = useWaitingRoomStore()
+      await store.enter('AB2C')
+
+      await expect(store.kick('u2')).resolves.toBe(false)
+      expect(store.kickingId).toBeNull()
+
+      kickParticipantMock.mockResolvedValue(undefined)
+      await expect(store.kick('u2')).resolves.toBe(true)
+    })
+  })
+
   describe('이번 라운드 배정 판정(유령 완장 방지)', () => {
     /** 라운드 2가 확정된 방 — 배정 카드·명단 완장은 assignedRound가 2인 참가자만 대상이다 */
     const ROUND2_ROOM: RoomInfo = {
