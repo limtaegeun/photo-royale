@@ -18,6 +18,7 @@ import {
 } from '@/features/team-assignment'
 import { useToast } from '@/shared/composables/useToast'
 import { useAppHeader } from '@/shared/composables/useAppHeader'
+import KickableRosterChip from './components/KickableRosterChip.vue'
 import { normalizeRoomCode, type Participant } from './api/rooms'
 import { hasPlayedRound } from './roundPlayMarker'
 import { useWaitingRoomStore } from './stores/useWaitingRoomStore'
@@ -44,6 +45,7 @@ const {
   isHost,
   isStartingGame,
   startGameError,
+  canKick,
   myId,
   gameStatus,
   isRoundLive,
@@ -175,6 +177,34 @@ function goNextAssignment() {
 function restartSameRound() {
   isRestartRoundDialogOpen.value = false
   store.startPlaying()
+}
+
+/** 내보내기 확인 대상 — 다이얼로그 닫힘 애니메이션 동안 제목이 비지 않게 닫을 때 비우지 않는다 */
+const kickTarget = ref<{ id: string; name: string } | null>(null)
+const isKickDialogOpen = ref(false)
+
+/** 명단 칩 탭(호스트) — 확인 다이얼로그를 연다. 실제 삭제는 confirmKick에서만 일어난다 */
+function requestKick(participant: Participant) {
+  kickTarget.value = { id: participant.id, name: participant.name }
+  isKickDialogOpen.value = true
+}
+
+/**
+ * 내보내기 확정 — 다이얼로그는 요청을 기다리지 않고 먼저 닫는다. deleteDoc은 오프라인에서
+ * 실패하지 않고 큐잉된 채 완료되지 않으므로(live-qa Q-06 실측), await 뒤에 닫으면 행사장
+ * 약전계에서 다이얼로그가 스피너로 굳는다. 명단은 지연 보상으로 이미 빠져 보이니 먼저 닫아도
+ * 사용자 모델과 어긋나지 않고, 결과는 토스트로 알린다(명단 갱신은 스냅샷 구독이 맡는다).
+ */
+async function confirmKick() {
+  if (kickTarget.value === null) return
+  const target = kickTarget.value
+  isKickDialogOpen.value = false
+  const kicked = await store.kick(target.id)
+  toast(
+    kicked
+      ? { title: `${target.name}님을 내보냈어요.`, tone: 'success' }
+      : { title: '내보내기에 실패했어요. 다시 시도해 주세요.', tone: 'danger' },
+  )
 }
 
 /** 확정 완료 — 보드를 닫고 기존 대기실 뷰로 복귀한다(명단에 완장 보더가 반영된다) */
@@ -372,10 +402,22 @@ async function copyInviteLink() {
               title="입장 명단"
               :summary="`${participantCount}명 입장 · ${readyCount}명 준비`"
             />
+            <!-- 칩이 곧 강퇴 진입점이라(아이콘 없음) 호스트에게만 누를 수 있음을 알려 준다.
+                 응답 없는 참가자를 빼지 못하면 "전원 준비" 조건이 다음 배정을 영원히 막는다 -->
+            <p v-if="canKick && participantCount > 0" class="text-caption text-content-tertiary">
+              참가자를 누르면 방에서 내보낼 수 있어요.
+            </p>
             <!-- roster는 이번 라운드 배정이 아닌 완장을 숨긴 명단이다(유령 완장 방지) -->
             <ul v-if="participantCount > 0" class="grid grid-cols-3 gap-2">
               <li v-for="participant in roster" :key="participant.id">
+                <!-- 호스트(대기 중): 칩 전체가 내보내기 확인을 여는 버튼이다(히트 확장은 칩 소유) -->
+                <KickableRosterChip
+                  v-if="canKick"
+                  :participant="participant"
+                  @kick="requestKick(participant)"
+                />
                 <PlayerChip
+                  v-else
                   :name="participant.name"
                   :team="participant.team"
                   :gender="participant.gender"
@@ -401,6 +443,25 @@ async function copyInviteLink() {
           </BaseCard>
         </div>
       </template>
+
+      <!-- 강퇴당함 — 명단 구독이 내 문서 삭제를 감지해 phase를 kicked로 바꾼 상태.
+           배정 카드·CTA를 포함한 대기실 뷰 전체를 이 안내로 대체한다. 재입장은 정책상
+           막지 않으므로(초대 코드 = 입장 자격) 다시 들어오는 길을 함께 안내한다 -->
+      <BaseCard v-else-if="phase === 'kicked'" padding="lg" role="alert">
+        <h2 class="text-subheading text-content">진행자가 내보냈어요</h2>
+        <p class="mt-3 text-body text-pretty break-keep text-content-secondary">
+          이 방의 입장 명단에서 빠졌어요. 계속 참여하려면 진행자에게 확인한 뒤 초대 코드로 다시
+          입장해 주세요.
+        </p>
+        <BaseButton
+          variant="primary"
+          size="md"
+          class="mt-5 w-full"
+          @click="router.replace({ name: 'entry' })"
+        >
+          입장 화면으로
+        </BaseButton>
+      </BaseCard>
 
       <!-- 입장 실패 — 잘못된 초대 코드 또는 네트워크·권한 문제 -->
       <BaseCard v-else-if="phase === 'not-found' || phase === 'error'" padding="lg">
@@ -503,6 +564,29 @@ async function copyInviteLink() {
         <BaseButton variant="ghost" size="lg" class="w-full" @click="restartSameRound">
           그대로 다시 시작
         </BaseButton>
+      </div>
+    </BaseDialog>
+
+    <!-- 내보내기 확인 — 위 = 안전(취소), 아래 = 파괴(내보내기). 운영 화면의 종료 다이얼로그와
+         순서·무게를 맞춘다(같은 손 버릇 보호). 대상 이름을 제목에 박아 오터치 확정을 줄인다 -->
+    <BaseDialog
+      v-model:open="isKickDialogOpen"
+      :title="`${kickTarget?.name ?? ''}님을 내보낼까요?`"
+      description="내보낸 참가자는 입장 명단에서 빠져요. 같은 초대 코드로 다시 입장할 수 있어요."
+    >
+      <div class="flex flex-col gap-5">
+        <p class="text-caption leading-(--pr-line-height-relaxed) break-keep text-content-tertiary">
+          다시 입장하면 새 참가자로 들어와요 — 쌓인 짝꿍 이력은 처음부터 다시 시작해요.
+        </p>
+
+        <div class="flex flex-col gap-3">
+          <BaseButton variant="ghost" size="lg" class="w-full" @click="isKickDialogOpen = false">
+            그대로 두기
+          </BaseButton>
+          <BaseButton variant="danger" size="lg" class="w-full" @click="confirmKick">
+            내보내기
+          </BaseButton>
+        </div>
       </div>
     </BaseDialog>
   </section>
