@@ -18,6 +18,7 @@ import {
 } from '@/features/team-assignment'
 import { useToast } from '@/shared/composables/useToast'
 import { useAppHeader } from '@/shared/composables/useAppHeader'
+import KickableRosterChip from './components/KickableRosterChip.vue'
 import { normalizeRoomCode, type Participant } from './api/rooms'
 import { hasPlayedRound } from './roundPlayMarker'
 import { useWaitingRoomStore } from './stores/useWaitingRoomStore'
@@ -44,7 +45,7 @@ const {
   isHost,
   isStartingGame,
   startGameError,
-  kickingId,
+  canKick,
   myId,
   gameStatus,
   isRoundLive,
@@ -178,13 +179,6 @@ function restartSameRound() {
   store.startPlaying()
 }
 
-/**
- * 강퇴 진입점은 대기 중(waiting)에만 연다 — rules와 같은 기준이다. 게임 중 삭제는 킬샷
- * 판정·팀원 명단이 참조하는 문서를 부수므로 서버가 거부하고, 화면도 애초에 열지 않는다.
- * (호스트는 playing 전이 시 운영 화면으로 이동하므로 사실상 대기실 = waiting이지만,
- * 전환 직전 한 스냅샷 동안의 어긋남까지 같은 기준으로 닫는다)
- */
-const canKickParticipants = computed(() => isHost.value && gameStatus.value === 'waiting')
 /** 내보내기 확인 대상 — 다이얼로그 닫힘 애니메이션 동안 제목이 비지 않게 닫을 때 비우지 않는다 */
 const kickTarget = ref<{ id: string; name: string } | null>(null)
 const isKickDialogOpen = ref(false)
@@ -195,12 +189,17 @@ function requestKick(participant: Participant) {
   isKickDialogOpen.value = true
 }
 
-/** 내보내기 확정 — 결과는 토스트로 알리고, 명단 갱신은 스냅샷 구독이 맡는다 */
+/**
+ * 내보내기 확정 — 다이얼로그는 요청을 기다리지 않고 먼저 닫는다. deleteDoc은 오프라인에서
+ * 실패하지 않고 큐잉된 채 완료되지 않으므로(live-qa Q-06 실측), await 뒤에 닫으면 행사장
+ * 약전계에서 다이얼로그가 스피너로 굳는다. 명단은 지연 보상으로 이미 빠져 보이니 먼저 닫아도
+ * 사용자 모델과 어긋나지 않고, 결과는 토스트로 알린다(명단 갱신은 스냅샷 구독이 맡는다).
+ */
 async function confirmKick() {
-  if (kickTarget.value === null || kickingId.value !== null) return
+  if (kickTarget.value === null) return
   const target = kickTarget.value
-  const kicked = await store.kick(target.id)
   isKickDialogOpen.value = false
+  const kicked = await store.kick(target.id)
   toast(
     kicked
       ? { title: `${target.name}님을 내보냈어요.`, tone: 'success' }
@@ -382,34 +381,18 @@ async function copyInviteLink() {
             />
             <!-- 칩이 곧 강퇴 진입점이라(아이콘 없음) 호스트에게만 누를 수 있음을 알려 준다.
                  응답 없는 참가자를 빼지 못하면 "전원 준비" 조건이 다음 배정을 영원히 막는다 -->
-            <p
-              v-if="canKickParticipants && participantCount > 0"
-              class="text-caption text-content-tertiary"
-            >
+            <p v-if="canKick && participantCount > 0" class="text-caption text-content-tertiary">
               참가자를 누르면 방에서 내보낼 수 있어요.
             </p>
             <!-- roster는 이번 라운드 배정이 아닌 완장을 숨긴 명단이다(유령 완장 방지) -->
             <ul v-if="participantCount > 0" class="grid grid-cols-3 gap-2">
               <li v-for="participant in roster" :key="participant.id">
-                <!-- 호스트(대기 중): 칩 전체가 내보내기 확인을 여는 버튼이다. 시각 칩(40px)이
-                     최소 터치 타겟보다 낮아 히트 영역을 ::before로 48px까지 확장한다
-                     (배정 보드 SelectableMemberChip과 같은 패턴) -->
-                <button
-                  v-if="canKickParticipants"
-                  type="button"
-                  :aria-label="`${participant.name} 내보내기`"
-                  class="kick-hit relative block w-full rounded-full transition duration-100
-                         ease-standard focus-visible:outline-none focus-visible:ring-2
-                         focus-visible:ring-brand"
-                  @click="requestKick(participant)"
-                >
-                  <PlayerChip
-                    :name="participant.name"
-                    :team="participant.team"
-                    :gender="participant.gender"
-                    :is-ready="participant.isReady"
-                  />
-                </button>
+                <!-- 호스트(대기 중): 칩 전체가 내보내기 확인을 여는 버튼이다(히트 확장은 칩 소유) -->
+                <KickableRosterChip
+                  v-if="canKick"
+                  :participant="participant"
+                  @kick="requestKick(participant)"
+                />
                 <PlayerChip
                   v-else
                   :name="participant.name"
@@ -438,12 +421,12 @@ async function copyInviteLink() {
         </div>
       </template>
 
-      <!-- 강퇴당함 — 명단 구독이 내 참가자 문서 삭제를 감지한 상태(store.markKicked).
+      <!-- 강퇴당함 — 명단 구독이 내 문서 삭제를 감지해 phase를 kicked로 바꾼 상태.
            배정 카드·CTA를 포함한 대기실 뷰 전체를 이 안내로 대체한다. 재입장은 정책상
            막지 않으므로(초대 코드 = 입장 자격) 다시 들어오는 길을 함께 안내한다 -->
       <BaseCard v-else-if="phase === 'kicked'" padding="lg" role="alert">
         <h2 class="text-subheading text-content">진행자가 내보냈어요</h2>
-        <p class="mt-3 text-body text-content-secondary">
+        <p class="mt-3 text-body text-pretty break-keep text-content-secondary">
           이 방의 입장 명단에서 빠졌어요. 계속 참여하려면 진행자에게 확인한 뒤 초대 코드로 다시
           입장해 주세요.
         </p>
@@ -575,15 +558,9 @@ async function copyInviteLink() {
 
         <div class="flex flex-col gap-3">
           <BaseButton variant="ghost" size="lg" class="w-full" @click="isKickDialogOpen = false">
-            취소
+            그대로 두기
           </BaseButton>
-          <BaseButton
-            variant="danger"
-            size="lg"
-            class="w-full"
-            :loading="kickingId !== null"
-            @click="confirmKick"
-          >
+          <BaseButton variant="danger" size="lg" class="w-full" @click="confirmKick">
             내보내기
           </BaseButton>
         </div>
@@ -591,17 +568,3 @@ async function copyInviteLink() {
     </BaseDialog>
   </section>
 </template>
-
-<style scoped>
-/* 히트 영역 확장 — 시각 칩(높이 40px)이 최소 터치 타겟(48px)보다 낮으므로, 버튼 자신의 ::before로
-   수직 48px 탭 영역을 덧댄다(배정 보드 SelectableMemberChip .chip-hit와 같은 규칙). */
-.kick-hit::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 50%;
-  height: var(--pr-size-tap-minimum);
-  transform: translateY(-50%);
-}
-</style>

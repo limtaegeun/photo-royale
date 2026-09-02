@@ -351,6 +351,10 @@ describe('useWaitingRoomStore', () => {
 
       expect(store.phase).toBe('joined')
       expect(joinRoomMock).toHaveBeenCalledTimes(2)
+
+      // 재입장 직후 첫 스냅샷(내가 포함된 명단)이 kicked 오탐 없이 joined를 유지해야 한다
+      deliver.participants([ME_WAITING])
+      expect(store.phase).toBe('joined')
     })
 
     it('kick: 호스트가 대기 중에 호출하면 참가자 문서 삭제를 요청하고 true를 반환한다', async () => {

@@ -188,6 +188,9 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
       // 강퇴 감지 — 게스트 입장(joinRoom)은 구독 시작보다 먼저 끝나므로, joined 이후 명단에
       // 내가 없다는 것은 내 참가자 문서가 삭제됐다(진행자가 내보냈다)는 뜻이다. 호스트는
       // 참가자로 등록되지 않아(진행자 모델) 명단 부재가 정상이므로 대상에서 뺀다.
+      // 이 판정은 기본 메모리 캐시 전제다 — persistentLocalCache를 켜면 재입장 첫 캐시
+      // 스냅샷이 (트랜잭션 쓰기라 지연 보상이 없는) 내 문서만 빠뜨려 오탐할 수 있으니,
+      // 캐시 영속화를 도입하는 날에는 "내 문서를 본 적 있다" 래치를 함께 넣을 것.
       if (
         phase.value === 'joined' &&
         myId.value !== null &&
@@ -200,16 +203,21 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
     phase.value = 'joined'
   }
 
+  /** 방 문서·명단 구독을 함께 내린다 — 구독 수명은 leave와 markKicked가 공유하는 한 지점이다 */
+  function stopSubscriptions() {
+    unsubscribeParticipants?.()
+    unsubscribeRoom?.()
+    unsubscribeParticipants = null
+    unsubscribeRoom = null
+  }
+
   /**
    * 강퇴당한 상태로 전환 — 구독을 즉시 해제해 이후 스냅샷이 안내 화면을 덮지 않게 한다.
    * 나머지 상태 초기화는 화면 이탈(leave)이나 재입장(enter)이 맡는다 — 초대 코드로 다시
    * 입장하는 것은 막지 않는 정책이라, kicked는 종착이 아니라 안내 화면 하나다.
    */
   function markKicked() {
-    unsubscribeParticipants?.()
-    unsubscribeRoom?.()
-    unsubscribeParticipants = null
-    unsubscribeRoom = null
+    stopSubscriptions()
     phase.value = 'kicked'
   }
 
@@ -219,10 +227,7 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
    */
   function leave() {
     enterGeneration++
-    unsubscribeParticipants?.()
-    unsubscribeRoom?.()
-    unsubscribeParticipants = null
-    unsubscribeRoom = null
+    stopSubscriptions()
     roomCode.value = null
     room.value = null
     allParticipants.value = []
@@ -280,19 +285,20 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
   }
 
   /**
+   * 강퇴 진입점이 열리는 조건 — rules의 delete 갈래와 같은 기준(방 호스트 + 방이 대기 중).
+   * 화면 노출과 kick 가드가 이 한 곳을 함께 본다(정책이 넓어질 때 한쪽만 고치는 사고 방지).
+   */
+  const canKick = computed(() => isHost.value && gameStatus.value === 'waiting')
+
+  /**
    * 강퇴(호스트 전용) — 참가자 문서 삭제를 요청하고 성공 여부를 반환한다(안내는 호출부가
    * 토스트로 띄운다). 명단 반영은 스냅샷 구독이, 내보내진 본인 화면 전환은 그 기기의 강퇴
-   * 감지가 맡는다. rules와 같은 기준(호스트·대기 중)을 클라에서도 걸어 헛요청을 줄인다.
+   * 감지가 맡는다. 중복 가드는 **같은 대상**에만 건다 — 삭제는 멱등이라 서로 다른 대상의
+   * 요청이 겹쳐도 안전하고, 전역 잠금이면 오프라인에서 미결 요청 하나가(deleteDoc은
+   * 오프라인에서 큐잉된 채 완료되지 않는다) 다른 참가자 강퇴까지 막는다.
    */
   async function kick(uid: string): Promise<boolean> {
-    if (
-      !roomCode.value ||
-      !isHost.value ||
-      gameStatus.value !== 'waiting' ||
-      kickingId.value !== null
-    ) {
-      return false
-    }
+    if (!roomCode.value || !canKick.value || kickingId.value === uid) return false
     kickingId.value = uid
     try {
       await kickParticipant(roomCode.value, uid)
@@ -300,7 +306,7 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
     } catch {
       return false
     } finally {
-      kickingId.value = null
+      if (kickingId.value === uid) kickingId.value = null
     }
   }
 
@@ -325,6 +331,7 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
     readyError,
     isStartingGame,
     startGameError,
+    canKick,
     kickingId,
     enter,
     leave,
