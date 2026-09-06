@@ -154,6 +154,7 @@ src/shared/components/
 
 - `BaseButton size="sm"`(36px) — `[data-size='sm']::before`로 확장.
 - `SelectableMemberChip`(칩 40px, team-assignment) — `.chip-hit::before`로 확장.
+- `KickableRosterChip`(칩 40px, waiting-room) — `.kick-hit::before`로 확장.
 
 ### 6.3 비동기 액션 로딩 표기 (`BaseButton loading`)
 

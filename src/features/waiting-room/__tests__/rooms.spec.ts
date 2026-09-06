@@ -23,6 +23,7 @@ const getDocsMock = vi.fn<(query: unknown) => Promise<{ docs: FakeQueryDoc[] }>>
 const transactionGetMock = vi.fn<(ref: FakeRef) => Promise<{ exists: () => boolean }>>()
 const transactionSetMock = vi.fn<(ref: FakeRef, data: Record<string, unknown>) => void>()
 const updateDocMock = vi.fn<(ref: FakeRef, data: Record<string, unknown>) => Promise<void>>()
+const deleteDocMock = vi.fn<(ref: FakeRef) => Promise<void>>()
 const onSnapshotMock =
   vi.fn<
     (
@@ -56,6 +57,7 @@ vi.mock('firebase/firestore', () => ({
   serverTimestamp: () => 'server-timestamp',
   deleteField: () => 'delete-field',
   updateDoc: (ref: FakeRef, data: Record<string, unknown>) => updateDocMock(ref, data),
+  deleteDoc: (ref: FakeRef) => deleteDocMock(ref),
 }))
 
 import {
@@ -67,6 +69,7 @@ import {
   fetchMyRooms,
   getRoom,
   joinRoom,
+  kickParticipant,
   normalizeRoomCode,
   roomExists,
   setReady,
@@ -81,6 +84,7 @@ beforeEach(() => {
   transactionGetMock.mockReset()
   transactionSetMock.mockReset()
   updateDocMock.mockReset()
+  deleteDocMock.mockReset()
   onSnapshotMock.mockReset()
 })
 
@@ -582,6 +586,16 @@ describe('endGame', () => {
 
     const [, payload] = updateDocMock.mock.calls[0]!
     expect(Object.keys(payload).sort()).toEqual(['round', 'status'])
+  })
+})
+
+describe('kickParticipant', () => {
+  it('해당 참가자 문서의 삭제를 요청한다(권한·시점 검증은 rules 담당)', async () => {
+    deleteDocMock.mockResolvedValue(undefined)
+
+    await kickParticipant('AB2C', 'u1')
+
+    expect(deleteDocMock).toHaveBeenCalledExactlyOnceWith({ path: 'rooms/AB2C/participants/u1' })
   })
 })
 

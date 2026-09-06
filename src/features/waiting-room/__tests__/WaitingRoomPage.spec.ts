@@ -33,6 +33,7 @@ const joinRoomMock =
   vi.fn<(code: string, member: { uid: string; nickname: string }) => Promise<void>>()
 const setReadyMock = vi.fn<(code: string, uid: string) => Promise<void>>()
 const startGameMock = vi.fn<(code: string) => Promise<void>>()
+const kickParticipantMock = vi.fn<(code: string, uid: string) => Promise<void>>()
 const unsubscribeParticipantsMock = vi.fn<() => void>()
 const unsubscribeRoomMock = vi.fn<() => void>()
 const subscribeParticipantsMock =
@@ -52,6 +53,7 @@ vi.mock('../api/rooms', async (importOriginal) => {
       joinRoomMock(code, member),
     setReady: (code: string, uid: string) => setReadyMock(code, uid),
     startGame: (code: string) => startGameMock(code),
+    kickParticipant: (code: string, uid: string) => kickParticipantMock(code, uid),
     subscribeToParticipants: (code: string, onChange: (participants: Participant[]) => void) =>
       subscribeParticipantsMock(code, onChange),
     subscribeToRoom: (code: string, onChange: (room: RoomInfo | null) => void) =>
@@ -112,6 +114,15 @@ function mountPage() {
 
 function findButton(wrapper: ReturnType<typeof mountPage>, text: string) {
   return wrapper.findAll('button').find((b) => b.text() === text)
+}
+
+/** 다이얼로그 버튼은 Teleport 대상(document.body)에서 찾는다 — 못 찾으면 명시적으로 실패시킨다 */
+function findBodyButton(text: string) {
+  const button = [...document.body.querySelectorAll<HTMLElement>('button')].find(
+    (el) => el.textContent?.trim() === text,
+  )
+  if (!button) throw new Error(`document.body에서 "${text}" 버튼을 찾지 못했다`)
+  return button
 }
 
 const GUEST_ROOM: RoomInfo = {
@@ -175,6 +186,7 @@ describe('WaitingRoomPage', () => {
     joinRoomMock.mockReset().mockResolvedValue(undefined)
     setReadyMock.mockReset().mockResolvedValue(undefined)
     startGameMock.mockReset().mockResolvedValue(undefined)
+    kickParticipantMock.mockReset().mockResolvedValue(undefined)
     subscribeParticipantsMock.mockReset().mockReturnValue(unsubscribeParticipantsMock)
     subscribeRoomMock.mockReset().mockReturnValue(unsubscribeRoomMock)
     unsubscribeParticipantsMock.mockReset()
@@ -250,8 +262,11 @@ describe('WaitingRoomPage', () => {
     expect(wrapper.text()).toContain('그룹전')
   })
 
-  it('참가자가 없으면 명단 대신 초대 안내 문구를 보여준다', async () => {
+  it('호스트: 참가자가 없으면 명단 대신 초대 안내 문구를 보여준다', async () => {
     const deliver = captureSnapshotCallbacks()
+    // 빈 명단은 호스트만 보는 상태다 — 게스트는 입장(joinRoom) 후 구독하므로 명단에 항상
+    // 자신이 있고, 없다는 것은 강퇴를 뜻한다(아래 내보내짐 안내 테스트).
+    getRoomMock.mockResolvedValue(MY_ROOM)
     const wrapper = mountPage()
     await flushPromises()
     deliver.participants([])
@@ -555,6 +570,92 @@ describe('WaitingRoomPage', () => {
     expect(unsubscribeRoomMock).toHaveBeenCalledTimes(1)
   })
 
+  it('호스트: 명단 칩을 누르면 내보내기 확인 다이얼로그가 열린다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    getRoomMock.mockResolvedValue(MY_ROOM)
+    const wrapper = mountPage()
+    await flushPromises()
+    deliver.participants(ROSTER)
+    await flushPromises()
+
+    // 칩이 곧 진입점이라 안내 캡션으로 어포던스를 보강한다
+    expect(wrapper.text()).toContain('참가자를 누르면 방에서 내보낼 수 있어요.')
+    await wrapper.find('button[aria-label="하린(준비) 내보내기"]').trigger('click')
+    await flushPromises()
+
+    // BaseDialog는 Teleport로 document.body에 렌더되어 wrapper.text()에 잡히지 않는다
+    expect(document.body.textContent).toContain('하린님을 내보낼까요?')
+    expect(kickParticipantMock).not.toHaveBeenCalled()
+  })
+
+  it('호스트: 내보내기를 확정하면 참가자 문서 삭제를 요청하고 성공 토스트를 띄운다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    getRoomMock.mockResolvedValue(MY_ROOM)
+    const wrapper = mountPage()
+    await flushPromises()
+    deliver.participants(ROSTER)
+    await flushPromises()
+
+    await wrapper.find('button[aria-label="하린(준비) 내보내기"]').trigger('click')
+    await flushPromises()
+    findBodyButton('내보내기').click()
+    await flushPromises()
+
+    expect(kickParticipantMock).toHaveBeenCalledExactlyOnceWith('AB2C', 'u2')
+    expect(toastMock).toHaveBeenCalledWith({ title: '하린님을 내보냈어요.', tone: 'success' })
+  })
+
+  it('호스트: 내보내기가 실패하면 실패 토스트를 띄운다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    getRoomMock.mockResolvedValue(MY_ROOM)
+    kickParticipantMock.mockRejectedValue(new Error('permission denied'))
+    const wrapper = mountPage()
+    await flushPromises()
+    deliver.participants(ROSTER)
+    await flushPromises()
+
+    await wrapper.find('button[aria-label="하린(준비) 내보내기"]').trigger('click')
+    await flushPromises()
+    findBodyButton('내보내기').click()
+    await flushPromises()
+
+    expect(toastMock).toHaveBeenCalledWith({
+      title: '내보내기에 실패했어요. 다시 시도해 주세요.',
+      tone: 'danger',
+    })
+  })
+
+  it('게스트: 명단 칩은 내보내기 버튼이 아니고 안내 캡션도 없다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    const wrapper = mountPage()
+    await flushPromises()
+    deliver.participants(ROSTER)
+    await flushPromises()
+
+    expect(wrapper.findAllComponents(PlayerChip)).toHaveLength(3)
+    expect(wrapper.find('button[aria-label$="내보내기"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('참가자를 누르면 방에서 내보낼 수 있어요.')
+  })
+
+  it('게스트: 명단에서 내가 사라지면 내보내짐 안내로 전환되고 입장 화면으로 돌아갈 수 있다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    const wrapper = mountPage()
+    await flushPromises()
+    deliver.participants(ROSTER)
+    await flushPromises()
+
+    deliver.participants(ROSTER.filter((participant) => participant.id !== 'me'))
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('진행자가 내보냈어요')
+    // 대기실 콘텐츠(명단·CTA)는 안내 카드로 대체된다
+    expect(wrapper.findAllComponents(PlayerChip)).toHaveLength(0)
+    expect(findButton(wrapper, '확인하고 준비 완료')).toBeUndefined()
+
+    await findButton(wrapper, '입장 화면으로')!.trigger('click')
+    expect(replaceMock).toHaveBeenCalledWith({ name: 'entry' })
+  })
+
   it('호스트: 참가자가 없으면 팀 배정 시작이 토스트로 막힌다', async () => {
     const deliver = captureSnapshotCallbacks()
     getRoomMock.mockResolvedValue(MY_ROOM)
@@ -825,10 +926,7 @@ describe('WaitingRoomPage', () => {
     await findButton(wrapper, '게임 시작')!.trigger('click')
     await flushPromises()
     // 다이얼로그 본문 버튼도 Teleport 대상(document.body)에서 찾아 네이티브로 클릭한다
-    const restartButton = [...document.body.querySelectorAll<HTMLElement>('button')].find(
-      (button) => button.textContent?.trim() === '그대로 다시 시작',
-    )!
-    restartButton.click()
+    findBodyButton('그대로 다시 시작').click()
     await flushPromises()
 
     expect(startGameMock).toHaveBeenCalledExactlyOnceWith('AB2C')
@@ -855,10 +953,7 @@ describe('WaitingRoomPage', () => {
     await findButton(wrapper, '게임 시작')!.trigger('click')
     await flushPromises()
     // 다이얼로그 본문 버튼도 Teleport 대상(document.body)에서 찾아 네이티브로 클릭한다
-    const nextAssignmentButton = [...document.body.querySelectorAll<HTMLElement>('button')].find(
-      (button) => button.textContent?.trim() === '다음 팀 배정하기',
-    )!
-    nextAssignmentButton.click()
+    findBodyButton('다음 팀 배정하기').click()
     await flushPromises()
 
     // 보드 전환은 일반 컴포넌트 트리라 wrapper.text()로 확인할 수 있다(Teleport 대상이 아니다)
