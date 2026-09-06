@@ -417,6 +417,87 @@ describe('RoundOpsPage', () => {
     })
   })
 
+  /**
+   * 타이머와 종료 버튼이 운영 탭 안에만 있으면, 판정·기록 탭을 보는 진행자는 시간이 다 가도
+   * 화면에서 아무 변화를 보지 못해 라운드가 끝난 줄 모르고 계속 판정한다(QA A-3).
+   */
+  describe('상태 줄', () => {
+    it('판정·기록 탭에서도 남은 시간과 라운드 상태가 남는다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+
+      deliver.room(hostRoom({ round: running() }))
+      await flushPromises()
+
+      await wrapper.find('[data-value="judge"]').trigger('click')
+      expect(wrapper.find('[aria-label="라운드 남은 시간"]').text()).toMatch(/^\d{2}:\d{2}$/)
+      expect(wrapper.text()).toContain('LIVE')
+      // 운영 컨트롤은 탭을 따라 사라져도 상태 줄은 남는다
+      expect(findButton(wrapper, '일시정지')).toBeUndefined()
+
+      await wrapper.find('[data-value="log"]').trigger('click')
+      expect(wrapper.find('[aria-label="라운드 남은 시간"]').exists()).toBe(true)
+      expect(wrapper.text()).toContain('AB2C')
+    })
+
+    it('라운드가 없으면 상태 줄에 시간을 띄우지 않는다 — 20분 미리보기는 타이머 카드의 몫', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+
+      deliver.room(hostRoom())
+      await flushPromises()
+
+      expect(wrapper.find('[aria-label="라운드 남은 시간"]').exists()).toBe(false)
+      expect(wrapper.text()).toContain('20:00')
+    })
+
+    it('종료는 시작 전과 같은 회색이 아니라 danger 톤으로 구분한다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+
+      deliver.room(hostRoom({ round: running() }))
+      await flushPromises()
+      expect(wrapper.find('[data-tone="danger"]').exists()).toBe(false)
+
+      deliver.room(hostRoom({ round: ended() }))
+      await flushPromises()
+
+      expect(wrapper.find('[data-tone="danger"]').exists()).toBe(true)
+    })
+
+    it('시간이 0에 닿는 순간을 토스트로 알린다 — 다른 탭을 보고 있어도 놓치지 않게', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+
+      deliver.room(hostRoom({ round: running() }))
+      await flushPromises()
+      await wrapper.find('[data-value="judge"]').trigger('click')
+      toastMock.mockClear()
+
+      deliver.room(hostRoom({ round: ended() }))
+      await flushPromises()
+
+      expect(toastMock).toHaveBeenCalledWith(
+        expect.objectContaining({ title: expect.stringContaining('라운드 시간이 끝났어요') }),
+      )
+      expect(wrapper.find('[aria-label="라운드 남은 시간"]').text()).toBe('00:00')
+    })
+
+    /** 이미 끝나 있던 방을 지금 연 것은 방금 일어난 사건이 아니고, 그 순간 화면은 보고 있다 */
+    it('이미 종료된 방으로 들어올 때는 종료 알림을 띄우지 않는다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+
+      deliver.room(hostRoom({ round: ended() }))
+      await flushPromises()
+
+      expect(toastMock).not.toHaveBeenCalledWith(
+        expect.objectContaining({ title: expect.stringContaining('라운드 시간이 끝났어요') }),
+      )
+      expect(wrapper.text()).toContain('종료')
+    })
+  })
+
   describe('컨트롤', () => {
     it('일시정지·재개는 방 문서에 쓴다', async () => {
       const deliver = captureSnapshotCallbacks()
@@ -646,6 +727,60 @@ describe('RoundOpsPage', () => {
 
       expect(endGameMock).toHaveBeenCalledExactlyOnceWith('AB2C')
       expect(toastMock).toHaveBeenCalledWith({ title: '게임을 종료했어요.', tone: 'success' })
+    })
+
+    it('종료 요청이 실패하면 다이얼로그를 닫지 않고 실패를 알린다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      deliver.room(hostRoom({ round: running() }))
+      await flushPromises()
+
+      endGameMock.mockRejectedValueOnce(new Error('permission denied'))
+      await findButton(wrapper, '게임 종료')!.trigger('click')
+      await flushPromises()
+      const confirm = [...document.body.querySelectorAll('button')].filter(
+        (b) => b.textContent?.trim() === '게임 종료',
+      ).pop()!
+      confirm.click()
+      await flushPromises()
+
+      expect(toastMock).toHaveBeenCalledWith({
+        title: '게임을 종료하지 못했어요. 다시 시도해 주세요.',
+        tone: 'danger',
+      })
+      expect(toastMock).not.toHaveBeenCalledWith({ title: '게임을 종료했어요.', tone: 'success' })
+      expect(document.body.textContent).toContain('게임을 종료할까요?')
+    })
+
+    /** 종료가 서버까지 가지도 못하는 경로 — 여기서 다이얼로그가 닫히면 "눌렀는데 아무 일도 없다"가 된다 */
+    it('다른 쓰기가 끝나기 전에 누른 종료도 다이얼로그를 열어 둔 채 실패를 알린다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      deliver.room(hostRoom({ round: running() }))
+      await flushPromises()
+
+      const request = deferred()
+      pauseRoundMock.mockReturnValueOnce(request.promise)
+      await findButton(wrapper, '일시정지')!.trigger('click')
+      await flushPromises()
+
+      await findButton(wrapper, '게임 종료')!.trigger('click')
+      await flushPromises()
+      const confirm = [...document.body.querySelectorAll('button')].filter(
+        (b) => b.textContent?.trim() === '게임 종료',
+      ).pop()!
+      confirm.click()
+      await flushPromises()
+
+      expect(endGameMock).not.toHaveBeenCalled()
+      expect(toastMock).toHaveBeenCalledWith({
+        title: '게임을 종료하지 못했어요. 다시 시도해 주세요.',
+        tone: 'danger',
+      })
+      expect(document.body.textContent).toContain('게임을 종료할까요?')
+
+      request.resolve()
+      await flushPromises()
     })
 
     /** 종료 스냅샷이 오면 종료를 누른 창뿐 아니라 같은 계정의 다른 기기도 함께 돌아가야 한다 */
@@ -1101,6 +1236,69 @@ describe('RoundOpsPage', () => {
 
       expect(document.body.textContent).not.toContain('대기 건수를 확인할 수 없어요')
       expect(endGameMock).not.toHaveBeenCalled()
+    })
+
+    /**
+     * 대기가 없으면 다이얼로그 없이 바로 실행되는 경로다 — 실패를 알리지 않으면 화면에 아무 흔적도
+     * 남지 않아, 진행자는 라운드가 닫힌 줄 알고 다음 순서로 넘어간다.
+     */
+    it('바로 종료하는 경로가 실패하면 실패를 알린다', async () => {
+      const { wrapper } = await openEndedRound(0)
+
+      endGameMock.mockRejectedValueOnce(new Error('permission denied'))
+      await findButton(wrapper, '라운드 종료')!.trigger('click')
+      await flushPromises()
+
+      expect(toastMock).toHaveBeenCalledWith({
+        title: '라운드를 종료하지 못했어요. 다시 시도해 주세요.',
+        tone: 'danger',
+      })
+      expect(toastMock).not.toHaveBeenCalledWith({
+        title: '라운드를 종료했어요. 대기실에서 다음 라운드를 배정해 주세요.',
+        tone: 'success',
+      })
+    })
+
+    it('확인을 거친 종료가 실패하면 다이얼로그를 닫지 않고 실패를 알린다', async () => {
+      const { wrapper } = await openEndedRound(1)
+
+      await findButton(wrapper, '라운드 종료')!.trigger('click')
+      await flushPromises()
+      endGameMock.mockRejectedValueOnce(new Error('permission denied'))
+      const confirm = [...document.body.querySelectorAll<HTMLElement>('button')].find(
+        (button) => button.textContent?.trim() === '그대로 라운드 종료',
+      )!
+      confirm.click()
+      await flushPromises()
+
+      expect(toastMock).toHaveBeenCalledWith({
+        title: '라운드를 종료하지 못했어요. 다시 시도해 주세요.',
+        tone: 'danger',
+      })
+      expect(document.body.textContent).toContain('판정하지 않은 킬샷이 있어요')
+    })
+
+    /** 종료가 서버까지 가지도 못하는 경로 — 야외 오프라인에서는 앞선 쓰기가 오래 매달린다 */
+    it('다른 쓰기가 끝나기 전에 누른 종료도 실패를 알린다', async () => {
+      const { wrapper } = await openEndedRound(0)
+
+      const request = deferred()
+      adjustRoundMock.mockReturnValueOnce(request.promise)
+      await findButton(wrapper, '-1분')!.trigger('click')
+      await findButton(wrapper, '반영')!.trigger('click')
+      await flushPromises()
+
+      await findButton(wrapper, '라운드 종료')!.trigger('click')
+      await flushPromises()
+
+      expect(endGameMock).not.toHaveBeenCalled()
+      expect(toastMock).toHaveBeenCalledWith({
+        title: '라운드를 종료하지 못했어요. 다시 시도해 주세요.',
+        tone: 'danger',
+      })
+
+      request.resolve()
+      await flushPromises()
     })
 
     /** 열려 있는 동안 문구가 바뀌면 진행자가 읽고 판단한 근거와 확인 대상이 어긋난다 */
