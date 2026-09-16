@@ -340,7 +340,7 @@ describe('AssignmentBoard', () => {
     await findButton(wrapper, '변경')!.trigger('click')
     await flushPromises()
 
-    // 게임플레이가 구현된 일반전만 활성 — 나머지 7종은 disabled + '준비 중' 배지
+    // 게임플레이가 구현된 일반전·그룹전만 활성 — 나머지 6종은 disabled + '준비 중' 배지
     const normalOption = document.body.querySelector<HTMLButtonElement>('[data-mode="normal"]')
     const tailChaseOption =
       document.body.querySelector<HTMLButtonElement>('[data-mode="tail-chase"]')

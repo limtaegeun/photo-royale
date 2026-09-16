@@ -7,6 +7,7 @@ import BaseButton from '@/shared/components/BaseButton.vue'
 import BaseCard from '@/shared/components/BaseCard.vue'
 import BaseDialog from '@/shared/components/BaseDialog.vue'
 import BaseSegmented from '@/shared/components/BaseSegmented.vue'
+import { GAME_MODES } from '@/features/game-mode'
 import { normalizeRoomCode } from '@/features/waiting-room'
 import { useToast } from '@/shared/composables/useToast'
 import type { KillMultiplier, Submission, SubmissionRecord, SubmissionTarget } from './api/submissions'
@@ -125,6 +126,9 @@ const canControlTimer = computed(
  * 미판정 킬샷이 새 20분의 판정 큐에 그대로 남고, 기록도 두 라운드가 한 라운드로 뭉친다.
  */
 const isRoundEnded = computed(() => displayState.value === 'ended')
+
+/** 이번 모드의 판정 대상 제한(그룹전의 동맹 제외 등) — 모드 정의가 소유하고 시트는 결과만 받는다 */
+const targetRule = computed(() => (room.value ? (GAME_MODES[room.value.gameMode].targeting ?? null) : null))
 
 /**
  * 판정 탭의 "라운드 진행 중이 아님" 카드 본문 — assignmentRound>0(적어도 한 번 라운드를 치른 방)
@@ -665,6 +669,7 @@ onUnmounted(() => {
       :now-ms="nowMs"
       :allow-triple-kill="room?.gameMode === 'normal'"
       :out-teams="outTeams"
+      :target-rule="targetRule"
       @approve="approveKillshot"
       @reject="rejectKillshot"
     />

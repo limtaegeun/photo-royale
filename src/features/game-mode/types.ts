@@ -50,6 +50,17 @@ export interface ModeScoringOutput {
 
 export type ModeScoring = (input: ModeScoringInput) => ModeScoringOutput
 
+/**
+ * 판정 시트의 대상 제한(P07 §11 "누구를 잡을 수 있나") — 모드가 잡을 수 없는 팀을 정하면
+ * 시트가 그 팀을 비활성화하고 이유 배지를 붙인다. 점수 계산은 이 제한과 무관하게 판정 결과를 신뢰한다.
+ */
+export interface TargetRule {
+  /** 제출 팀(attacker)이 이 팀(target)을 잡을 수 있는가 — 둘 다 이번 라운드 팀 완장 */
+  canTarget: (attacker: string, target: string) => boolean
+  /** 막힌 팀 옆에 붙는 짧은 이유(예: '같은 그룹') */
+  blockedBadge: string
+}
+
 export interface GameModeDefinition {
   id: GameModeId
   /** 규칙서 배지·모드 선택 리스트에 쓰는 한글 라벨 */
@@ -63,6 +74,8 @@ export interface GameModeDefinition {
    * 아직 자기 규칙이 없는 모드는 기본 킬 규칙(scoring.ts killScoring)을 둔다.
    */
   scoring: ModeScoring
+  /** 판정 시트의 대상 제한 — 없으면 제출 팀·탈락 팀 외 모든 팀을 잡을 수 있다 */
+  targeting?: TargetRule
   /** 게임플레이가 구현되어 선택 가능한 모드인지 — 미구현 모드는 선택 시트에서 비활성화된다 */
   available: boolean
 }

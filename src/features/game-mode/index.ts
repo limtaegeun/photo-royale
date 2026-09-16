@@ -17,16 +17,21 @@ export type {
   ModeScoring,
   ModeScoringInput,
   ModeScoringOutput,
+  TargetRule,
 } from './types'
 // 원점수 재료 — round-ledger의 정산 단계와 모드 스펙이 함께 쓴다
 export {
+  GROUP_ASSIST_POINTS,
   KILL_POINTS,
   SOLO_TEAM_SCALE,
   SURVIVAL_POINTS,
   TRIPLE_KILL_POINTS,
   applyTeamScale,
   distributeToPlayers,
+  groupAssistScoreOf,
+  groupScoring,
   isTeamOut,
+  killCountOf,
   killScoreOf,
   killScoring,
   livesOf,
