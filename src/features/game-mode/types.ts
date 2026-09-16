@@ -81,6 +81,8 @@ export interface GameModeDefinition {
   targeting?: TargetRule
   /** 배정 보드에서 특수 완장 X 모듈을 강제로 켜는 모드(왕잡기 — 그룹마다 왕이 있어야 한다) */
   requiresXModule?: boolean
+  /** X 겸직 팀의 배정 카드에 보이는 역할 한 줄 — 없으면 X 모듈 기본 문구("X끼리만 서로 사냥") */
+  xTeamCaption?: string
   /** 게임플레이가 구현되어 선택 가능한 모드인지 — 미구현 모드는 선택 시트에서 비활성화된다 */
   available: boolean
 }
