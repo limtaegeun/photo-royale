@@ -1,5 +1,5 @@
 /**
- * 라운드 원장(P07) 타입 — `rooms/{code}/rounds/{차수}` 문서의 형태.
+ * 라운드 원장(P07) 타입 — `rooms/{code}/rounds/{차수}` 문서의 읽기 모델.
  *
  * 사진이 실린 submissions를 다시 열지 않고 점수·순위를 내기 위한 경량 문서다. 문서 ID는
  * 팀편성 차수(rooms.assignmentRound)의 문자열이고, 세 시점에 세 갈래로 쓴다 —
@@ -9,7 +9,6 @@
  * 키 목록 상수는 firestore.rules의 rounds 갈래와 **같아야 한다** — rules는 클라 코드를
  * import할 수 없어 이중화되어 있고, round-ledger의 rules 동기화 가드 스펙이 대조한다.
  */
-import type { Timestamp } from 'firebase/firestore'
 import type { GameModeId } from '@/features/game-mode'
 
 /** 완장 문자(A~Z) → 값. 팀 단위 맵의 공통 형태 */
@@ -23,12 +22,15 @@ export interface TeamTally {
 
 /** ① 배정 확정 시 — 편성 스냅샷. 이후 라운드가 끝나도 바뀌지 않는다 */
 export interface RoundSnapshot {
+  /** 팀편성 차수 = 문서 ID를 숫자로 */
+  roundNo: number
   mode: GameModeId
   /** 완장 → 그 라운드의 팀원 uid 목록 */
   teams: ArmbandMap<string[]>
   /** X 겸직 완장 — 왕잡기에서 왕 팀(배율 근거) */
   xTeams: string[]
-  confirmedAt: Timestamp
+  /** serverTimestamp가 반영되기 전 스냅샷은 null */
+  confirmedAtMs: number | null
 }
 
 /** ③ 라운드 종료 시 — 정산 결과. 등급·포인트 계산은 이 시점에 한 번만 한다 */
@@ -41,15 +43,17 @@ export interface RoundResult {
   playerTiers: Record<string, number>
   /** uid → 등급 포인트 — 최종 순위는 이 값의 합 */
   playerPoints: Record<string, number>
-  finishedAt: Timestamp
+  /** serverTimestamp가 반영되기 전 스냅샷은 null */
+  finishedAtMs: number | null
 }
 
-/** rounds 문서 전체 — ②·③은 그 시점이 오기 전까지 없다 */
+/** rounds 문서 전체 — tally·hits·result는 그 시점이 오기 전까지 null */
 export interface RoundLedger extends RoundSnapshot {
-  tally?: ArmbandMap<TeamTally>
-  /** 피격 완장별 집계 — 탈락 모델·왕 아웃 근거(M3) */
-  hits?: ArmbandMap<number>
-  result?: RoundResult
+  /** ② 공격 완장별 판정 집계. 판정이 한 건도 없으면 null */
+  tally: ArmbandMap<TeamTally> | null
+  /** ② 피격 완장별 집계 — 탈락 모델·왕 아웃 근거(M3) */
+  hits: ArmbandMap<number> | null
+  result: RoundResult | null
 }
 
 /** rules `rounds` create 갈래의 키 화이트리스트(hasAll·hasOnly 모두 이 목록) */
