@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import BaseBadge from '@/shared/components/BaseBadge.vue'
 import BaseCard from '@/shared/components/BaseCard.vue'
-import { GameModeRulebook, type GameModeId } from '@/features/game-mode'
+import { GAME_MODES, GameModeRulebook, type GameModeId } from '@/features/game-mode'
 import {
   groupBorderClass,
   groupLabelEn,
@@ -35,6 +35,10 @@ const armbandBarClass = computed(() => groupSolidBgClass(props.armband))
 const armbandBorderClass = computed(() => groupBorderClass(props.armband))
 const armbandLabelKo = computed(() => groupLabelKo(props.armband))
 const armbandLabelEn = computed(() => groupLabelEn(props.armband))
+/** X 겸직 안내 — 모드가 X에 역할을 주면(왕잡기의 왕) 그 문구, 아니면 X 모듈 기본 규칙 */
+const xTeamCaption = computed(
+  () => GAME_MODES[props.gameMode].xTeamCaption ?? 'X끼리만 서로 사냥할 수 있어요',
+)
 
 /** 팀 구성 요약 — 2인 1조 / 1인 팀 */
 /**
@@ -78,7 +82,7 @@ const compositionLabel = computed(() => {
         </p>
         <div v-if="isXTeam" class="mt-1 flex flex-col gap-1">
           <BaseBadge tone="warning" size="sm" class="self-start">특수 완장 X</BaseBadge>
-          <p class="text-caption text-content-secondary">X끼리만 서로 사냥할 수 있어요</p>
+          <p class="text-caption text-content-secondary">{{ xTeamCaption }}</p>
         </div>
 
         <!-- 멤버 목록 -->

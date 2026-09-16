@@ -51,9 +51,9 @@ describe('settleRound', () => {
     const settlement = settleRound(
       ledger({
         tally: {
-          C: { kills: 1, tripleKills: 1 },
-          A: { kills: 1, tripleKills: 0 },
-          B: { kills: 1, tripleKills: 0 },
+          C: { kills: 1, tripleKills: 1, kingKills: 0 },
+          A: { kills: 1, tripleKills: 0, kingKills: 0 },
+          B: { kills: 1, tripleKills: 0, kingKills: 0 },
         },
         hits: { A: 1, B: 1 },
       }),
@@ -73,7 +73,7 @@ describe('settleRound', () => {
   })
 
   it('킬 없이 잡힌 팀은 원점수 0, 등급 0, 참가점 1 — 킬 없이 살아남은 팀은 생존 5로 한 등급 위', () => {
-    const settlement = settleRound(ledger({ tally: { A: { kills: 2, tripleKills: 0 } }, hits: { B: 1 } }))
+    const settlement = settleRound(ledger({ tally: { A: { kills: 2, tripleKills: 0, kingKills: 0 } }, hits: { B: 1 } }))
 
     expect(settlement.teamScores).toEqual({ A: 25, B: 0, C: 5 })
     expect(settlement.playerTiers).toEqual({ 하늘: 1, 민재: 1, 준호: 0, 소율: 0, 서연: 2, 도윤: 2 })
@@ -90,7 +90,7 @@ describe('settleRound', () => {
 
   it('편성 스냅샷에 없는 uid는 결과에 없다 — 집계에만 있는 완장도 무시한다', () => {
     const settlement = settleRound(
-      ledger({ teams: { A: ['하늘'] }, tally: { A: { kills: 1, tripleKills: 0 }, Z: { kills: 5, tripleKills: 0 } } }),
+      ledger({ teams: { A: ['하늘'] }, tally: { A: { kills: 1, tripleKills: 0, kingKills: 0 }, Z: { kills: 5, tripleKills: 0, kingKills: 0 } } }),
     )
 
     // 하늘은 1인 팀 — (킬 10 + 생존 5) × 2
@@ -100,7 +100,7 @@ describe('settleRound', () => {
 
   it('1인 팀은 규칙서대로 원점수가 2배다 — 같은 킬 1이면 30 vs 15로 한 등급 위', () => {
     const settlement = settleRound(
-      ledger({ teams: { A: ['혼자'], B: ['둘', '이서'] }, tally: { A: { kills: 1, tripleKills: 0 }, B: { kills: 1, tripleKills: 0 } } }),
+      ledger({ teams: { A: ['혼자'], B: ['둘', '이서'] }, tally: { A: { kills: 1, tripleKills: 0, kingKills: 0 }, B: { kills: 1, tripleKills: 0, kingKills: 0 } } }),
     )
 
     expect(settlement.playerScores).toEqual({ 혼자: 30, 둘: 15, 이서: 15 })
@@ -117,7 +117,7 @@ describe('settleRound', () => {
 describe('settleRound — 모드 위임', () => {
   it('원장의 모드가 가진 scoring으로 원점수를 내고 등급·포인트만 붙인다', () => {
     // 일반전은 생존 5가 붙고, 아직 자기 규칙이 없는 모드(그룹전)는 기본 킬 규칙뿐이다
-    const base = ledger({ tally: { A: { kills: 1, tripleKills: 0 } } })
+    const base = ledger({ tally: { A: { kills: 1, tripleKills: 0, kingKills: 0 } } })
     const asNormal = settleRound({ ...base, mode: 'normal' })
     const asGroup = settleRound({ ...base, mode: 'group' })
 

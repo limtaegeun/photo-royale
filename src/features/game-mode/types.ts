@@ -34,8 +34,11 @@ export interface ModeScoringInput {
   teams: Record<string, string[]>
   /** X 겸직 완장 — 왕잡기의 왕 팀 */
   xTeams: string[]
-  /** 공격 완장별 판정 집계. 판정이 없던 완장은 키 자체가 없다 */
-  tally: Record<string, { kills: number; tripleKills: number }>
+  /**
+   * 공격 완장별 판정 집계. 판정이 없던 완장은 키 자체가 없다.
+   * kingKills = kills·tripleKills 중 X 겸직 팀(왕)을 잡은 건수 — 왕잡기의 왕 사냥 근거(M4-3 이전 문서엔 없다)
+   */
+  tally: Record<string, { kills: number; tripleKills: number; kingKills?: number }>
   /** 피격 완장별 집계 */
   hits: Record<string, number>
 }
@@ -76,6 +79,10 @@ export interface GameModeDefinition {
   scoring: ModeScoring
   /** 판정 시트의 대상 제한 — 없으면 제출 팀·탈락 팀 외 모든 팀을 잡을 수 있다 */
   targeting?: TargetRule
+  /** 배정 보드에서 특수 완장 X 모듈을 강제로 켜는 모드(왕잡기 — 그룹마다 왕이 있어야 한다) */
+  requiresXModule?: boolean
+  /** X 겸직 팀의 배정 카드에 보이는 역할 한 줄 — 없으면 X 모듈 기본 문구("X끼리만 서로 사냥") */
+  xTeamCaption?: string
   /** 게임플레이가 구현되어 선택 가능한 모드인지 — 미구현 모드는 선택 시트에서 비활성화된다 */
   available: boolean
 }

@@ -1,6 +1,6 @@
 import type { GameModeDefinition } from '../types'
-import { isSameGroup } from '../armbandGroups'
 import { groupScoring } from '../scoring'
+import { ALLY_GROUP_TARGETING } from '../targeting'
 
 /** 그룹전 — 완장 색 4개 그룹이 동맹으로 묶이는 연합전 */
 export const groupMode: GameModeDefinition = {
@@ -16,9 +16,6 @@ export const groupMode: GameModeDefinition = {
   // 그룹전 원점수(P07 §4.3) — 내 팀 킬 10 · 같은 그룹 다른 팀의 킬 5, 팀원 각자에게
   scoring: groupScoring,
   // 동맹은 잡을 수 없다 — 판정 시트에서 제출 팀과 같은 그룹을 비활성화한다
-  targeting: {
-    canTarget: (attacker, target) => !isSameGroup(attacker, target),
-    blockedBadge: '같은 그룹',
-  },
+  targeting: ALLY_GROUP_TARGETING,
   available: true,
 }

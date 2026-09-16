@@ -54,7 +54,8 @@ const renderedRules = computed<RenderedRule[]>(() => {
     }
     return { text: entry.text, caption: entry.caption ?? null, captionColored: false }
   })
-  if (props.isXTeam) {
+  // X 모듈의 "X끼리만 사냥" 규칙은 X를 강제하는 모드(왕잡기 — X = 왕)에서는 모드 규칙이 대신 설명한다
+  if (props.isXTeam && !modeDefinition.value.requiresXModule) {
     items.push({
       text: '특수 완장 X — X끼리만 서로 사냥할 수 있습니다.',
       caption: null,

@@ -122,6 +122,46 @@ export function normalScoring(input: ModeScoringInput): ModeScoringOutput {
   return { teamScores, playerScores: distributeToPlayers(input.teams, teamScores) }
 }
 
+/** 왕(X 겸직 팀)의 킬 — 일반 킬의 2배(P07 §4.4) */
+export const KING_KILL_POINTS = 20
+/** 왕 사냥 — 상대 왕을 잡은 킬. 누가 잡았든 3배 */
+export const KING_HUNT_POINTS = 30
+/** 왕 아웃 — 잡힌 왕의 그룹원 각자 감점(결정 3: 즉시 패배 대신 감점, 라운드 계속) */
+export const KING_OUT_PENALTY = -20
+
+/**
+ * 왕잡기 공격 완장 1개의 킬 원점수 — 왕 사냥 건(kingKills)은 30, 나머지 건은 왕이면 20·아니면 10.
+ * 낙오 3배는 일반전 한정이라 tripleKills도 일반 건으로 센다.
+ */
+export function kingHuntKillScoreOf(
+  input: Pick<ModeScoringInput, 'tally' | 'xTeams'>,
+  armband: string,
+): number {
+  const events = killCountOf(input.tally, armband)
+  const hunts = Math.min(input.tally[armband]?.kingKills ?? 0, events)
+  const perKill = input.xTeams.includes(armband) ? KING_KILL_POINTS : KILL_POINTS
+  return hunts * KING_HUNT_POINTS + (events - hunts) * perKill
+}
+
+/**
+ * 왕잡기(P07 §4.4) — 킬(일반 10 · 왕 20 · 왕 사냥 30) + 그룹 동료 킬 5, 잡힌 왕(hits ≥ 라이프)의
+ * 같은 그룹 전원(왕 팀 포함) −20. 팀원 각자에게, 생존 보너스 없음, 1인 팀 2배.
+ */
+export function kingHuntScoring(input: ModeScoringInput): ModeScoringOutput {
+  const raw: Record<string, number> = {}
+  for (const armband of Object.keys(input.teams)) {
+    raw[armband] = kingHuntKillScoreOf(input, armband) + groupAssistScoreOf(input, armband)
+  }
+  for (const king of input.xTeams) {
+    if (!(king in input.teams) || !isTeamOut(input, king)) continue
+    for (const armband of Object.keys(input.teams)) {
+      if (isSameGroup(king, armband)) raw[armband]! += KING_OUT_PENALTY
+    }
+  }
+  const teamScores = applyTeamScale(input.teams, raw)
+  return { teamScores, playerScores: distributeToPlayers(input.teams, teamScores) }
+}
+
 /**
  * 그룹전(P07 §4.3) — 내 팀 킬 10 · 같은 그룹 다른 팀의 킬 5, 팀원 각자에게. 생존 보너스는 없다
  * (결정 5는 일반전·꼬리잡기 한정). 1인 팀은 2배.

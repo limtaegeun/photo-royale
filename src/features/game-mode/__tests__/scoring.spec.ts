@@ -8,6 +8,8 @@ import {
   killCountOf,
   killScoreOf,
   killScoring,
+  kingHuntKillScoreOf,
+  kingHuntScoring,
   livesOf,
   normalScoring,
   teamScaleOf,
@@ -133,5 +135,63 @@ describe('그룹전 (P07 §4.3)', () => {
 
   it('레지스트리의 그룹전 정의가 이 규칙을 쓴다', () => {
     expect(GAME_MODES.group.scoring).toBe(groupScoring)
+  })
+})
+
+
+describe('왕잡기 (P07 §4.4)', () => {
+  /** A·E = 파랑(왕 A), B·F = 주황(왕 F, 1인 팀), C = 초록(왕 C), D = 빨강(왕 D) */
+  const KH_TEAMS = { A: ['하늘', '민재'], E: ['지우'], B: ['준호', '유나'], F: ['서준'], C: ['서연', '도윤'], D: ['하준', '수아'] }
+  const KINGS = ['A', 'C', 'D', 'F']
+
+  it('킬 원점수: 일반 팀 10 · 왕 20 · 왕 사냥 30, 왕 사냥 건수는 킬 건수를 넘지 못한다', () => {
+    const tally = {
+      B: { kills: 2, tripleKills: 0, kingKills: 1 }, // 일반 팀: 왕 사냥 1 + 일반 1
+      A: { kills: 1, tripleKills: 0, kingKills: 0 }, // 왕의 일반 킬
+      C: { kills: 1, tripleKills: 0, kingKills: 1 }, // 왕이 왕을 잡음 → 30
+      D: { kills: 0, tripleKills: 0, kingKills: 3 }, // 손상 데이터 — 건수 상한
+    }
+    expect(kingHuntKillScoreOf({ tally, xTeams: KINGS }, 'B')).toBe(40)
+    expect(kingHuntKillScoreOf({ tally, xTeams: KINGS }, 'A')).toBe(20)
+    expect(kingHuntKillScoreOf({ tally, xTeams: KINGS }, 'C')).toBe(30)
+    expect(kingHuntKillScoreOf({ tally, xTeams: KINGS }, 'D')).toBe(0)
+    expect(kingHuntKillScoreOf({ tally, xTeams: KINGS }, 'E')).toBe(0)
+  })
+
+  it('kingKills가 없는 옛 집계는 전부 일반 킬로 센다', () => {
+    expect(kingHuntKillScoreOf({ tally: { B: { kills: 2, tripleKills: 0 } }, xTeams: KINGS }, 'B')).toBe(20)
+  })
+
+  it('잡힌 왕의 그룹 전원(왕 팀 포함)이 −20, 그룹 동료 킬 5, 생존 보너스 없음, 1인 팀 2배', () => {
+    // B(주황)가 파랑 왕 A를 잡았다(왕 아웃) · A는 잡히기 전 B를 한 번 잡았다(왕의 킬, B는 왕이 아니라 감점 없음)
+    const output = kingHuntScoring({
+      teams: KH_TEAMS,
+      xTeams: KINGS,
+      tally: { B: { kills: 1, tripleKills: 0, kingKills: 1 }, A: { kills: 1, tripleKills: 0, kingKills: 0 } },
+      hits: { A: 1, B: 1 },
+    })
+
+    expect(output.teamScores).toEqual({
+      A: 0, // 왕의 킬 20 − 왕 아웃 20
+      E: -30, // 동료(A) 킬 1 × 5 − 20 = −15, 1인 팀 2배
+      B: 30, // 왕 사냥 30 — 잡혔지만 왕이 아니라 감점 없음
+      F: 10, // 동료(B) 킬 1 × 5, 1인 팀 2배
+      C: 0, // 생존해도 보너스 없음
+      D: 0,
+    })
+    expect(output.playerScores).toEqual({ 하늘: 0, 민재: 0, 지우: -30, 준호: 30, 유나: 30, 서준: 10, 서연: 0, 도윤: 0, 하준: 0, 수아: 0 })
+  })
+
+  it('왕 아웃은 라이프를 다 써야 한다 — 1인 팀 왕은 한 번 맞아도 감점이 없다', () => {
+    const output = kingHuntScoring({ teams: KH_TEAMS, xTeams: KINGS, tally: {}, hits: { F: 1 } })
+    expect(output.teamScores.B).toBe(0)
+    expect(output.teamScores.F).toBe(0)
+    const out = kingHuntScoring({ teams: KH_TEAMS, xTeams: KINGS, tally: {}, hits: { F: 2 } })
+    expect(out.teamScores.B).toBe(-20)
+    expect(out.teamScores.F).toBe(-40)
+  })
+
+  it('레지스트리의 왕잡기 정의가 이 규칙을 쓴다', () => {
+    expect(GAME_MODES['king-hunt'].scoring).toBe(kingHuntScoring)
   })
 })

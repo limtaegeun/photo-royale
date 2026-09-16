@@ -56,6 +56,14 @@ describe('RoundAssignmentCard', () => {
     expect(wrapper.text()).toContain('X끼리만 서로 사냥할 수 있습니다.')
   })
 
+  it('왕잡기의 X 팀은 왕 안내를 보이고 "X끼리만 사냥" 문구는 카드·규칙서 어디에도 없다', () => {
+    const wrapper = mountCard({ isXTeam: true, gameMode: 'king-hunt' })
+
+    expect(wrapper.text()).toContain('특수 완장 X')
+    expect(wrapper.text()).toContain('우리 그룹의 왕이에요. 잡히면 그룹 전체가 감점을 받아요.')
+    expect(wrapper.text()).not.toContain('X끼리만')
+  })
+
   // 모드별 규칙서 내용(꼬리잡기·스태프 추격전·X 번호 매김 등)은 game-mode 기능의
   // GameModeRulebook.spec.ts가 직접 검증한다. 여기서는 카드가 배정 컨텍스트(모드·팀 구성·
   // 그룹 색)를 규칙서에 올바르게 연결하는지만 통합 수준으로 확인한다.

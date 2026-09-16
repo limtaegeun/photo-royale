@@ -66,6 +66,8 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
   const canConfirm = computed(
     () => draftTeams.value.some((team) => team.members.length > 0) && !isConfirming.value,
   )
+  /** 이번 모드가 X 모듈을 강제하는지(왕잡기) — 켜져 있고 끌 수 없다 */
+  const isXModuleLocked = computed(() => GAME_MODES[draftGameMode.value].requiresXModule === true)
 
   /** 현재 draftTeams(완장·멤버 수) 기준으로 X 팀을 재선정해 isXTeam을 다시 마킹한다 */
   function applyXModule(random: () => number = Math.random) {
@@ -125,6 +127,8 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
     }))
     draftRound.value = nextRound
     draftGameMode.value = gameMode
+    // 왕잡기로 여는 보드(직전 확정 모드 승계)는 X를 켜고 시작한다
+    if (isXModuleLocked.value) xModuleEnabled.value = true
     if (xModuleEnabled.value) applyXModule(random)
     waitingPool.value = []
     selectedMemberId.value = null
@@ -253,13 +257,19 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
    * 게임 모드 선택 — 로컬 드래프트만 바꾼다. 확정 시 confirmAssignment로 room에 커밋된다.
    * UI(모드 선택 시트)가 미구현 모드를 막지만, 방어적으로 store 레벨에서도 무시한다.
    */
-  function setGameMode(id: GameModeId) {
+  function setGameMode(id: GameModeId, random: () => number = Math.random) {
     if (!GAME_MODES[id].available) return
     draftGameMode.value = id
+    // 왕잡기는 그룹마다 왕(X)이 있어야 성립한다 — 고르는 순간 X 모듈을 켠다
+    if (isXModuleLocked.value && !xModuleEnabled.value) setXModule(true, random)
   }
 
-  /** X 모듈 토글 — 켜면 현재 편성 기준으로 X 팀을 재선정하고, 끄면 전 팀의 X를 해제한다 */
+  /**
+   * X 모듈 토글 — 켜면 현재 편성 기준으로 X 팀을 재선정하고, 끄면 전 팀의 X를 해제한다.
+   * X를 강제하는 모드(왕잡기)에서는 끄기를 무시한다(UI도 스위치를 잠근다).
+   */
   function setXModule(enabled: boolean, random: () => number = Math.random) {
+    if (!enabled && isXModuleLocked.value) return
     xModuleEnabled.value = enabled
     if (enabled) {
       applyXModule(random)
@@ -324,6 +334,7 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
     draftGameMode,
     waitingPool,
     xModuleEnabled,
+    isXModuleLocked,
     selectedMemberId,
     isConfirming,
     isRerolling,

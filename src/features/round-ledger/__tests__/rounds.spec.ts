@@ -109,7 +109,7 @@ describe('toRoundLedger', () => {
   it('집계·정산이 실린 문서를 그대로 읽고 서버 시각 반영 전 finishedAt은 null이다', () => {
     const ledger = toRoundLedger('2', {
       ...SNAPSHOT_DATA,
-      tally: { A: { kills: 2, tripleKills: 1 }, B: { kills: 1 } },
+      tally: { A: { kills: 2, tripleKills: 1, kingKills: 1 }, B: { kills: 1 } },
       hits: { A: 1, B: 2 },
       result: {
         teamScores: { A: 50, B: 10 },
@@ -120,7 +120,10 @@ describe('toRoundLedger', () => {
       },
     })
 
-    expect(ledger?.tally).toEqual({ A: { kills: 2, tripleKills: 1 }, B: { kills: 1, tripleKills: 0 } })
+    expect(ledger?.tally).toEqual({
+      A: { kills: 2, tripleKills: 1, kingKills: 1 },
+      B: { kills: 1, tripleKills: 0, kingKills: 0 },
+    })
     expect(ledger?.hits).toEqual({ A: 1, B: 2 })
     expect(ledger?.result).toEqual({
       teamScores: { A: 50, B: 10 },
