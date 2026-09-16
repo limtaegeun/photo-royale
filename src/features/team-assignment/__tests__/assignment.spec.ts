@@ -10,17 +10,25 @@ interface FakeRef {
 }
 
 const batchUpdateMock = vi.fn<(ref: FakeRef, data: Record<string, unknown>) => void>()
+const batchSetMock = vi.fn<(ref: FakeRef, data: Record<string, unknown>) => void>()
 const batchCommitMock = vi.fn<() => Promise<void>>()
+/** serverTimestamp() 센티널 — 원장 스냅샷의 confirmedAt 자리에 그대로 실리는지 본다 */
+const SERVER_TIMESTAMP = { __serverTimestamp: true }
 
 vi.mock('firebase/firestore', () => ({
   doc: (_db: unknown, ...segments: string[]): FakeRef => ({ path: segments.join('/') }),
-  writeBatch: () => ({ update: batchUpdateMock, commit: batchCommitMock }),
+  writeBatch: () => ({ update: batchUpdateMock, set: batchSetMock, commit: batchCommitMock }),
+  serverTimestamp: () => SERVER_TIMESTAMP,
+  // round-ledger api가 import만 하는 구독 계층 — 이 스펙에서는 호출되지 않는다
+  collection: vi.fn<() => FakeRef>(),
+  onSnapshot: vi.fn<() => () => void>(),
 }))
 
 import { confirmAssignment, type ConfirmedTeamWrite } from '../api/assignment'
 
 beforeEach(() => {
   batchUpdateMock.mockReset()
+  batchSetMock.mockReset()
   batchCommitMock.mockReset().mockResolvedValue(undefined)
 })
 
@@ -64,6 +72,27 @@ describe('confirmAssignment', () => {
       { assignmentRound: 2, gameMode: 'king-hunt', 'roundModes.2': 'king-hunt' },
     )
 
+    expect(batchCommitMock).toHaveBeenCalledTimes(1)
+  })
+
+  /**
+   * 점수 정산(P07)의 귀속 근거 — 참가자 문서의 team은 다음 배정에 덮어써지므로 "이 차수의 팀 A는
+   * 누구였나"는 원장 스냅샷에만 남는다. 같은 배치여야 rules(getAfter 대조)가 통과한다.
+   */
+  it('라운드 원장 rounds/{차수}에 편성 스냅샷(모드·완장별 uid·X 완장)을 같은 배치로 set한다', async () => {
+    await confirmAssignment('AB2C', 2, 'king-hunt', TEAMS)
+
+    expect(batchSetMock).toHaveBeenCalledTimes(1)
+    expect(batchSetMock).toHaveBeenCalledWith(
+      { path: 'rooms/AB2C/rounds/2' },
+      {
+        mode: 'king-hunt',
+        teams: { A: ['u1', 'u2'], B: ['u3'] },
+        xTeams: ['A'],
+        confirmedAt: SERVER_TIMESTAMP,
+      },
+    )
+    // update(참가자 3 + 방 1)와 set(원장 1)이 한 commit에 실린다
     expect(batchCommitMock).toHaveBeenCalledTimes(1)
   })
 
