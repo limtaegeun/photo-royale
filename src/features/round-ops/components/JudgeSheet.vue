@@ -38,9 +38,14 @@ interface Props {
    * 일반전 규정이고, 사진으로 거리를 판별할 수 없어 호스트가 판정 시트에서 정한다(P07 M2).
    */
   allowTripleKill?: boolean
+  /**
+   * 이미 탈락한 팀 완장(P07 M3) — 맞은 횟수가 라이프에 닿은 팀. 또 잡았다는 판정은 점수도 상태도
+   * 바꾸지 않으므로 선택을 막고 배지로 알린다. 원장이 없는 라운드면 빈 배열.
+   */
+  outTeams?: string[]
 }
 
-const props = withDefaults(defineProps<Props>(), { allowTripleKill: false })
+const props = withDefaults(defineProps<Props>(), { allowTripleKill: false, outTeams: () => [] })
 
 const emit = defineEmits<{
   /** 판정 확정 — 사진 속 완장의 팀과 킬 배율(낙오 포착이면 3) */
@@ -75,6 +80,8 @@ interface TeamOption {
   participantUid: string
   /** 제출자 본인 팀 — 자기 팀을 잡았다는 판정은 성립하지 않아 비활성화한다 */
   isSubmitterTeam: boolean
+  /** 이미 탈락한 팀 — 또 잡은 판정은 성립하지 않아 비활성화한다(P07 M3) */
+  isOut: boolean
 }
 
 interface GroupSection {
@@ -109,6 +116,7 @@ const groupSections = computed<GroupSection[]>(() => {
         memberNames: members.names.join(' · '),
         participantUid: members.participantUid,
         isSubmitterTeam: armband === props.submission?.team,
+        isOut: props.outTeams.includes(armband),
       }))
     const firstTeam = teams[0]
     return {
@@ -133,14 +141,14 @@ const OPTION_CLASS = {
 } as const
 
 function optionClass(option: TeamOption): string {
-  if (option.isSubmitterTeam) return OPTION_CLASS.disabled
+  if (option.isSubmitterTeam || option.isOut) return OPTION_CLASS.disabled
   return selectedTarget.value?.team === option.armband
     ? OPTION_CLASS.selected
     : OPTION_CLASS.selectable
 }
 
 function chooseTeam(option: TeamOption) {
-  if (option.isSubmitterTeam || props.judging) return
+  if (option.isSubmitterTeam || option.isOut || props.judging) return
   selectedTarget.value = { team: option.armband, participantUid: option.participantUid }
 }
 
@@ -188,8 +196,8 @@ function handleReject() {
                 type="button"
                 :data-team="option.armband"
                 :aria-pressed="selectedTarget?.team === option.armband"
-                :disabled="option.isSubmitterTeam || judging"
-                :aria-disabled="option.isSubmitterTeam || judging"
+                :disabled="option.isSubmitterTeam || option.isOut || judging"
+                :aria-disabled="option.isSubmitterTeam || option.isOut || judging"
                 class="flex min-h-(--pr-size-control-md) w-full items-center gap-3 rounded-md
                        px-4 py-2 text-left transition-colors duration-100 ease-standard
                        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand
@@ -205,18 +213,21 @@ function handleReject() {
                 ></span>
                 <span
                   class="shrink-0 text-label"
-                  :class="option.isSubmitterTeam ? 'text-content-disabled' : 'text-content'"
+                  :class="option.isSubmitterTeam || option.isOut ? 'text-content-disabled' : 'text-content'"
                 >
                   팀 {{ option.armband }}
                 </span>
                 <span
                   class="min-w-0 flex-1 truncate text-caption"
-                  :class="option.isSubmitterTeam ? 'text-content-disabled' : 'text-content-secondary'"
+                  :class="option.isSubmitterTeam || option.isOut ? 'text-content-disabled' : 'text-content-secondary'"
                 >
                   {{ option.memberNames }}
                 </span>
                 <BaseBadge v-if="option.isSubmitterTeam" tone="neutral" class="shrink-0">
                   제출 팀
+                </BaseBadge>
+                <BaseBadge v-else-if="option.isOut" tone="danger" appearance="outline" class="shrink-0">
+                  탈락
                 </BaseBadge>
               </button>
             </li>

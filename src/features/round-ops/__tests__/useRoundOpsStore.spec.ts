@@ -106,8 +106,8 @@ const subscribeLedgerMock =
   >()
 
 vi.mock('@/features/round-ledger', async (importOriginal) => ({
-  // 정산 계산기는 순수 함수라 실제 구현을 쓴다 — 종료 배치에 실리는 값이 계산기 출력 그대로여야 한다
-  settleRound: (await importOriginal<typeof import('@/features/round-ledger')>()).settleRound,
+  // 정산 계산기·탈락 판정은 순수 함수라 실제 구현을 쓴다 — 종료 배치에 실리는 값이 계산기 출력 그대로여야 한다
+  ...(await importOriginal<typeof import('@/features/round-ledger')>()),
   subscribeToRoundLedger: (
     code: string,
     round: number,
@@ -417,6 +417,19 @@ describe('useRoundOpsStore', () => {
       expect(store.currentLedger).toBeNull()
     })
 
+    it('탈락한 팀 완장을 판정 시트용으로 낸다 — 1인 팀은 라이프 2라 한 번 맞아도 생존(P07 M3)', () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room())
+
+      expect(store.outTeams).toEqual([])
+      deliver.ledger(ledger({ hits: { A: 1, B: 1 } }))
+      expect(store.outTeams).toEqual(['A'])
+      deliver.ledger(ledger({ hits: { A: 1, B: 2 } }))
+      expect(store.outTeams).toEqual(['A', 'B'])
+    })
+
     it('화면을 떠나면 원장 구독도 해제하고 비운다', () => {
       const deliver = captureSnapshotCallbacks()
       const store = useRoundOpsStore()
@@ -684,13 +697,14 @@ describe('useRoundOpsStore', () => {
 
       await expect(store.finishGame()).resolves.toBe(true)
 
+      // 일반전 정산: A 킬 10 + 생존 5 = 15, B(u3, 1인 팀 = 라이프 2)는 1번 맞아 아직 생존 → 5
       expect(endGameMock).toHaveBeenCalledExactlyOnceWith('AB2C', {
         roundNo: 2,
         result: {
-          teamScores: { A: 10, B: 0 },
-          playerScores: { u1: 10, u2: 10, u3: 0 },
-          playerTiers: { u1: 1, u2: 1, u3: 0 },
-          playerPoints: { u1: 10, u2: 10, u3: 1 },
+          teamScores: { A: 15, B: 5 },
+          playerScores: { u1: 15, u2: 15, u3: 5 },
+          playerTiers: { u1: 1, u2: 1, u3: 2 },
+          playerPoints: { u1: 10, u2: 10, u3: 7 },
         },
       })
     })
