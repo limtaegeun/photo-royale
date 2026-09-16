@@ -16,6 +16,12 @@ import { GAME_MODES } from '@/features/game-mode'
 import { groupTextClass } from '@/features/team-assignment'
 import { useToast } from '@/shared/composables/useToast'
 import { subscribeToLatestNotice, type Notice, useRoundTimer } from '@/features/round-ops'
+import {
+  aliveTeamCount,
+  subscribeToRoundLedger,
+  teamOutStatus,
+  type RoundLedger,
+} from '@/features/round-ledger'
 import { useCameraStream } from './composables/useCameraStream'
 import { useKillshotSubmit } from './composables/useKillshotSubmit'
 import { usePhotoCapture } from './composables/usePhotoCapture'
@@ -31,6 +37,12 @@ const videoRef = ref<HTMLVideoElement | null>(null)
 const room = ref<RoomInfo | null>(null)
 const participants = ref<Participant[]>([])
 const latestNotice = ref<Notice | null>(null)
+/**
+ * 이번 차수 라운드 원장(P07) — 탈락 모델(M3)의 근거. 판정 배치가 올리는 hits로 내 팀의 아웃과
+ * 생존 팀 수를 파생한다. 원장이 없는 라운드(도입 전 배정)는 null이라 탈락 없이 기존 표기로 간다.
+ * 구독 오류는 원장 없음과 같게 둔다 — 촬영 자체를 막을 근거가 아니다.
+ */
+const ledger = ref<RoundLedger | null>(null)
 const noticeExpanded = ref(false)
 const noticeResumeImmediately = ref(false)
 const noticeViewportRef = ref<HTMLElement | null>(null)
@@ -67,6 +79,9 @@ const roomCode = normalizeRoomCode(String(route.params.roomCode))
 let unsubscribeRoom: (() => void) | null = null
 let unsubscribeParticipants: (() => void) | null = null
 let unsubscribeNotice: (() => void) | null = null
+let unsubscribeLedger: (() => void) | null = null
+/** 원장 구독이 따라가는 차수 — 방 스냅샷마다 차수가 같으면 다시 구독하지 않는다 */
+let subscribedLedgerRound: number | null = null
 let subscriptionFailed = false
 let noticeResizeObserver: ResizeObserver | null = null
 
@@ -107,9 +122,19 @@ const teammates = computed(() =>
       ),
 )
 const assignedTeamCount = computed(
-  // 탈락 상태는 아직 데이터 모델에 없다. 탈락 모델 기능이 추가되면 배정 팀 수 대신
-  // 실제 생존 상태를 기준으로 계산하도록 교체한다.
   () => new Set(assignedParticipants.value.map((participant) => participant.team)).size,
+)
+/** 내 팀이 아웃인가 — 원장 hits가 라이프에 닿음(P07 M3). 원장이 없으면 탈락 없음 */
+const isMyTeamOut = computed(() => {
+  const armband = me.value?.team
+  if (armband == null || ledger.value === null) return false
+  return teamOutStatus(ledger.value)[armband] === true
+})
+/** 우측 칩 — 원장이 있으면 "생존 N / M팀", 없으면 배정 팀 수만 */
+const teamCountLabel = computed(() =>
+  ledger.value === null
+    ? `${assignedTeamCount.value}팀 참가`
+    : `생존 ${aliveTeamCount(ledger.value)} / ${Object.keys(ledger.value.teams).length}팀`,
 )
 const teamLabel = computed(() => {
   if (me.value?.team === null || me.value === null) return '팀 확인 중'
@@ -211,6 +236,12 @@ async function submitPhoto() {
     toast({ title: '일시정지 중에는 제출할 수 없어요.', tone: 'danger' })
     return
   }
+  // 확인 화면이 열린 채 우리 팀이 잡히는 경우를 막는다 — 같은 이유. 서버는 막지 않으므로
+  // (호스트 재량 모델) 여기가 유일한 잠금이다.
+  if (isMyTeamOut.value) {
+    toast({ title: '우리 팀은 탈락해서 제출할 수 없어요.', tone: 'danger' })
+    return
+  }
   const killshot = photo.value
   const submitter = me.value
   const currentRoom = room.value
@@ -239,7 +270,14 @@ onMounted(() => {
   }
   window.addEventListener('resize', measureNoticeOverflow)
   start()
-  unsubscribeRoom = subscribeToRoom(roomCode, leaveCockpit, handleSubscriptionError)
+  unsubscribeRoom = subscribeToRoom(
+    roomCode,
+    (nextRoom) => {
+      leaveCockpit(nextRoom)
+      subscribeToCurrentRoundLedger(nextRoom?.assignmentRound ?? 0)
+    },
+    handleSubscriptionError,
+  )
   unsubscribeParticipants = subscribeToParticipants(
     roomCode,
     (nextParticipants) => {
@@ -262,10 +300,35 @@ onUnmounted(() => {
   unsubscribeRoom?.()
   unsubscribeParticipants?.()
   unsubscribeNotice?.()
+  unsubscribeLedger?.()
   unsubscribeRoom = null
   unsubscribeParticipants = null
   unsubscribeNotice = null
+  unsubscribeLedger = null
+  subscribedLedgerRound = null
 })
+
+/** 방의 현재 차수를 따라 원장을 구독한다 — 차수가 바뀌면 갈아타고, 0(배정 전)이면 구독하지 않는다 */
+function subscribeToCurrentRoundLedger(roundNumber: number) {
+  if (subscribedLedgerRound === roundNumber) return
+  unsubscribeLedger?.()
+  unsubscribeLedger = null
+  ledger.value = null
+  subscribedLedgerRound = roundNumber
+  if (roundNumber === 0) return
+  unsubscribeLedger = subscribeToRoundLedger(
+    roomCode,
+    roundNumber,
+    (nextLedger) => {
+      if (subscribedLedgerRound !== roundNumber) return
+      ledger.value = nextLedger
+    },
+    () => {
+      if (subscribedLedgerRound !== roundNumber) return
+      ledger.value = null
+    },
+  )
+}
 </script>
 
 <template>
@@ -321,6 +384,19 @@ onUnmounted(() => {
           </p>
         </div>
 
+        <!-- 탈락(P07 M3) — 일시정지처럼 목표·공지를 덮지 않고 자기 자리에서 알린다. 라운드가 끝날
+             때까지 되돌아오지 않는 상태라 셔터가 잠긴 이유를 여기서 읽는다 -->
+        <div
+          v-if="isMyTeamOut && !isRoundEnded"
+          role="status"
+          class="flex items-center gap-2 rounded-lg border border-danger bg-scrim-strong p-3"
+        >
+          <BaseBadge tone="danger">탈락</BaseBadge>
+          <p class="min-w-0 flex-1 text-caption text-pretty break-keep text-danger">
+            우리 팀이 잡혔어요. 이번 라운드는 촬영할 수 없어요. 라운드가 끝나면 대기실로 이동해요.
+          </p>
+        </div>
+
         <div class="flex gap-2 text-caption">
           <span
             class="min-w-0 flex-1 truncate rounded-full bg-scrim-strong px-3 py-2"
@@ -329,7 +405,7 @@ onUnmounted(() => {
             {{ teamLabel }}
           </span>
           <span class="shrink-0 rounded-full bg-scrim-strong px-3 py-2 text-content">
-            {{ assignedTeamCount }}팀 참가
+            {{ teamCountLabel }}
           </span>
         </div>
 
@@ -444,7 +520,7 @@ onUnmounted(() => {
             padding="none"
             aria-label="킬샷 촬영"
             class="shutter col-start-2 row-start-1 mb-7 min-h-20 w-20"
-            :disabled="isPaused"
+            :disabled="isPaused || isMyTeamOut"
             @click="shoot"
           >
             <span class="size-14 rounded-full bg-brand"></span>
@@ -487,6 +563,12 @@ onUnmounted(() => {
         >
           일시정지 중이라 제출할 수 없어요. 재개되면 다시 제출해 주세요.
         </p>
+        <p
+          v-else-if="isMyTeamOut"
+          class="text-center text-caption break-keep text-content-secondary"
+        >
+          우리 팀은 탈락해서 제출할 수 없어요. 라운드가 끝나면 대기실로 이동해요.
+        </p>
         <div class="grid grid-cols-2 gap-3">
           <BaseButton
             variant="ghost"
@@ -501,7 +583,7 @@ onUnmounted(() => {
             variant="primary"
             size="lg"
             class="w-full"
-            :disabled="me === null || isRoundEnded || isPaused"
+            :disabled="me === null || isRoundEnded || isPaused || isMyTeamOut"
             :loading="isSubmitting"
             @click="submitPhoto"
           >
