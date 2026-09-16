@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, it, expect } from 'vitest'
 import { DEFAULT_GAME_MODE, GAME_MODE_IDS, GAME_MODES, isGameModeId } from '../registry'
+import type { GameModeId } from '../types'
 
 describe('game-mode registry', () => {
   it('8종 모드를 고정 순서로 노출하고 각 정의가 id·라벨·설명·규칙을 갖는다', () => {
@@ -58,25 +59,33 @@ describe('game-mode registry', () => {
     expect(rules.every((rule) => rule.kind === 'static')).toBe(true)
   })
 
-  it('게임플레이가 구현된 일반전·그룹전만 available이고, 나머지 6종은 미구현이라 비활성이다', () => {
-    expect(GAME_MODES.normal.available).toBe(true)
-    expect(GAME_MODES.group.available).toBe(true)
+  it('게임플레이가 구현된 일반전·그룹전·왕잡기만 available이고, 나머지 5종은 미구현이라 비활성이다', () => {
+    const openIds: GameModeId[] = ['normal', 'group', 'king-hunt']
+    for (const id of openIds) expect(GAME_MODES[id].available).toBe(true)
 
-    const otherIds = GAME_MODE_IDS.filter((id) => id !== 'normal' && id !== 'group')
-    expect(otherIds).toHaveLength(6)
+    const otherIds = GAME_MODE_IDS.filter((id) => !openIds.includes(id))
+    expect(otherIds).toHaveLength(5)
     for (const id of otherIds) {
       expect(GAME_MODES[id].available).toBe(false)
     }
   })
 
-  it('그룹전만 대상 제한을 가진다 — 같은 그룹은 잡을 수 없고 다른 그룹은 잡을 수 있다', () => {
-    const targeting = GAME_MODES.group.targeting!
-    expect(targeting.blockedBadge).toBe('같은 그룹')
-    expect(targeting.canTarget('B', 'F')).toBe(false)
-    expect(targeting.canTarget('B', 'A')).toBe(true)
-
-    for (const id of GAME_MODE_IDS.filter((id) => id !== 'group')) {
+  it('그룹전·왕잡기는 같은 그룹을 잡을 수 없는 대상 제한을 공유하고, 나머지는 제한이 없다', () => {
+    for (const id of ['group', 'king-hunt'] as const) {
+      const targeting = GAME_MODES[id].targeting!
+      expect(targeting.blockedBadge).toBe('같은 그룹')
+      expect(targeting.canTarget('B', 'F')).toBe(false)
+      expect(targeting.canTarget('B', 'A')).toBe(true)
+    }
+    for (const id of GAME_MODE_IDS.filter((id) => id !== 'group' && id !== 'king-hunt')) {
       expect(GAME_MODES[id].targeting).toBeUndefined()
+    }
+  })
+
+  it('왕잡기만 X 모듈을 강제한다 — 왕이 없으면 성립하지 않는 모드', () => {
+    expect(GAME_MODES['king-hunt'].requiresXModule).toBe(true)
+    for (const id of GAME_MODE_IDS.filter((id) => id !== 'king-hunt')) {
+      expect(GAME_MODES[id].requiresXModule).toBeUndefined()
     }
   })
 

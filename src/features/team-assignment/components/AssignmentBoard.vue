@@ -58,6 +58,13 @@ const isXModuleEnabled = computed<boolean>({
   get: () => store.xModuleEnabled,
   set: (value) => store.setXModule(value),
 })
+/** X를 강제하는 모드(왕잡기)면 스위치를 잠그고 캡션으로 이유를 보인다 */
+const isXModuleLocked = computed(() => store.isXModuleLocked)
+const xModuleCaption = computed(() =>
+  isXModuleLocked.value
+    ? `${currentMode.value.label}는 그룹마다 왕(X)이 필요해 항상 켜집니다`
+    : '그룹마다 한 팀이 X를 겸합니다',
+)
 
 /**
  * 미배정 대기자 영역도 팀 카드와 같은 규칙으로 이동 타겟이 될 때만 버튼으로 노출한다
@@ -202,9 +209,13 @@ async function onConfirm() {
         </template>
       </BaseListRow>
 
-      <BaseListRow label="특수 완장 X" caption="그룹마다 한 팀이 X를 겸합니다">
+      <BaseListRow label="특수 완장 X" :caption="xModuleCaption">
         <template #control>
-          <BaseSwitch v-model="isXModuleEnabled" label="특수 완장 X 모듈" />
+          <BaseSwitch
+            v-model="isXModuleEnabled"
+            label="특수 완장 X 모듈"
+            :disabled="isXModuleLocked"
+          />
         </template>
       </BaseListRow>
     </BaseCard>

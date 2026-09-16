@@ -210,6 +210,20 @@ describe('AssignmentBoard', () => {
     expect(wrapper.get('[role="switch"]').attributes('aria-checked')).toBe('true')
   })
 
+  it('왕잡기를 고르면 X 스위치가 켜진 채 잠기고 캡션이 이유를 말한다', async () => {
+    const { wrapper, store } = mountBoard()
+    store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+    await flushPromises()
+
+    store.setGameMode('king-hunt', identityRandom)
+    await flushPromises()
+
+    const toggle = wrapper.get('[role="switch"]')
+    expect(toggle.attributes('aria-checked')).toBe('true')
+    expect(toggle.attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('왕잡기는 그룹마다 왕(X)이 필요해 항상 켜집니다')
+  })
+
   it('칩을 선택한 뒤 팀 카드를 터치하면 해당 팀으로 이동한다', async () => {
     const { wrapper, store } = mountBoard()
     store.startDraft(mixedFour(), 1, 'normal', identityRandom)

@@ -20,9 +20,13 @@ export type {
   TargetRule,
 } from './types'
 // 원점수 재료 — round-ledger의 정산 단계와 모드 스펙이 함께 쓴다
+export { ALLY_GROUP_TARGETING } from './targeting'
 export {
   GROUP_ASSIST_POINTS,
   KILL_POINTS,
+  KING_HUNT_POINTS,
+  KING_KILL_POINTS,
+  KING_OUT_PENALTY,
   SOLO_TEAM_SCALE,
   SURVIVAL_POINTS,
   TRIPLE_KILL_POINTS,
@@ -32,6 +36,8 @@ export {
   groupScoring,
   isTeamOut,
   killCountOf,
+  kingHuntKillScoreOf,
+  kingHuntScoring,
   killScoreOf,
   killScoring,
   livesOf,

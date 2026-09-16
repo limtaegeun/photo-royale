@@ -384,9 +384,40 @@ describe('useTeamAssignmentStore', () => {
       const store = useTeamAssignmentStore()
       store.startDraft(mixedFour(), 1, 'normal', identityRandom)
 
-      store.setGameMode('king-hunt') // 미구현 모드 — UI가 막지만 방어적으로도 무시된다
+      store.setGameMode('tail-chase') // 미구현 모드 — UI가 막지만 방어적으로도 무시된다
 
       expect(store.draftGameMode).toBe('normal')
+    })
+
+    /** 왕잡기(P07 M4-3) — 왕 = X 겸직 팀이라 X 모듈 없이는 성립하지 않는다 */
+    it('왕잡기를 고르면 X 모듈이 켜지고 잠긴다 — 끄기는 무시되고 다른 모드로 바꾸면 풀린다', () => {
+      const store = useTeamAssignmentStore()
+      store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+      expect(store.isXModuleLocked).toBe(false)
+
+      store.setGameMode('king-hunt', identityRandom)
+
+      expect(store.xModuleEnabled).toBe(true)
+      expect(store.isXModuleLocked).toBe(true)
+      expect(store.draftTeams.some((team) => team.isXTeam)).toBe(true)
+
+      store.setXModule(false)
+      expect(store.xModuleEnabled).toBe(true)
+      expect(store.draftTeams.some((team) => team.isXTeam)).toBe(true)
+
+      store.setGameMode('normal')
+      expect(store.isXModuleLocked).toBe(false)
+      store.setXModule(false)
+      expect(store.xModuleEnabled).toBe(false)
+    })
+
+    it('왕잡기로 보드를 열면(직전 확정 모드 승계) X 모듈이 켜진 채 시작한다', () => {
+      const store = useTeamAssignmentStore()
+
+      store.startDraft(mixedFour(), 2, 'king-hunt', identityRandom)
+
+      expect(store.xModuleEnabled).toBe(true)
+      expect(store.draftTeams.some((team) => team.isXTeam)).toBe(true)
     })
 
     it('reroll은 draftGameMode를 유지한다', () => {
