@@ -10,7 +10,12 @@ import {
   type RoomInfo,
   serverNow,
 } from '@/features/waiting-room'
-import { settleRound, subscribeToRoundLedger, type RoundLedger } from '@/features/round-ledger'
+import {
+  groupByTier,
+  settleRound,
+  subscribeToRoundLedger,
+  type RoundLedger,
+} from '@/features/round-ledger'
 import {
   NOTICE_TEXT_MAX_LENGTH,
   sendNotice,
@@ -118,6 +123,22 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
   /** 팀편성 차수 = 라운드 번호. 라운드 운영은 별도 번호를 두지 않고 이 값을 그대로 쓴다 */
   const assignmentRound = computed(() => room.value?.assignmentRound ?? 0)
   const round = computed(() => room.value?.round ?? null)
+
+  /**
+   * 이번 라운드 정산 미리보기(P07) — 지금 종료하면 원장에 쓰일 값 그대로(settleRound)를 등급별로
+   * 묶고 이름을 붙인다. 원장이 없는 라운드는 null이라 화면이 카드를 띄우지 않는다. 판정이 들어올
+   * 때마다 원장 스냅샷이 바뀌므로 자동으로 따라온다.
+   */
+  const settlementPreview = computed(() => {
+    const ledger = currentLedger.value
+    if (ledger === null) return null
+    return groupByTier(settleRound(ledger)).map((group) => ({
+      ...group,
+      names: group.uids.map(
+        (uid) => participants.value.find((participant) => participant.id === uid)?.name ?? '나간 참가자',
+      ),
+    }))
+  })
 
   function subscribeToCurrentRoundSubmissions(code: string, roundNumber: number) {
     if (subscribedSubmissionRound === roundNumber) return
@@ -431,6 +452,7 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     submissionRecords,
     recordsLoaded,
     currentLedger,
+    settlementPreview,
     pendingAdjustMinutes,
     pendingAction,
     isActionPending,

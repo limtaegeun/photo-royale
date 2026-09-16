@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import type { Participant, RoomInfo } from '../api/rooms'
+import type { RoundLedger } from '@/features/round-ledger'
 
 // 테스트마다 로그인 상태를 바꿀 수 있도록 getter로 참조한다
 const authState = { user: null as { uid: string; displayName: string } | null }
@@ -53,6 +54,27 @@ vi.mock('../api/rooms', () => ({
     subscribeRoomMock(code, onChange),
 }))
 
+const unsubscribeLedgersMock = vi.fn<() => void>()
+const subscribeLedgersMock =
+  vi.fn<
+    (
+      code: string,
+      onChange: (ledgers: RoundLedger[]) => void,
+      onError?: (error: Error) => void,
+    ) => () => void
+  >()
+
+vi.mock('@/features/round-ledger', async (importOriginal) => ({
+  // 누적 순위 계산은 순수 함수라 실제 구현을 쓴다 — 스토어가 이름만 붙이는지 본다
+  computeStandings: (await importOriginal<typeof import('@/features/round-ledger')>())
+    .computeStandings,
+  subscribeToRoundLedgers: (
+    code: string,
+    onChange: (ledgers: RoundLedger[]) => void,
+    onError?: (error: Error) => void,
+  ) => subscribeLedgersMock(code, onChange, onError),
+}))
+
 import { RoomNotFoundError } from '../api/rooms'
 import { useWaitingRoomStore } from '../stores/useWaitingRoomStore'
 
@@ -60,6 +82,8 @@ import { useWaitingRoomStore } from '../stores/useWaitingRoomStore'
 function captureSnapshotCallbacks() {
   let deliverParticipants: (participants: Participant[]) => void = () => {}
   let deliverRoom: (room: RoomInfo | null) => void = () => {}
+  let deliverLedgers: (ledgers: RoundLedger[]) => void = () => {}
+  let failLedgers: (error: Error) => void = () => {}
   subscribeParticipantsMock.mockImplementation((_code, onChange) => {
     deliverParticipants = onChange
     return unsubscribeParticipantsMock
@@ -68,9 +92,35 @@ function captureSnapshotCallbacks() {
     deliverRoom = onChange
     return unsubscribeRoomMock
   })
+  subscribeLedgersMock.mockImplementation((_code, onChange, onError) => {
+    deliverLedgers = onChange
+    failLedgers = onError ?? (() => {})
+    return unsubscribeLedgersMock
+  })
   return {
     participants: (participants: Participant[]) => deliverParticipants(participants),
     room: (room: RoomInfo | null) => deliverRoom(room),
+    ledgers: (ledgers: RoundLedger[]) => deliverLedgers(ledgers),
+    ledgersError: (error: Error) => failLedgers(error),
+  }
+}
+
+/** 정산이 끝난 원장 — 순위 계산 재료(편성·집계는 순위에 안 쓰여 비워 둔다) */
+function settledLedger(
+  roundNo: number,
+  scores: Record<string, number>,
+  tiers: Record<string, number>,
+  points: Record<string, number>,
+): RoundLedger {
+  return {
+    roundNo,
+    mode: 'normal',
+    teams: {},
+    xTeams: [],
+    confirmedAtMs: 0,
+    tally: null,
+    hits: null,
+    result: { teamScores: {}, playerScores: scores, playerTiers: tiers, playerPoints: points, finishedAtMs: 1 },
   }
 }
 
@@ -127,8 +177,10 @@ describe('useWaitingRoomStore', () => {
     kickParticipantMock.mockReset().mockResolvedValue(undefined)
     subscribeParticipantsMock.mockReset().mockReturnValue(unsubscribeParticipantsMock)
     subscribeRoomMock.mockReset().mockReturnValue(unsubscribeRoomMock)
+    subscribeLedgersMock.mockReset().mockReturnValue(unsubscribeLedgersMock)
     unsubscribeParticipantsMock.mockReset()
     unsubscribeRoomMock.mockReset()
+    unsubscribeLedgersMock.mockReset()
   })
 
   it('게스트 enter는 내 성별을 포함해 참가 등록 후 방 문서·명단 구독을 시작한다', async () => {
@@ -516,6 +568,57 @@ describe('useWaitingRoomStore', () => {
       expect(subscribeRoomMock).toHaveBeenCalledTimes(1)
       expect(subscribeRoomMock.mock.calls[0]![0]).toBe('BB2C')
       expect(store.roomCode).toBe('BB2C')
+    })
+  })
+
+  describe('누적 순위(P07)', () => {
+    it('입장하면 원장 목록을 구독하고, 정산이 끝난 라운드로 이름 붙은 순위를 낸다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useWaitingRoomStore()
+      await store.enter('AB2C')
+      deliver.participants([ME_WAITING, OTHER_READY])
+
+      expect(subscribeLedgersMock).toHaveBeenCalledWith('AB2C', expect.any(Function), expect.any(Function))
+      expect(store.settledRoundCount).toBe(0)
+      expect(store.standings).toEqual([])
+
+      deliver.ledgers([
+        settledLedger(1, { me: 10, u2: 40, gone: 0 }, { me: 2, u2: 1, gone: 0 }, { me: 7, u2: 10, gone: 1 }),
+        // 정산 전 라운드는 순위에 들어가지 않는다
+        { ...settledLedger(2, {}, {}, {}), result: null },
+      ])
+
+      expect(store.settledRoundCount).toBe(1)
+      expect(store.standings.map((row) => [row.rank, row.name, row.points, row.isMe])).toEqual([
+        [1, OTHER_READY.name, 10, false],
+        [2, ME_WAITING.name, 7, true],
+        // 명단에 없는 uid는 포인트를 그대로 둔 채 '나간 참가자'로 표기한다
+        [3, '나간 참가자', 1, false],
+      ])
+    })
+
+    it('원장 구독 오류는 빈 목록과 같다 — 순위 카드만 사라지고 대기실은 그대로', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useWaitingRoomStore()
+      await store.enter('AB2C')
+      deliver.ledgers([settledLedger(1, { me: 10 }, { me: 1 }, { me: 10 })])
+      deliver.ledgersError(new Error('permission-denied'))
+
+      expect(store.settledRoundCount).toBe(0)
+      expect(store.standings).toEqual([])
+      expect(store.phase).toBe('joined')
+    })
+
+    it('화면을 떠나면 원장 구독도 해제하고 비운다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useWaitingRoomStore()
+      await store.enter('AB2C')
+      deliver.ledgers([settledLedger(1, { me: 10 }, { me: 1 }, { me: 10 })])
+
+      store.leave()
+
+      expect(unsubscribeLedgersMock).toHaveBeenCalledTimes(1)
+      expect(store.standings).toEqual([])
     })
   })
 

@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { fetchMyGender, useAuthStore } from '@/features/auth'
+import { computeStandings, subscribeToRoundLedgers, type RoundLedger } from '@/features/round-ledger'
 import {
   RoomNotFoundError,
   getRoom,
@@ -43,9 +44,16 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
   const startGameError = ref<string | null>(null)
   /** 강퇴 요청이 진행 중인 참가자 uid — 완료 전 중복 요청을 막고 버튼 로딩 표기에 쓴다 */
   const kickingId = ref<string | null>(null)
+  /**
+   * 라운드 원장 목록(P07) — 누적 순위의 재료. 정산이 끝난(result 있는) 라운드만 순위에 들어가고,
+   * 원장 도입 전 라운드는 문서가 없어 빠진다. 구독 오류는 빈 목록과 같게 둔다(순위 카드가 안
+   * 뜰 뿐 대기실은 그대로다).
+   */
+  const ledgers = ref<RoundLedger[]>([])
 
   let unsubscribeParticipants: (() => void) | null = null
   let unsubscribeRoom: (() => void) | null = null
+  let unsubscribeLedgers: (() => void) | null = null
   /**
    * 입장 시도 세대 번호. enter()는 getRoom·joinRoom을 await한 뒤에야 구독을 만들므로, 그 사이
    * 화면을 떠나면(leave) 해제할 주체가 사라진 구독이 뒤늦게 생겨 영구히 남고 다른 방의 상태까지
@@ -136,6 +144,26 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
     }
   })
 
+  /** 정산이 끝난 라운드 수 — 순위 카드의 근거("N라운드 정산")이자 카드 노출 조건이다 */
+  const settledRoundCount = computed(
+    () => ledgers.value.filter((ledger) => ledger.result !== null).length,
+  )
+
+  /**
+   * 누적 순위 — 원장의 정산 결과를 합산한 파생값(round-ledger computeStandings)에 이름을 붙인다.
+   * 이름 조인은 전체 명단(allParticipants)으로 한다 — 나간 참가자는 문서가 없어 '나간 참가자'로
+   * 표기하되 포인트는 uid 기준으로 그대로 남는다(기획 §9-8).
+   */
+  const standings = computed(() =>
+    computeStandings(ledgers.value).map((standing) => ({
+      ...standing,
+      name:
+        allParticipants.value.find((participant) => participant.id === standing.uid)?.name ??
+        '나간 참가자',
+      isMe: standing.uid === myId.value,
+    })),
+  )
+
   /**
    * 대기실 입장 — 게스트만 참가 등록(멱등)하고, 방 문서·명단 실시간 구독을 시작한다.
    * 진행 중에 화면을 떠나면(leave) 세대가 올라가므로 이후 단계를 모두 건너뛴다 — 해제할
@@ -183,6 +211,15 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
       // 입장 후 방 문서가 사라진 경우(정리 등) — 잘못된 코드와 같은 안내로 수렴시킨다
       if (nextRoom === null) phase.value = 'not-found'
     })
+    unsubscribeLedgers = subscribeToRoundLedgers(
+      code,
+      (nextLedgers) => {
+        ledgers.value = nextLedgers
+      },
+      () => {
+        ledgers.value = []
+      },
+    )
     unsubscribeParticipants = subscribeToParticipants(code, (nextParticipants) => {
       allParticipants.value = nextParticipants
       // 강퇴 감지 — 게스트 입장(joinRoom)은 구독 시작보다 먼저 끝나므로, joined 이후 명단에
@@ -207,8 +244,10 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
   function stopSubscriptions() {
     unsubscribeParticipants?.()
     unsubscribeRoom?.()
+    unsubscribeLedgers?.()
     unsubscribeParticipants = null
     unsubscribeRoom = null
+    unsubscribeLedgers = null
   }
 
   /**
@@ -231,6 +270,7 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
     roomCode.value = null
     room.value = null
     allParticipants.value = []
+    ledgers.value = []
     phase.value = 'idle'
     readyError.value = null
     startGameError.value = null
@@ -333,6 +373,8 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
     startGameError,
     canKick,
     kickingId,
+    settledRoundCount,
+    standings,
     enter,
     leave,
     confirmReady,

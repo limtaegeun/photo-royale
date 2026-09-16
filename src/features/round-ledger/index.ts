@@ -18,10 +18,11 @@ export {
   TRIPLE_KILL_POINTS,
   ZERO_SCORE_POINTS,
   computeStandings,
+  groupByTier,
   pointsForTier,
   rankTiers,
   settleRound,
 } from './scoring'
-export type { RoundSettlement, Standing } from './scoring'
+export type { RoundSettlement, Standing, TierGroup } from './scoring'
 export { ROUND_RESULT_KEYS, ROUND_SNAPSHOT_KEYS, ROUND_TALLY_KEYS } from './types'
 export type { ArmbandMap, RoundLedger, RoundResult, RoundSnapshot, TeamTally } from './types'

@@ -4,6 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { useTeamAssignmentStore } from '@/features/team-assignment'
 import type { Participant, RoomInfo } from '../api/rooms'
+import type { RoundLedger } from '@/features/round-ledger'
 
 /**
  * 로그인 사용자 — 화면이 세션 상실(로그아웃·만료)에 반응하는지 보려면 반응형이어야 한다.
@@ -40,6 +41,15 @@ const subscribeParticipantsMock =
   vi.fn<(code: string, onChange: (participants: Participant[]) => void) => () => void>()
 const subscribeRoomMock =
   vi.fn<(code: string, onChange: (room: RoomInfo | null) => void) => () => void>()
+
+const subscribeLedgersMock =
+  vi.fn<(code: string, onChange: (ledgers: RoundLedger[]) => void) => () => void>()
+vi.mock('@/features/round-ledger', async (importOriginal) => ({
+  computeStandings: (await importOriginal<typeof import('@/features/round-ledger')>())
+    .computeStandings,
+  subscribeToRoundLedgers: (code: string, onChange: (ledgers: RoundLedger[]) => void) =>
+    subscribeLedgersMock(code, onChange),
+}))
 
 vi.mock('../api/rooms', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/rooms')>()
@@ -84,6 +94,7 @@ import { useAppHeader } from '@/shared/composables/useAppHeader'
 function captureSnapshotCallbacks() {
   let deliverParticipants: (participants: Participant[]) => void = () => {}
   let deliverRoom: (room: RoomInfo | null) => void = () => {}
+  let deliverLedgers: (ledgers: RoundLedger[]) => void = () => {}
   subscribeParticipantsMock.mockImplementation((_code, onChange) => {
     deliverParticipants = onChange
     return unsubscribeParticipantsMock
@@ -92,9 +103,14 @@ function captureSnapshotCallbacks() {
     deliverRoom = onChange
     return unsubscribeRoomMock
   })
+  subscribeLedgersMock.mockImplementation((_code, onChange) => {
+    deliverLedgers = onChange
+    return () => {}
+  })
   return {
     participants: (participants: Participant[]) => deliverParticipants(participants),
     room: (room: RoomInfo | null) => deliverRoom(room),
+    ledgers: (ledgers: RoundLedger[]) => deliverLedgers(ledgers),
   }
 }
 
@@ -189,6 +205,7 @@ describe('WaitingRoomPage', () => {
     kickParticipantMock.mockReset().mockResolvedValue(undefined)
     subscribeParticipantsMock.mockReset().mockReturnValue(unsubscribeParticipantsMock)
     subscribeRoomMock.mockReset().mockReturnValue(unsubscribeRoomMock)
+    subscribeLedgersMock.mockReset().mockReturnValue(() => {})
     unsubscribeParticipantsMock.mockReset()
     unsubscribeRoomMock.mockReset()
     replaceMock.mockReset()
@@ -225,6 +242,46 @@ describe('WaitingRoomPage', () => {
     // 인원 수는 명단 헤더 한 곳에서만 노출한다(룸 카드의 중복 캡션 제거) — 용어도 '준비'로 통일
     expect(wrapper.text()).toContain('3명 입장 · 2명 준비')
     expect(wrapper.text()).not.toContain('참가자 3명')
+  })
+
+  /**
+   * 누적 순위(P07)는 정산이 끝난 라운드가 있을 때만 — 순위 카드가 없는 화면은 이전과 같아야 한다.
+   * 배정 카드가 룸 카드를 대체하는 게스트에게도 보여야 하므로 뷰 분기 밖에 있다.
+   */
+  it('정산이 끝난 라운드가 있으면 누적 순위 카드를 보여 주고, 없으면 보이지 않는다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    const wrapper = mountPage()
+    await flushPromises()
+    deliver.participants(ROSTER)
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('누적 순위')
+
+    deliver.ledgers([
+      {
+        roundNo: 1,
+        mode: 'normal',
+        teams: {},
+        xTeams: [],
+        confirmedAtMs: 0,
+        tally: null,
+        hits: null,
+        result: {
+          teamScores: {},
+          playerScores: { me: 10, [ROSTER[1]!.id]: 40 },
+          playerTiers: { me: 2, [ROSTER[1]!.id]: 1 },
+          playerPoints: { me: 7, [ROSTER[1]!.id]: 10 },
+          finishedAtMs: 1,
+        },
+      },
+    ])
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('누적 순위')
+    expect(wrapper.text()).toContain('1라운드 정산')
+    expect(wrapper.text()).toContain(`${ROSTER[1]!.name}`)
+    expect(wrapper.text()).toContain('오리 (나)')
+    expect(wrapper.text()).toContain('10P')
   })
 
   /**
