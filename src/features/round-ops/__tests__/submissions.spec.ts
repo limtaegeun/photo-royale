@@ -11,6 +11,8 @@ interface FakeRef {
 
 const addDocMock = vi.fn<(ref: FakeRef, data: Record<string, unknown>) => Promise<void>>()
 const updateDocMock = vi.fn<(ref: FakeRef, data: Record<string, unknown>) => Promise<void>>()
+const batchUpdateMock = vi.fn<(ref: FakeRef, data: Record<string, unknown>) => void>()
+const batchCommitMock = vi.fn<() => Promise<void>>()
 const getDocFromServerMock = vi.fn<(ref: FakeRef) => Promise<unknown>>()
 const onSnapshotMock =
   vi.fn<
@@ -37,6 +39,8 @@ vi.mock('firebase/firestore', () => ({
   addDoc: (ref: FakeRef, data: Record<string, unknown>) => addDocMock(ref, data),
   updateDoc: (ref: FakeRef, data: Record<string, unknown>) => updateDocMock(ref, data),
   getDocFromServer: (ref: FakeRef) => getDocFromServerMock(ref),
+  writeBatch: () => ({ update: batchUpdateMock, commit: batchCommitMock }),
+  increment: (n: number) => ({ increment: n }),
 }))
 
 import {
@@ -54,6 +58,8 @@ import {
 beforeEach(() => {
   addDocMock.mockReset().mockResolvedValue(undefined)
   updateDocMock.mockReset().mockResolvedValue(undefined)
+  batchUpdateMock.mockReset()
+  batchCommitMock.mockReset().mockResolvedValue(undefined)
   onSnapshotMock.mockReset()
   getDocFromServerMock.mockReset()
 })
@@ -308,7 +314,7 @@ describe('판정 쓰기', () => {
   it('확정은 approved 상태·대상 완장·서버 시각을 한 번에 쓴다', async () => {
     await approveSubmission('AB2C', 's1', { team: 'A', participantUid: 'u1' })
 
-    expect(updateDocMock).toHaveBeenCalledExactlyOnceWith(
+    expect(batchUpdateMock).toHaveBeenCalledExactlyOnceWith(
       { path: 'rooms/AB2C/submissions/s1' },
       {
         status: 'approved',
@@ -317,6 +323,27 @@ describe('판정 쓰기', () => {
         judgedAt: 'server-timestamp',
       },
     )
+    expect(batchCommitMock).toHaveBeenCalledTimes(1)
+  })
+
+  /**
+   * 점수 정산(P07) — 판정과 원장 집계가 한 배치에 실려 둘 중 하나만 남는 일이 없다.
+   * 원장 문서가 없는 라운드는 tally를 안 넘기고(위 테스트), 없는 문서 update로 배치가 죽지 않는다.
+   */
+  it('tally가 있으면 공격 완장 kills와 피격 완장 hits의 increment를 같은 배치에 얹는다', async () => {
+    await approveSubmission(
+      'AB2C',
+      's1',
+      { team: 'B', participantUid: 'u3' },
+      { roundNo: 2, attackerTeam: 'A' },
+    )
+
+    expect(batchUpdateMock).toHaveBeenCalledTimes(2)
+    expect(batchUpdateMock).toHaveBeenCalledWith(
+      { path: 'rooms/AB2C/rounds/2' },
+      { 'tally.A.kills': { increment: 1 }, 'hits.B': { increment: 1 } },
+    )
+    expect(batchCommitMock).toHaveBeenCalledTimes(1)
   })
 
   it('반려는 targetTeam 없이 rejected 상태만 쓴다 — rules가 부재를 요구한다', async () => {

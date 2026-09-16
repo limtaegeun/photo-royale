@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  increment,
   onSnapshot,
   serverTimestamp,
   type DocumentData,
@@ -10,6 +11,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '@/shared/api/firebase'
 import { isGameModeId, type GameModeId } from '@/features/game-mode'
+import type { RoundSettlement } from '../scoring'
 import type { ArmbandMap, RoundLedger, RoundResult, TeamTally } from '../types'
 
 /** 라운드 원장 문서 참조 — 문서 ID는 차수 문자열(rules가 방 문서의 assignmentRound와 대조한다) */
@@ -48,6 +50,43 @@ export function addRoundSnapshotToBatch(
     teams: teamMembers,
     xTeams,
     confirmedAt: serverTimestamp(),
+  })
+}
+
+/**
+ * 판정 확정 배치에 집계 update를 얹는다 — 공격 완장의 kills(3배면 tripleKills)와 피격 완장의
+ * hits를 1씩 올린다. dot-path increment라 문서에 tally/hits 맵이 아직 없어도 만들어지고,
+ * 재판정·취소가 없으니 단조 증가로 충분하다. rules는 게임 중 현재 차수 문서의 이 두 키만
+ * 허용한다. 문서가 없으면(원장 도입 전에 배정된 라운드) update가 배치 전체를 실패시키므로
+ * 호출부가 존재 여부를 보고 얹는다.
+ */
+export function addTallyToBatch(
+  batch: WriteBatch,
+  code: string,
+  roundNo: number,
+  attackerTeam: string,
+  targetTeam: string,
+  multiplier: 1 | 3 = 1,
+): void {
+  const killField = multiplier === 3 ? 'tripleKills' : 'kills'
+  batch.update(roundLedgerDoc(code, roundNo), {
+    [`tally.${attackerTeam}.${killField}`]: increment(1),
+    [`hits.${targetTeam}`]: increment(1),
+  })
+}
+
+/**
+ * 게임 종료 배치에 정산 결과 update를 얹는다. rules가 커밋 후 방 상태 waiting을 요구하므로
+ * 종료(playing → waiting)와 같은 배치여야 하고, 같은 차수를 재시작해 다시 종료하면 덮어쓴다.
+ */
+export function addRoundResultToBatch(
+  batch: WriteBatch,
+  code: string,
+  roundNo: number,
+  settlement: RoundSettlement,
+): void {
+  batch.update(roundLedgerDoc(code, roundNo), {
+    result: { ...settlement, finishedAt: serverTimestamp() },
   })
 }
 

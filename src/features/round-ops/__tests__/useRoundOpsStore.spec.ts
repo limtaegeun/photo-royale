@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import type { Participant, RoomInfo, RoundState } from '@/features/waiting-room'
+import type { RoundLedger, RoundSettlement } from '@/features/round-ledger'
 import type { Notice } from '../api/notices'
 import type { Submission, SubmissionRecord } from '../api/submissions'
 
@@ -43,7 +44,10 @@ const subscribeRecordsMock =
     ) => () => void
   >()
 
-const endGameMock = vi.fn<(code: string) => Promise<void>>()
+const endGameMock =
+  vi.fn<
+    (code: string, settlement?: { roundNo: number; result: RoundSettlement }) => Promise<void>
+  >()
 const markRoundPlayedMock = vi.fn<(code: string, round: number) => void>()
 
 vi.mock('@/features/waiting-room', async (importOriginal) => ({
@@ -53,7 +57,8 @@ vi.mock('@/features/waiting-room', async (importOriginal) => ({
     .computeRoundRemainingMs,
   // 서버 보정을 못 잰 상태(=기기 시각 그대로)가 이 스펙의 전제다 — 남은 시간 기대값이 고정된다
   serverNow: () => Date.now(),
-  endGame: (code: string) => endGameMock(code),
+  endGame: (code: string, settlement?: { roundNo: number; result: RoundSettlement }) =>
+    endGameMock(code, settlement),
   markRoundPlayed: (code: string, round: number) => markRoundPlayedMock(code, round),
   subscribeToRoom: (code: string, onChange: (room: RoomInfo | null) => void) =>
     subscribeRoomMock(code, onChange),
@@ -89,12 +94,35 @@ vi.mock('../api/notices', () => ({
     subscribeNoticeMock(code, onChange),
 }))
 
+const unsubscribeLedgerMock = vi.fn<() => void>()
+const subscribeLedgerMock =
+  vi.fn<
+    (
+      code: string,
+      round: number,
+      onChange: (ledger: RoundLedger | null) => void,
+      onError?: (error: Error) => void,
+    ) => () => void
+  >()
+
+vi.mock('@/features/round-ledger', async (importOriginal) => ({
+  // 정산 계산기는 순수 함수라 실제 구현을 쓴다 — 종료 배치에 실리는 값이 계산기 출력 그대로여야 한다
+  settleRound: (await importOriginal<typeof import('@/features/round-ledger')>()).settleRound,
+  subscribeToRoundLedger: (
+    code: string,
+    round: number,
+    onChange: (ledger: RoundLedger | null) => void,
+    onError?: (error: Error) => void,
+  ) => subscribeLedgerMock(code, round, onChange, onError),
+}))
+
 const approveSubmissionMock =
   vi.fn<
     (
       code: string,
       submissionId: string,
       target: { team: string; participantUid: string },
+      tally?: { roundNo: number; attackerTeam: string },
     ) => Promise<void>
   >()
 const rejectSubmissionMock = vi.fn<(code: string, submissionId: string) => Promise<void>>()
@@ -106,7 +134,8 @@ vi.mock('../api/submissions', () => ({
     code: string,
     submissionId: string,
     target: { team: string; participantUid: string },
-  ) => approveSubmissionMock(code, submissionId, target),
+    tally?: { roundNo: number; attackerTeam: string },
+  ) => approveSubmissionMock(code, submissionId, target, tally),
   rejectSubmission: (code: string, submissionId: string) =>
     rejectSubmissionMock(code, submissionId),
   getSubmissionStatusFromServer: (code: string, submissionId: string) =>
@@ -136,6 +165,8 @@ function captureSnapshotCallbacks() {
   let deliverSubmissions: (submissions: Submission[]) => void = () => {}
   let deliverRecords: (records: SubmissionRecord[]) => void = () => {}
   let failRecords: (error: Error) => void = () => {}
+  let deliverLedger: (ledger: RoundLedger | null) => void = () => {}
+  let failLedger: (error: Error) => void = () => {}
   subscribeRoomMock.mockImplementation((_code, onChange) => {
     deliverRoom = onChange
     return unsubscribeRoomMock
@@ -157,6 +188,11 @@ function captureSnapshotCallbacks() {
     failRecords = onError ?? (() => {})
     return unsubscribeRecordsMock
   })
+  subscribeLedgerMock.mockImplementation((_code, _round, onChange, onError) => {
+    deliverLedger = onChange
+    failLedger = onError ?? (() => {})
+    return unsubscribeLedgerMock
+  })
   return {
     room: (room: RoomInfo | null) => deliverRoom(room),
     participants: (participants: Participant[]) => deliverParticipants(participants),
@@ -164,6 +200,23 @@ function captureSnapshotCallbacks() {
     submissions: (submissions: Submission[]) => deliverSubmissions(submissions),
     records: (records: SubmissionRecord[]) => deliverRecords(records),
     recordsError: (error: Error) => failRecords(error),
+    ledger: (ledger: RoundLedger | null) => deliverLedger(ledger),
+    ledgerError: (error: Error) => failLedger(error),
+  }
+}
+
+/** 현재 차수(2)의 원장 — 팀 A(u1·u2) 킬 1, 팀 B(u3) 킬 0 */
+function ledger(overrides: Partial<RoundLedger> = {}): RoundLedger {
+  return {
+    roundNo: 2,
+    mode: 'normal',
+    teams: { A: ['u1', 'u2'], B: ['u3'] },
+    xTeams: [],
+    confirmedAtMs: NOW,
+    tally: { A: { kills: 1, tripleKills: 0 } },
+    hits: { B: 1 },
+    result: null,
+    ...overrides,
   }
 }
 
@@ -227,6 +280,8 @@ describe('useRoundOpsStore', () => {
     subscribeNoticeMock.mockReset().mockReturnValue(unsubscribeNoticeMock)
     subscribeSubmissionsMock.mockReset().mockReturnValue(unsubscribeSubmissionsMock)
     subscribeRecordsMock.mockReset().mockReturnValue(unsubscribeRecordsMock)
+    subscribeLedgerMock.mockReset().mockReturnValue(unsubscribeLedgerMock)
+    unsubscribeLedgerMock.mockReset()
     unsubscribeRoomMock.mockReset()
     unsubscribeParticipantsMock.mockReset()
     unsubscribeNoticeMock.mockReset()
@@ -339,6 +394,38 @@ describe('useRoundOpsStore', () => {
       )
       expect(unsubscribeSubmissionsMock).toHaveBeenCalledTimes(1)
       expect(store.pendingSubmissions).toEqual([])
+    })
+  })
+
+  describe('라운드 원장 구독', () => {
+    it('판정 큐와 같은 차수의 원장을 구독하고 차수가 바뀌면 갈아탄다', () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+
+      deliver.room(room({ assignmentRound: 2 }))
+      deliver.ledger(ledger())
+      expect(subscribeLedgerMock).toHaveBeenLastCalledWith('AB2C', 2, expect.any(Function), expect.any(Function))
+      expect(store.currentLedger?.roundNo).toBe(2)
+
+      deliver.room(room({ assignmentRound: 3 }))
+      expect(unsubscribeLedgerMock).toHaveBeenCalledTimes(1)
+      expect(subscribeLedgerMock).toHaveBeenLastCalledWith('AB2C', 3, expect.any(Function), expect.any(Function))
+      // 새 차수의 스냅샷이 오기 전엔 이전 차수 원장을 들고 있지 않는다
+      expect(store.currentLedger).toBeNull()
+    })
+
+    it('화면을 떠나면 원장 구독도 해제하고 비운다', () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room())
+      deliver.ledger(ledger())
+
+      store.leave()
+
+      expect(unsubscribeLedgerMock).toHaveBeenCalledTimes(1)
+      expect(store.currentLedger).toBeNull()
     })
   })
 
@@ -567,7 +654,8 @@ describe('useRoundOpsStore', () => {
 
       await expect(store.finishGame()).resolves.toBe(true)
 
-      expect(endGameMock).toHaveBeenCalledExactlyOnceWith('AB2C')
+      // 원장이 없는 라운드(도입 전 배정)는 정산 없이 종료만 한다
+      expect(endGameMock).toHaveBeenCalledExactlyOnceWith('AB2C', undefined)
     })
 
     it('라운드 시작 전에도 게임 자체는 종료할 수 있다', async () => {
@@ -578,7 +666,45 @@ describe('useRoundOpsStore', () => {
 
       await store.finishGame()
 
-      expect(endGameMock).toHaveBeenCalledExactlyOnceWith('AB2C')
+      expect(endGameMock).toHaveBeenCalledExactlyOnceWith('AB2C', undefined)
+    })
+
+    /**
+     * 점수 정산(P07) — 종료 클릭 순간의 원장(편성 스냅샷 + 집계)으로 계산한 결과가 종료와 같은
+     * 배치에 실린다. 계산은 round-ledger의 settleRound 그대로다.
+     */
+    it('원장이 있으면 클릭 순간의 집계로 정산해 종료와 함께 넘긴다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room({ round: RUNNING }))
+      deliver.ledger(ledger())
+
+      await expect(store.finishGame()).resolves.toBe(true)
+
+      expect(endGameMock).toHaveBeenCalledExactlyOnceWith('AB2C', {
+        roundNo: 2,
+        result: {
+          teamScores: { A: 10, B: 0 },
+          playerScores: { u1: 10, u2: 10, u3: 0 },
+          playerTiers: { u1: 1, u2: 1, u3: 0 },
+          playerPoints: { u1: 10, u2: 10, u3: 1 },
+        },
+      })
+    })
+
+    it('원장 구독이 끊기면 정산 없이 종료한다 — 원장 없음과 같게 다룬다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room({ round: RUNNING }))
+      deliver.ledger(ledger())
+      deliver.ledgerError(new Error('permission-denied'))
+
+      await store.finishGame()
+
+      expect(store.currentLedger).toBeNull()
+      expect(endGameMock).toHaveBeenCalledExactlyOnceWith('AB2C', undefined)
     })
 
     it('게스트와 이미 대기 중인 방에서는 종료하지 않는다', async () => {
@@ -623,7 +749,7 @@ describe('useRoundOpsStore', () => {
       request.resolve()
       await pausing
       await expect(store.finishGame()).resolves.toBe(true)
-      expect(endGameMock).toHaveBeenCalledExactlyOnceWith('AB2C')
+      expect(endGameMock).toHaveBeenCalledExactlyOnceWith('AB2C', undefined)
     })
   })
 
@@ -637,7 +763,33 @@ describe('useRoundOpsStore', () => {
       const target = { team: 'A', participantUid: 'u1' }
       await expect(store.approveSubmission('s1', target)).resolves.toBe(true)
 
-      expect(approveSubmissionMock).toHaveBeenCalledExactlyOnceWith('AB2C', 's1', target)
+      // 원장이 없는 라운드는 집계 없이 판정만 — 없는 문서 update로 배치가 죽지 않게
+      expect(approveSubmissionMock).toHaveBeenCalledExactlyOnceWith('AB2C', 's1', target, undefined)
+    })
+
+    /**
+     * 점수 정산(P07) — 원장이 있으면 킬샷의 공격 완장(큐 문서의 team)과 차수를 넘겨 집계를 같은
+     * 배치에 얹는다. 큐에 없는 제출(다른 기기가 먼저 판정)은 집계 없이 시도해 기존 충돌 경로를 탄다.
+     */
+    it('원장이 있고 큐에 있는 킬샷이면 공격 완장·차수를 함께 넘긴다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room({ round: RUNNING }))
+      deliver.ledger(ledger())
+      deliver.submissions([
+        { id: 's1', uid: 'u3', team: 'B', round: 2, photo: 'data:', status: 'pending', createdAtMs: NOW },
+      ])
+
+      const target = { team: 'A', participantUid: 'u1' }
+      await store.approveSubmission('s1', target)
+      await store.approveSubmission('missing', target)
+
+      expect(approveSubmissionMock).toHaveBeenNthCalledWith(1, 'AB2C', 's1', target, {
+        roundNo: 2,
+        attackerTeam: 'B',
+      })
+      expect(approveSubmissionMock).toHaveBeenNthCalledWith(2, 'AB2C', 'missing', target, undefined)
     })
 
     it('반려는 문서 ID만 넘긴다 — 사유는 남기지 않는다', async () => {

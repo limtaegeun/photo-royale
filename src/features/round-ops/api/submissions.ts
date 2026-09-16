@@ -10,9 +10,11 @@ import {
   serverTimestamp,
   updateDoc,
   where,
+  writeBatch,
   type Unsubscribe,
 } from 'firebase/firestore'
 import { db } from '@/shared/api/firebase'
+import { addTallyToBatch } from '@/features/round-ledger'
 
 /** 킬샷 데이터 URL 접두 — JPEG만 허용한다(firestore.rules의 matches 정규식과 같은 규칙) */
 export const SUBMISSION_PHOTO_PREFIX = 'data:image/jpeg;base64,'
@@ -233,18 +235,37 @@ export function subscribeToSubmissionLog(
   )
 }
 
-/** 판정 확정 — 사진 속 완장이 어느 팀(=그룹은 완장에서 파생)인지 기록한다 */
+/** 판정 확정과 함께 올릴 라운드 원장 집계 — 원장 문서가 있는 라운드에서만 넘긴다 */
+export interface ApprovalTally {
+  /** 원장 문서 ID = 킬샷의 round */
+  roundNo: number
+  /** 공격 완장 = 킬샷의 team */
+  attackerTeam: string
+}
+
+/**
+ * 판정 확정 — 사진 속 완장이 어느 팀(=그룹은 완장에서 파생)인지 기록한다. tally가 있으면
+ * 라운드 원장의 집계 increment를 같은 writeBatch에 얹어 원자 커밋한다 — 판정만 남고 집계가
+ * 빠지거나 그 반대가 되지 않는다. 원장 문서가 없는 라운드(도입 전 배정)는 tally 없이 부른다:
+ * 없는 문서에 update를 얹으면 배치 전체가 실패해 판정까지 막힌다.
+ */
 export async function approveSubmission(
   code: string,
   submissionId: string,
   target: SubmissionTarget,
+  tally?: ApprovalTally,
 ): Promise<void> {
-  await updateDoc(doc(db, 'rooms', code, 'submissions', submissionId), {
+  const batch = writeBatch(db)
+  batch.update(doc(db, 'rooms', code, 'submissions', submissionId), {
     status: 'approved',
     targetTeam: target.team,
     targetParticipantUid: target.participantUid,
     judgedAt: serverTimestamp(),
   })
+  if (tally !== undefined) {
+    addTallyToBatch(batch, code, tally.roundNo, tally.attackerTeam, target.team)
+  }
+  await batch.commit()
 }
 
 /** 반려 — 사유는 남기지 않는다(확정 스펙). rules가 pending → rejected 단방향만 허용한다 */

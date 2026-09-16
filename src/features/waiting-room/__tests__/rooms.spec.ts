@@ -24,6 +24,8 @@ const transactionGetMock = vi.fn<(ref: FakeRef) => Promise<{ exists: () => boole
 const transactionSetMock = vi.fn<(ref: FakeRef, data: Record<string, unknown>) => void>()
 const updateDocMock = vi.fn<(ref: FakeRef, data: Record<string, unknown>) => Promise<void>>()
 const deleteDocMock = vi.fn<(ref: FakeRef) => Promise<void>>()
+const batchUpdateMock = vi.fn<(ref: FakeRef, data: Record<string, unknown>) => void>()
+const batchCommitMock = vi.fn<() => Promise<void>>()
 const onSnapshotMock =
   vi.fn<
     (
@@ -58,6 +60,9 @@ vi.mock('firebase/firestore', () => ({
   deleteField: () => 'delete-field',
   updateDoc: (ref: FakeRef, data: Record<string, unknown>) => updateDocMock(ref, data),
   deleteDoc: (ref: FakeRef) => deleteDocMock(ref),
+  writeBatch: () => ({ update: batchUpdateMock, commit: batchCommitMock }),
+  // round-ledger api가 import하는 것 — 이 스펙에서는 원장 쓰기 payload만 본다
+  increment: (n: number) => ({ increment: n }),
 }))
 
 import {
@@ -85,6 +90,8 @@ beforeEach(() => {
   transactionSetMock.mockReset()
   updateDocMock.mockReset()
   deleteDocMock.mockReset()
+  batchUpdateMock.mockReset()
+  batchCommitMock.mockReset().mockResolvedValue(undefined)
   onSnapshotMock.mockReset()
 })
 
@@ -568,24 +575,49 @@ describe('startGame', () => {
 
 describe('endGame', () => {
   it('status를 waiting으로 되돌리며 round를 같은 쓰기에서 지운다', async () => {
-    updateDocMock.mockResolvedValue(undefined)
-
     await endGame('AB2C')
 
     // 두 필드를 나눠 쓰면 "대기 중인데 라운드가 살아 있는" 중간 상태가 참가자에게 보인다
-    expect(updateDocMock).toHaveBeenCalledExactlyOnceWith(
+    expect(batchUpdateMock).toHaveBeenCalledExactlyOnceWith(
       { path: 'rooms/AB2C' },
       { status: 'waiting', round: 'delete-field' },
     )
+    expect(batchCommitMock).toHaveBeenCalledTimes(1)
   })
 
   it('배정 이력(assignmentRound·완장)은 건드리지 않는다', async () => {
-    updateDocMock.mockResolvedValue(undefined)
-
     await endGame('AB2C')
 
-    const [, payload] = updateDocMock.mock.calls[0]!
+    const [, payload] = batchUpdateMock.mock.calls[0]!
     expect(Object.keys(payload).sort()).toEqual(['round', 'status'])
+  })
+
+  /**
+   * 점수 정산(P07) — 원장의 result는 rules가 커밋 후 방 상태 waiting을 요구해 종료와 같은 배치여야
+   * 한다. 원장이 없는 라운드(도입 전 배정)는 정산 없이 종료만 한다.
+   */
+  it('정산이 있으면 라운드 원장 result를 같은 배치에 얹고 서버 시각을 붙인다', async () => {
+    const result = {
+      teamScores: { A: 10 },
+      playerScores: { u1: 10 },
+      playerTiers: { u1: 1 },
+      playerPoints: { u1: 10 },
+    }
+
+    await endGame('AB2C', { roundNo: 2, result })
+
+    expect(batchUpdateMock).toHaveBeenCalledTimes(2)
+    expect(batchUpdateMock).toHaveBeenCalledWith(
+      { path: 'rooms/AB2C/rounds/2' },
+      { result: { ...result, finishedAt: 'server-timestamp' } },
+    )
+    expect(batchCommitMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('commit 실패는 호출부로 전파된다(종료·정산이 함께 없던 일이 된다)', async () => {
+    batchCommitMock.mockRejectedValueOnce(new Error('permission denied'))
+
+    await expect(endGame('AB2C')).rejects.toThrow('permission denied')
   })
 })
 
