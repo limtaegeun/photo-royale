@@ -81,6 +81,8 @@ const approveSubmissionMock =
       code: string,
       submissionId: string,
       target: { team: string; participantUid: string },
+      tally?: { roundNo: number; attackerTeam: string },
+      multiplier?: 1 | 3,
     ) => Promise<void>
   >()
 const rejectSubmissionMock = vi.fn<(code: string, submissionId: string) => Promise<void>>()
@@ -112,7 +114,9 @@ vi.mock('../api/submissions', async (importOriginal) => {
       code: string,
       submissionId: string,
       target: { team: string; participantUid: string },
-    ) => approveSubmissionMock(code, submissionId, target),
+      tally?: { roundNo: number; attackerTeam: string },
+      multiplier?: 1 | 3,
+    ) => approveSubmissionMock(code, submissionId, target, tally, multiplier),
     rejectSubmission: (code: string, submissionId: string) =>
       rejectSubmissionMock(code, submissionId),
     getSubmissionStatusFromServer: (code: string, submissionId: string) =>
@@ -974,6 +978,7 @@ describe('RoundOpsPage', () => {
         status: 'approved',
         createdAtMs: Date.now(),
         targetTeam: 'A',
+        multiplier: 1,
         judgedAtMs: Date.now(),
         ...overrides,
       }
@@ -1494,14 +1499,65 @@ describe('RoundOpsPage', () => {
       sheetButton('판정 확정')!.click()
       await flushPromises()
 
-      expect(approveSubmissionMock).toHaveBeenCalledExactlyOnceWith('AB2C', 's1', {
-        team: 'A',
-        participantUid: 'u1',
-      })
+      // 원장 없는 라운드(스펙 전제) → tally undefined, 토글을 안 켰으니 배율 1
+      expect(approveSubmissionMock).toHaveBeenCalledExactlyOnceWith(
+        'AB2C',
+        's1',
+        { team: 'A', participantUid: 'u1' },
+        undefined,
+        1,
+      )
       expect(toastMock).toHaveBeenCalledWith({
         title: '팀 A 킬샷으로 판정했어요.',
         tone: 'success',
       })
+    })
+
+    /**
+     * 낙오 포착(P07 M2) — 일반전에서만 토글이 보이고, 켜고 확정하면 배율 3이 서버로 간다.
+     * 토스트도 3배임을 말해 진행자가 잘못 켠 것을 바로 알아챌 수 있게 한다.
+     */
+    it('일반전에서는 낙오 포착 토글이 보이고 켜서 확정하면 배율 3으로 쓴다', async () => {
+      const { wrapper } = await openJudgeTab()
+      await wrapper.find('button[data-submission="s1"]').trigger('click')
+      await flushPromises()
+
+      const toggle = document.body.querySelector<HTMLButtonElement>('[data-testid="triple-kill-switch"]')!
+      expect(toggle).not.toBeNull()
+      expect(document.body.textContent).toContain('낙오 포착 킬 (3배)')
+      toggle.click()
+      await flushPromises()
+      document.body.querySelector<HTMLButtonElement>('button[data-team="A"]')!.click()
+      await flushPromises()
+      sheetButton('판정 확정')!.click()
+      await flushPromises()
+
+      expect(approveSubmissionMock).toHaveBeenCalledExactlyOnceWith(
+        'AB2C',
+        's1',
+        { team: 'A', participantUid: 'u1' },
+        undefined,
+        3,
+      )
+      expect(toastMock).toHaveBeenCalledWith({
+        title: '팀 A 낙오 포착 킬샷(3배)으로 판정했어요.',
+        tone: 'success',
+      })
+    })
+
+    it('일반전이 아니면 낙오 포착 토글이 없다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      deliver.room(hostRoom({ round: running(), gameMode: 'group' }))
+      deliver.participants([assigned('u1', 'A'), assigned('u2', 'A'), assigned('u3', 'B')])
+      deliver.submissions([pendingSubmission()])
+      await flushPromises()
+      await wrapper.find('[data-value="judge"]').trigger('click')
+      await wrapper.find('button[data-submission="s1"]').trigger('click')
+      await flushPromises()
+
+      expect(document.body.querySelector('[data-testid="triple-kill-switch"]')).toBeNull()
+      expect(document.body.textContent).not.toContain('낙오 포착')
     })
 
     it('반려는 사유 없이 상태만 쓴다', async () => {

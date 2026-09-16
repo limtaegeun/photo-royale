@@ -9,7 +9,7 @@ import BaseDialog from '@/shared/components/BaseDialog.vue'
 import BaseSegmented from '@/shared/components/BaseSegmented.vue'
 import { normalizeRoomCode } from '@/features/waiting-room'
 import { useToast } from '@/shared/composables/useToast'
-import type { Submission, SubmissionRecord, SubmissionTarget } from './api/submissions'
+import type { KillMultiplier, Submission, SubmissionRecord, SubmissionTarget } from './api/submissions'
 import JudgeQueueList from './components/JudgeQueueList.vue'
 import JudgeSheet from './components/JudgeSheet.vue'
 import NoticeCard from './components/NoticeCard.vue'
@@ -340,17 +340,23 @@ async function handleJudgeFailure(submissionId: string) {
   toast({ title: JUDGE_ERROR_MESSAGE, tone: 'danger' })
 }
 
-async function approveKillshot(target: SubmissionTarget) {
+async function approveKillshot(target: SubmissionTarget, multiplier: KillMultiplier) {
   const current = judgingSubmission.value
   if (current === null) return
-  const approved = await store.approveSubmission(current.id, target)
+  const approved = await store.approveSubmission(current.id, target, multiplier)
   if (judgingSubmission.value?.id !== current.id) return
   if (!approved) {
     await handleJudgeFailure(current.id)
     return
   }
   isJudgeSheetOpen.value = false
-  toast({ title: `팀 ${target.team} 킬샷으로 판정했어요.`, tone: 'success' })
+  toast({
+    title:
+      multiplier === 3
+        ? `팀 ${target.team} 낙오 포착 킬샷(3배)으로 판정했어요.`
+        : `팀 ${target.team} 킬샷으로 판정했어요.`,
+    tone: 'success',
+  })
 }
 
 async function rejectKillshot() {
@@ -656,6 +662,7 @@ onUnmounted(() => {
       :assignment-round="assignmentRound"
       :judging="pendingAction === 'judge'"
       :now-ms="nowMs"
+      :allow-triple-kill="room?.gameMode === 'normal'"
       @approve="approveKillshot"
       @reject="rejectKillshot"
     />
