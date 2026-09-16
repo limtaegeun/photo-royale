@@ -12,6 +12,7 @@ import {
   serverTimestamp,
   updateDoc,
   where,
+  writeBatch,
   type Timestamp,
   type Unsubscribe,
 } from 'firebase/firestore'
@@ -20,6 +21,7 @@ import { createRoundAnchorObserver } from '../serverClock'
 import type { Gender } from '@/features/auth'
 // 게임 모드는 game-mode 기능의 소유물이라 public API로만 가져온다(내부 파일 직접 import 금지)
 import { DEFAULT_GAME_MODE, isGameModeId, type GameModeId } from '@/features/game-mode'
+import { addRoundResultToBatch, type RoundSettlement } from '@/features/round-ledger'
 
 export type RoomStatus = 'waiting' | 'playing'
 
@@ -349,8 +351,21 @@ export async function startGame(code: string): Promise<void> {
  * 배정 이력(assignmentRound·완장·짝꿍)은 그대로 둔다 — 대기실로 돌아가 다음 차수를 배정하면
  * 그 시점에 레디가 리셋되므로, 종료가 라운드 루프를 끊지 않고 한 바퀴를 닫아 준다.
  */
-export async function endGame(code: string): Promise<void> {
-  await updateDoc(doc(db, 'rooms', code), { status: 'waiting', round: deleteField() })
+export async function endGame(code: string, settlement?: RoundLedgerSettlement): Promise<void> {
+  const batch = writeBatch(db)
+  batch.update(doc(db, 'rooms', code), { status: 'waiting', round: deleteField() })
+  // 점수 정산(P07) — 라운드 원장의 result는 종료와 같은 배치여야 한다(rules가 커밋 후 방 상태
+  // waiting을 요구한다). 원장 문서가 없는 라운드(도입 전 배정)는 정산 없이 종료만 한다.
+  if (settlement !== undefined) {
+    addRoundResultToBatch(batch, code, settlement.roundNo, settlement.result)
+  }
+  await batch.commit()
+}
+
+/** 종료와 함께 원장에 쓸 이번 라운드 정산 — 호출부(라운드 운영)가 settleRound로 만든다 */
+export interface RoundLedgerSettlement {
+  roundNo: number
+  result: RoundSettlement
 }
 
 /** 참가자 명단 실시간 구독 — 입장 순서(joinedAt)로 정렬해 전달한다 */
