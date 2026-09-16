@@ -697,12 +697,12 @@ describe('useRoundOpsStore', () => {
 
       await expect(store.finishGame()).resolves.toBe(true)
 
-      // 일반전 정산: A 킬 10 + 생존 5 = 15, B(u3, 1인 팀 = 라이프 2)는 1번 맞아 아직 생존 → 5
+      // 일반전 정산: A 킬 10 + 생존 5 = 15, B(u3, 1인 팀 = 라이프 2·원점수 2배)는 1번 맞아 아직 생존 → 5 × 2 = 10
       expect(endGameMock).toHaveBeenCalledExactlyOnceWith('AB2C', {
         roundNo: 2,
         result: {
-          teamScores: { A: 15, B: 5 },
-          playerScores: { u1: 15, u2: 15, u3: 5 },
+          teamScores: { A: 15, B: 10 },
+          playerScores: { u1: 15, u2: 15, u3: 10 },
           playerTiers: { u1: 1, u2: 1, u3: 2 },
           playerPoints: { u1: 10, u2: 10, u3: 7 },
         },

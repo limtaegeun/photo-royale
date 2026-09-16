@@ -32,20 +32,45 @@ export function distributeToPlayers(
 }
 
 /**
+ * 1인 팀 보정 — 규칙서(앱 규칙 카드 "1인 팀은 목숨과 포인트가 2배")대로 1인 팀의 라운드 원점수는
+ * 2배다(기획자 확정 2026-09-16). 라이프 2배는 livesOf가 맡는다. 모드와 무관한 편성 규칙이라
+ * 모든 모드 규칙이 마지막에 이 보정을 거친다.
+ */
+export const SOLO_TEAM_SCALE = 2
+
+/** 팀 원점수 배율 — 1인 팀 2, 그 외 1 */
+export function teamScaleOf(teams: ModeScoringInput['teams'], armband: string): number {
+  return (teams[armband]?.length ?? 0) === 1 ? SOLO_TEAM_SCALE : 1
+}
+
+/** 팀별 원점수에 1인 팀 배율을 적용한다 — 모드 규칙의 마지막 단계 */
+export function applyTeamScale(
+  teams: ModeScoringInput['teams'],
+  teamScores: Record<string, number>,
+): Record<string, number> {
+  const scaled: Record<string, number> = {}
+  for (const [armband, score] of Object.entries(teamScores)) {
+    scaled[armband] = score * teamScaleOf(teams, armband)
+  }
+  return scaled
+}
+
+/**
  * 기본 킬 규칙 — 팀 킬 ×10(+낙오 3배 ×30)을 팀원 각자에게. 아직 자기 규칙이 없는 모드의 기본값이다
- * (일반전은 여기에 생존 보너스를 더한 normalScoring을 쓴다).
+ * (일반전은 여기에 생존 보너스를 더한 normalScoring을 쓴다). 1인 팀은 2배(applyTeamScale).
  */
 export function killScoring(input: ModeScoringInput): ModeScoringOutput {
-  const teamScores: Record<string, number> = {}
+  const raw: Record<string, number> = {}
   for (const armband of Object.keys(input.teams)) {
-    teamScores[armband] = killScoreOf(input.tally, armband)
+    raw[armband] = killScoreOf(input.tally, armband)
   }
+  const teamScores = applyTeamScale(input.teams, raw)
   return { teamScores, playerScores: distributeToPlayers(input.teams, teamScores) }
 }
 
 /**
  * 탈락 모델(P07 M3, docs/plans/p07-elimination.md) — 팀 라이프. 2인 팀 1, 1인 팀 2
- * (앱 규칙 카드 "1인 팀은 목숨과 포인트가 2배" 중 목숨 보정. 포인트 2배는 기획자 확인 전 미적용).
+ * (앱 규칙 카드 "1인 팀은 목숨과 포인트가 2배" 중 목숨 보정. 포인트 2배는 applyTeamScale).
  */
 export function livesOf(teams: ModeScoringInput['teams'], armband: string): number {
   return (teams[armband]?.length ?? 0) === 1 ? 2 : 1
@@ -64,11 +89,12 @@ export function survivalScoreOf(input: Pick<ModeScoringInput, 'teams' | 'hits'>,
   return isTeamOut(input, armband) ? 0 : SURVIVAL_POINTS
 }
 
-/** 일반전(P07 §4.1) — 팀 킬 10 · 낙오 포착 킬 30 · 종료 시 생존 5, 팀원 각자에게 */
+/** 일반전(P07 §4.1) — 팀 킬 10 · 낙오 포착 킬 30 · 종료 시 생존 5, 팀원 각자에게. 1인 팀은 2배 */
 export function normalScoring(input: ModeScoringInput): ModeScoringOutput {
-  const teamScores: Record<string, number> = {}
+  const raw: Record<string, number> = {}
   for (const armband of Object.keys(input.teams)) {
-    teamScores[armband] = killScoreOf(input.tally, armband) + survivalScoreOf(input, armband)
+    raw[armband] = killScoreOf(input.tally, armband) + survivalScoreOf(input, armband)
   }
+  const teamScores = applyTeamScale(input.teams, raw)
   return { teamScores, playerScores: distributeToPlayers(input.teams, teamScores) }
 }

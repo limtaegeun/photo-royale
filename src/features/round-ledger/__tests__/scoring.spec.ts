@@ -93,23 +93,24 @@ describe('settleRound', () => {
       ledger({ teams: { A: ['하늘'] }, tally: { A: { kills: 1, tripleKills: 0 }, Z: { kills: 5, tripleKills: 0 } } }),
     )
 
-    expect(settlement.teamScores).toEqual({ A: 15 })
+    // 하늘은 1인 팀 — (킬 10 + 생존 5) × 2
+    expect(settlement.teamScores).toEqual({ A: 30 })
     expect(Object.keys(settlement.playerPoints)).toEqual(['하늘'])
   })
 
-  it('1인 팀도 동일 지급이라 팀 규모와 무관하게 킬 1 = +10 (생존 5 포함 15)', () => {
+  it('1인 팀은 규칙서대로 원점수가 2배다 — 같은 킬 1이면 30 vs 15로 한 등급 위', () => {
     const settlement = settleRound(
       ledger({ teams: { A: ['혼자'], B: ['둘', '이서'] }, tally: { A: { kills: 1, tripleKills: 0 }, B: { kills: 1, tripleKills: 0 } } }),
     )
 
-    expect(settlement.playerScores).toEqual({ 혼자: 15, 둘: 15, 이서: 15 })
-    expect(settlement.playerTiers).toEqual({ 혼자: 1, 둘: 1, 이서: 1 })
+    expect(settlement.playerScores).toEqual({ 혼자: 30, 둘: 15, 이서: 15 })
+    expect(settlement.playerTiers).toEqual({ 혼자: 1, 둘: 2, 이서: 2 })
   })
 
-  it('1인 팀은 라이프가 2라 한 번 맞아도 생존 보너스를 받는다', () => {
+  it('1인 팀은 라이프가 2라 한 번 맞아도 생존 보너스를 받는다(2배 → 10)', () => {
     const settlement = settleRound(ledger({ teams: { A: ['혼자'], B: ['둘', '이서'] }, hits: { A: 1, B: 1 } }))
 
-    expect(settlement.teamScores).toEqual({ A: 5, B: 0 })
+    expect(settlement.teamScores).toEqual({ A: 10, B: 0 })
   })
 })
 
