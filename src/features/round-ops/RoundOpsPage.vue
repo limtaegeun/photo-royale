@@ -57,6 +57,7 @@ const {
   recordListenError,
   isSendingNotice,
   settlementPreview,
+  outTeams,
 } = storeToRefs(store)
 
 /** 운영 중인 방 코드 — 새로고침·딥링크에도 유지되도록 경로 파라미터에서 읽는다 */
@@ -663,6 +664,7 @@ onUnmounted(() => {
       :judging="pendingAction === 'judge'"
       :now-ms="nowMs"
       :allow-triple-kill="room?.gameMode === 'normal'"
+      :out-teams="outTeams"
       @approve="approveKillshot"
       @reject="rejectKillshot"
     />

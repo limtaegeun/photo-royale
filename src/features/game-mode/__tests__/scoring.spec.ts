@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { distributeToPlayers, killScoreOf, killScoring } from '../scoring'
+import { distributeToPlayers, isTeamOut, killScoreOf, killScoring, livesOf, normalScoring } from '../scoring'
 import { GAME_MODES } from '../registry'
 
 const TEAMS = { A: ['하늘', '민재'], B: ['준호'], C: ['서연', '도윤'] }
@@ -43,5 +43,32 @@ describe('killScoring (기본 킬 규칙)', () => {
       const output = mode.scoring({ teams: TEAMS, xTeams: [], tally: {}, hits: {} })
       expect(Object.keys(output.playerScores).sort()).toEqual(['도윤', '민재', '서연', '준호', '하늘'])
     }
+  })
+})
+
+describe('탈락 모델 (P07 M3)', () => {
+  it('라이프는 2인 팀 1, 1인 팀 2', () => {
+    expect(livesOf(TEAMS, 'A')).toBe(1)
+    expect(livesOf(TEAMS, 'B')).toBe(2)
+    expect(livesOf(TEAMS, 'Z')).toBe(1)
+  })
+
+  it('아웃 = hits가 라이프에 닿음 — 경계 포함', () => {
+    expect(isTeamOut({ teams: TEAMS, hits: {} }, 'A')).toBe(false)
+    expect(isTeamOut({ teams: TEAMS, hits: { A: 1 } }, 'A')).toBe(true)
+    expect(isTeamOut({ teams: TEAMS, hits: { B: 1 } }, 'B')).toBe(false)
+    expect(isTeamOut({ teams: TEAMS, hits: { B: 2 } }, 'B')).toBe(true)
+  })
+
+  it('normalScoring = 킬 + 생존 5(아웃 제외) — 3배 킬과도 합산된다', () => {
+    const output = normalScoring({
+      teams: TEAMS,
+      xTeams: [],
+      tally: { C: { kills: 0, tripleKills: 1 } },
+      hits: { A: 1 },
+    })
+
+    expect(output.teamScores).toEqual({ A: 0, B: 5, C: 35 })
+    expect(output.playerScores).toEqual({ 하늘: 0, 민재: 0, 준호: 5, 서연: 35, 도윤: 35 })
   })
 })

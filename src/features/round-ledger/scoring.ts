@@ -6,8 +6,24 @@
  * 원점수 규칙은 모드가 소유한다(GameModeDefinition.scoring — 모드 1개 = 파일 1개). 여기는
  * 모드와 무관한 등급·포인트 단계와 누적 순위만 맡는다.
  */
-import { GAME_MODES } from '@/features/game-mode'
+import { GAME_MODES, isTeamOut } from '@/features/game-mode'
 import type { RoundLedger, RoundResult } from './types'
+
+/**
+ * 탈락 모델(P07 M3) — 원장 문서 기준 팀별 아웃 여부. 콕핏·판정 시트·운영 화면이 같은 함수를 쓴다.
+ * 원장이 없는 라운드는 호출부가 null을 들고 있으므로 여기 오지 않는다.
+ */
+export function teamOutStatus(ledger: RoundLedger): Record<string, boolean> {
+  const input = { teams: ledger.teams, hits: ledger.hits ?? {} }
+  const status: Record<string, boolean> = {}
+  for (const armband of Object.keys(ledger.teams)) status[armband] = isTeamOut(input, armband)
+  return status
+}
+
+/** 아웃 아닌 팀 수 — 콕핏의 "생존 N / M팀" */
+export function aliveTeamCount(ledger: RoundLedger): number {
+  return Object.values(teamOutStatus(ledger)).filter((out) => !out).length
+}
 
 /**
  * 등급 → 포인트(결정 8). 인덱스 = 등급 - 1. 표 밖의 등급(5등급 이하)은 TIER_FLOOR_POINTS,

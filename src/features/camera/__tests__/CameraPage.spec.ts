@@ -92,7 +92,57 @@ vi.mock('@/features/waiting-room', () => {
   }
 })
 
+const unsubscribeLedgerMock = vi.fn<() => void>()
+const subscribeLedgerMock =
+  vi.fn<
+    (
+      code: string,
+      round: number,
+      onChange: (ledger: RoundLedger | null) => void,
+      onError?: (error: Error) => void,
+    ) => () => void
+  >()
+vi.mock('@/features/round-ledger', async (importOriginal) => ({
+  // 탈락 판정·생존 수는 순수 함수라 실제 구현을 쓴다
+  ...(await importOriginal<typeof import('@/features/round-ledger')>()),
+  subscribeToRoundLedger: (
+    code: string,
+    round: number,
+    onChange: (ledger: RoundLedger | null) => void,
+    onError?: (error: Error) => void,
+  ) => subscribeLedgerMock(code, round, onChange, onError),
+}))
+
 import CameraPage from '../CameraPage.vue'
+import type { RoundLedger } from '@/features/round-ledger'
+
+/** 원장 스냅샷을 흉내 낼 수 있도록 구독 콜백을 붙잡는다 */
+function captureLedgerSnapshot() {
+  let deliver: (ledger: RoundLedger | null) => void = () => {}
+  subscribeLedgerMock.mockImplementation((_code, _round, onChange) => {
+    deliver = onChange
+    return unsubscribeLedgerMock
+  })
+  return (ledger: RoundLedger | null) => deliver(ledger)
+}
+/** 팀 A(player1·player2)·B(player3) 원장 — hits로 아웃을 만든다 */
+function ledgerWith(hits: Record<string, number>): RoundLedger {
+  return {
+    roundNo: 1,
+    mode: 'normal',
+    teams: { A: ['player1', 'player2'], B: ['player3'] },
+    xTeams: [],
+    confirmedAtMs: 0,
+    tally: null,
+    hits,
+    result: null,
+  }
+}
+const PLAYERS = [
+  { id: 'player1', name: '민우', team: 'A', assignedRound: 1, gender: 'male', isXTeam: false, sameGenderStreak: 0, previousPartnerIds: [], isReady: true },
+  { id: 'player2', name: '하린', team: 'A', assignedRound: 1, gender: 'female', isXTeam: false, sameGenderStreak: 0, previousPartnerIds: [], isReady: true },
+  { id: 'player3', name: '도윤', team: 'B', assignedRound: 1, gender: 'male', isXTeam: false, sameGenderStreak: 0, previousPartnerIds: [], isReady: true },
+]
 
 /** 콕핏이 머물러야 하는 상태 — 진행 중인 방 + 시작된 라운드 */
 const RUNNING_ROUND: RoundState = {
@@ -220,6 +270,8 @@ beforeEach(() => {
   toastMock.mockReset()
   unsubscribeRoomMock.mockReset()
   subscribeRoomMock.mockReset().mockReturnValue(unsubscribeRoomMock)
+  subscribeLedgerMock.mockReset().mockReturnValue(unsubscribeLedgerMock)
+  unsubscribeLedgerMock.mockReset()
   unsubscribeParticipantsMock.mockReset()
   subscribeParticipantsMock.mockReset().mockReturnValue(unsubscribeParticipantsMock)
   unsubscribeNoticeMock.mockReset()
@@ -449,6 +501,105 @@ describe('CameraPage 라운드 종료 게이트', () => {
  * 판정 큐에 그대로 도착한다 — 안전을 위한 전원 정지가 게임적으로는 지켜지지 않는 셈이다.
  * ended 게이트와 같은 이유로 paused도 셔터·제출 두 진입점을 모두 고정해 둔다.
  */
+describe('CameraPage 탈락 게이트 (P07 M3)', () => {
+  function mountAssignedA() {
+    subscribeParticipantsMock.mockImplementation((_code, onChange) => {
+      onChange(PLAYERS)
+      return unsubscribeParticipantsMock
+    })
+    const deliverRoom = captureRoomSnapshot()
+    const deliverLedger = captureLedgerSnapshot()
+    return { deliverRoom, deliverLedger }
+  }
+
+  it('방의 현재 차수 원장을 구독하고 생존 팀 수를 HUD에 보여준다', async () => {
+    const { deliverRoom, deliverLedger } = mountAssignedA()
+    const wrapper = await mountWithActiveCamera()
+    deliverRoom(playingRoom())
+    await flushPromises()
+
+    expect(subscribeLedgerMock).toHaveBeenCalledWith('AB2C', 1, expect.any(Function), expect.any(Function))
+    // 원장이 오기 전에는 기존 표기(배정 팀 수)
+    expect(wrapper.text()).toContain('2팀 참가')
+
+    deliverLedger(ledgerWith({ B: 1 }))
+    await flushPromises()
+
+    // B는 1인 팀이라 라이프 2 → 한 번 맞아도 생존
+    expect(wrapper.text()).toContain('생존 2 / 2팀')
+    deliverLedger(ledgerWith({ B: 2 }))
+    await flushPromises()
+    expect(wrapper.text()).toContain('생존 1 / 2팀')
+  })
+
+  it('우리 팀이 잡히면 셔터가 잠기고 탈락 안내를 보여준다 — 라이프 1인 2인 팀', async () => {
+    const { deliverRoom, deliverLedger } = mountAssignedA()
+    const wrapper = await mountWithActiveCamera()
+    deliverRoom(playingRoom())
+    deliverLedger(ledgerWith({}))
+    await flushPromises()
+    expect(findShutter(wrapper).attributes('disabled')).toBeUndefined()
+    expect(wrapper.text()).not.toContain('우리 팀이 잡혔어요')
+
+    deliverLedger(ledgerWith({ A: 1 }))
+    await flushPromises()
+
+    expect(findShutter(wrapper).attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('우리 팀이 잡혔어요. 이번 라운드는 촬영할 수 없어요.')
+    // 목표 문구는 그대로 — 탈락은 자기 자리에서 알린다
+    expect(wrapper.text()).toContain('상대 완장 알파벳을 찍어 제출하세요.')
+  })
+
+  it('확인 화면이 열린 채 우리 팀이 잡히면 제출을 막고 안내한다', async () => {
+    stubCanvas()
+    const { deliverRoom, deliverLedger } = mountAssignedA()
+    const wrapper = await mountWithActiveCamera()
+    deliverRoom(playingRoom())
+    deliverLedger(ledgerWith({}))
+    await flushPromises()
+    await findShutter(wrapper).trigger('click')
+    await flushPromises()
+
+    deliverLedger(ledgerWith({ A: 1 }))
+    await flushPromises()
+
+    const submit = findButtonByText(wrapper, '킬샷 제출')!
+    expect(submit.attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('우리 팀은 탈락해서 제출할 수 없어요.')
+  })
+
+  it('원장 구독 오류는 탈락 없음과 같다 — 촬영을 막지 않는다', async () => {
+    subscribeParticipantsMock.mockImplementation((_code, onChange) => {
+      onChange(PLAYERS)
+      return unsubscribeParticipantsMock
+    })
+    const deliverRoom = captureRoomSnapshot()
+    let fail: (error: Error) => void = () => {}
+    subscribeLedgerMock.mockImplementation((_code, _round, _onChange, onError) => {
+      fail = onError ?? (() => {})
+      return unsubscribeLedgerMock
+    })
+    const wrapper = await mountWithActiveCamera()
+    deliverRoom(playingRoom())
+    await flushPromises()
+    fail(new Error('permission-denied'))
+    await flushPromises()
+
+    expect(findShutter(wrapper).attributes('disabled')).toBeUndefined()
+    expect(wrapper.text()).toContain('2팀 참가')
+  })
+
+  it('언마운트 시 원장 구독도 해제한다', async () => {
+    const { deliverRoom } = mountAssignedA()
+    const wrapper = await mountWithActiveCamera()
+    deliverRoom(playingRoom())
+    await flushPromises()
+    wrapper.unmount()
+
+    expect(unsubscribeLedgerMock).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('CameraPage 일시정지 게이트', () => {
   it('라운드가 일시정지되면 셔터가 비활성화되고 목표는 그대로 둔 채 일시정지 안내를 따로 보여준다', async () => {
     mockDisplayState.value = 'paused'

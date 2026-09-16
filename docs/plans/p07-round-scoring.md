@@ -204,8 +204,8 @@ QR 인프라 전제라 MVP 범위 밖(확정 스펙). 정산 틀만 적어 둔�
 | 단계 | 내용 | 의존 | 비고 |
 |---|---|---|---|
 | **M1 정산 골격** | rounds 문서(편성 스냅샷+tally+result) · rules · approve 배치화 · 종료 시 정산(원점수 → 등급 → 포인트) · 대기실 순위 카드 · 종료 다이얼로그 미리보기 | 없음 | **일반전 킬 +10과 등급 표만으로 최종 순위가 성립** — 이번 목표의 MVP. §10에 상세 |
-| **M2 판정 배율** | 낙오 3배 토글 · tripleKills 집계 | M1 | |
-| **M3 탈락 모델** | 아웃 상태(hits 기반 or 수동) · 생존 보너스 · 왕 아웃 감점 · 콕핏 "N팀 생존" 실데이터 교체 | M1 | 별도 기획 1장 필요 (라이프 1 = 원킬 여부 포함) |
+| **M2 판정 배율** | 낙오 3배 토글 · tripleKills 집계 | M1 | **완료 #39 (2026-09-16 배포)** |
+| **M3 탈락 모델** | 아웃 상태(hits 기반) · 생존 보너스 · 콕핏 "N팀 생존" 실데이터 교체 · 판정 시트 탈락 표시 | M1 | **완료 (2026-09-16)** — 기획 `docs/plans/p07-elimination.md`. 왕 아웃 감점은 이 모델 위에 M4-3 |
 | **M4 모드 정산 플러그인** | `GameModeDefinition`에 `scoring` 추가(단가·배율·확산·settle 함수) — 모드 1개=파일 1개 원칙대로 각 모드 파일이 자기 원점수 규칙 소유, §3.2~3.5 편성 알고리즘 작업과 병행 | M1~M3 | 등급 표는 모드와 무관하니 계산기의 공통 단계로 둔다 |
 
 기존 데이터 소급 없음 — rounds 문서가 없는 과거 라운드는 순위 계산에서 제외한다(라이브 운영 전이라 실손실 없음).
@@ -265,9 +265,7 @@ M4에서 모드별 원점수 규칙이 `GameModeDefinition.scoring`으로 옮겨
 | C | `scoring.ts`(settleRound·computeStandings) + 판정 배치에 tally increment + 종료 배치에 result | `feat/round-ledger-settle` | 머지 #34 (2026-09-16) |
 | D | 대기실 누적 순위 카드 + 종료 다이얼로그 정산 미리보기 | `feat/round-ledger-standings` | 머지 #35 (2026-09-16) |
 
-**M1 코드는 전부 main에 있다(#32~#35, 2026-09-16).** 남은 것은 사람 몫이다.
-
-**사용자 확인 필요 — 배포.** 머지는 배포가 아니다(CI 없음, `firebase deploy` 수동). 지금 main이 배포본에 실리기 전에 **rules를 먼저 배포**해야 한다: `npx -y firebase-tools@latest deploy --only firestore:rules --project photo-royale-scc` → 그다음 hosting. 이 순서를 어기면 배정 확정 배치(rounds 스냅샷 포함)가 전멸한다. 배포 뒤 방 1개로 2라운드를 돌려 순위 카드·정산 미리보기를 실측하는 것(§10.4 DoD)도 아직 안 했다.
+**M1 코드는 전부 main에 있고 2026-09-16 배포했다(#32~#35, rules → hosting 순서 준수).** 배포본에서 방 1개 3라운드 live-qa(TC 43건, P0 통과, 결함 0)로 §10.4 DoD를 닫았다. 배포 규칙은 그대로다 — rules 변경이 있는 PR은 rules를 먼저 배포한다(`npx -y firebase-tools@latest deploy --only firestore:rules --project photo-royale-scc` → hosting).
 
 ### 10.3 순서 (rules → 쓰기 3갈래 → 계산기 → 화면)
 

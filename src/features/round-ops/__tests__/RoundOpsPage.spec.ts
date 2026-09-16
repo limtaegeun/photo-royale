@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ref } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import type { RoundLedger } from '@/features/round-ledger'
 import type { Participant, RoomInfo, RoundState } from '@/features/waiting-room'
 import type { Notice } from '../api/notices'
 import type { Submission, SubmissionRecord } from '../api/submissions'
@@ -42,10 +43,13 @@ const resumeRoundMock = vi.fn<(code: string, remainingMs: number) => Promise<voi
 const adjustRoundMock =
   vi.fn<(code: string, status: string, remainingMs: number, deltaMs: number) => Promise<void>>()
 
+const subscribeLedgerMock =
+  vi.fn<(code: string, round: number, onChange: (ledger: RoundLedger | null) => void) => () => void>()
 vi.mock('@/features/round-ledger', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/features/round-ledger')>()),
-  // 원장 구독은 실제 Firestore 리스너라 막는다 — 이 스펙은 원장 없는 라운드(도입 전 배정)를 전제한다
-  subscribeToRoundLedger: () => () => {},
+  // 원장 구독은 실제 Firestore 리스너라 막는다 — 기본은 원장 없는 라운드(도입 전 배정) 전제
+  subscribeToRoundLedger: (code: string, round: number, onChange: (ledger: RoundLedger | null) => void) =>
+    subscribeLedgerMock(code, round, onChange),
   subscribeToRoundLedgers: () => () => {},
 }))
 
@@ -163,6 +167,11 @@ function captureSnapshotCallbacks() {
   let failSubmissions: (error: Error) => void = () => {}
   let deliverRecords: (records: SubmissionRecord[]) => void = () => {}
   let failRecords: (error: Error) => void = () => {}
+  let deliverLedger: (ledger: RoundLedger | null) => void = () => {}
+  subscribeLedgerMock.mockImplementation((_code, _round, onChange) => {
+    deliverLedger = onChange
+    return unsubscribeMock
+  })
   subscribeRoomMock.mockImplementation((_code, onChange) => {
     deliverRoom = onChange
     return unsubscribeMock
@@ -193,6 +202,7 @@ function captureSnapshotCallbacks() {
     submissionsError: (error: Error) => failSubmissions(error),
     records: (records: SubmissionRecord[]) => deliverRecords(records),
     recordsError: (error: Error) => failRecords(error),
+    ledger: (ledger: RoundLedger | null) => deliverLedger(ledger),
   }
 }
 
@@ -284,6 +294,7 @@ describe('RoundOpsPage', () => {
     sendNoticeMock.mockReset().mockResolvedValue(undefined)
     endGameMock.mockReset().mockResolvedValue(undefined)
     approveSubmissionMock.mockReset().mockResolvedValue(undefined)
+    subscribeLedgerMock.mockReset().mockReturnValue(() => {})
     rejectSubmissionMock.mockReset().mockResolvedValue(undefined)
     getSubmissionStatusFromServerMock.mockReset().mockResolvedValue('pending')
     subscribeSubmissionsMock.mockReset().mockReturnValue(unsubscribeMock)
@@ -1545,6 +1556,31 @@ describe('RoundOpsPage', () => {
       })
     })
 
+    /** 탈락 모델(P07 M3) — 원장 hits가 라이프에 닿은 팀은 대상에서 비활성화되고 배지가 붙는다 */
+    it('탈락한 팀은 대상 선택이 비활성화되고 탈락 배지가 붙는다', async () => {
+      const { deliver, wrapper } = await openJudgeTab()
+      deliver.ledger({
+        roundNo: 2,
+        mode: 'normal',
+        teams: { A: ['u1', 'u2'], B: ['u3'] },
+        xTeams: [],
+        confirmedAtMs: 0,
+        tally: null,
+        hits: { A: 1 },
+        result: null,
+      })
+      await flushPromises()
+      await wrapper.find('button[data-submission="s1"]').trigger('click')
+      await flushPromises()
+
+      const outTeam = document.body.querySelector<HTMLButtonElement>('button[data-team="A"]')!
+      expect(outTeam.disabled).toBe(true)
+      expect(outTeam.textContent).toContain('탈락')
+      outTeam.click()
+      await flushPromises()
+      expect(sheetButton('판정 확정')!.hasAttribute('disabled')).toBe(true)
+    })
+
     it('일반전이 아니면 낙오 포착 토글이 없다', async () => {
       const deliver = captureSnapshotCallbacks()
       const wrapper = mountPage()
@@ -1709,6 +1745,7 @@ describe('RoundOpsPage', () => {
 
     wrapper.unmount()
 
-    expect(unsubscribeMock).toHaveBeenCalledTimes(4)
+    // 방·명단·공지·판정 큐 + 라운드 원장(P07) = 5
+    expect(unsubscribeMock).toHaveBeenCalledTimes(5)
   })
 })

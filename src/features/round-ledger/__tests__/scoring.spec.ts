@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computeStandings, groupByTier, pointsForTier, rankTiers, settleRound } from '../scoring'
+import { aliveTeamCount, computeStandings, groupByTier, pointsForTier, rankTiers, settleRound, teamOutStatus } from '../scoring'
 import type { RoundLedger } from '../types'
 
 function ledger(overrides: Partial<RoundLedger> = {}): RoundLedger {
@@ -43,7 +43,11 @@ describe('rankTiers', () => {
 })
 
 describe('settleRound', () => {
-  it('팀 킬 ×10을 팀원 전원에게 동일 지급하고 등급·포인트를 낸다 — 기획 §예시 라운드 1', () => {
+  /**
+   * 일반전 = 킬 10·3배 30 + 생존 5(탈락 모델 M3: 맞은 횟수가 라이프에 닿으면 아웃, 아웃은 보너스 없음).
+   * 기획 §예시 라운드 1에서 A·B는 잡혀서(hits) 아웃, C만 생존이다.
+   */
+  it('팀 킬 ×10 + 생존 5를 팀원 전원에게 동일 지급하고 등급·포인트를 낸다 — 기획 §예시 라운드 1', () => {
     const settlement = settleRound(
       ledger({
         tally: {
@@ -51,35 +55,37 @@ describe('settleRound', () => {
           A: { kills: 1, tripleKills: 0 },
           B: { kills: 1, tripleKills: 0 },
         },
+        hits: { A: 1, B: 1 },
       }),
     )
 
-    expect(settlement.teamScores).toEqual({ A: 10, B: 10, C: 40 })
+    expect(settlement.teamScores).toEqual({ A: 10, B: 10, C: 45 })
     expect(settlement.playerScores).toEqual({
       하늘: 10,
       민재: 10,
       준호: 10,
       소율: 10,
-      서연: 40,
-      도윤: 40,
+      서연: 45,
+      도윤: 45,
     })
     expect(settlement.playerTiers).toEqual({ 서연: 1, 도윤: 1, 하늘: 2, 민재: 2, 준호: 2, 소율: 2 })
     expect(settlement.playerPoints).toEqual({ 서연: 10, 도윤: 10, 하늘: 7, 민재: 7, 준호: 7, 소율: 7 })
   })
 
-  it('킬이 없는 팀은 원점수 0, 등급 0, 참가점 1', () => {
-    const settlement = settleRound(ledger({ tally: { A: { kills: 2, tripleKills: 0 } } }))
+  it('킬 없이 잡힌 팀은 원점수 0, 등급 0, 참가점 1 — 킬 없이 살아남은 팀은 생존 5로 한 등급 위', () => {
+    const settlement = settleRound(ledger({ tally: { A: { kills: 2, tripleKills: 0 } }, hits: { B: 1 } }))
 
-    expect(settlement.teamScores).toEqual({ A: 20, B: 0, C: 0 })
-    expect(settlement.playerTiers.준호).toBe(0)
+    expect(settlement.teamScores).toEqual({ A: 25, B: 0, C: 5 })
+    expect(settlement.playerTiers).toEqual({ 하늘: 1, 민재: 1, 준호: 0, 소율: 0, 서연: 2, 도윤: 2 })
     expect(settlement.playerPoints.준호).toBe(1)
+    expect(settlement.playerPoints.서연).toBe(7)
   })
 
-  it('판정이 하나도 없으면(tally null) 전원 0점 → 전원 참가점 1', () => {
+  it('판정이 하나도 없으면(tally null) 전원 생존 5 → 전원 1등급 10포인트', () => {
     const settlement = settleRound(ledger())
 
-    expect(Object.values(settlement.teamScores)).toEqual([0, 0, 0])
-    expect(Object.values(settlement.playerPoints)).toEqual([1, 1, 1, 1, 1, 1])
+    expect(Object.values(settlement.teamScores)).toEqual([5, 5, 5])
+    expect(Object.values(settlement.playerPoints)).toEqual([10, 10, 10, 10, 10, 10])
   })
 
   it('편성 스냅샷에 없는 uid는 결과에 없다 — 집계에만 있는 완장도 무시한다', () => {
@@ -87,30 +93,49 @@ describe('settleRound', () => {
       ledger({ teams: { A: ['하늘'] }, tally: { A: { kills: 1, tripleKills: 0 }, Z: { kills: 5, tripleKills: 0 } } }),
     )
 
-    expect(settlement.teamScores).toEqual({ A: 10 })
+    expect(settlement.teamScores).toEqual({ A: 15 })
     expect(Object.keys(settlement.playerPoints)).toEqual(['하늘'])
   })
 
-  it('1인 팀도 동일 지급이라 팀 규모와 무관하게 킬 1 = +10', () => {
+  it('1인 팀도 동일 지급이라 팀 규모와 무관하게 킬 1 = +10 (생존 5 포함 15)', () => {
     const settlement = settleRound(
       ledger({ teams: { A: ['혼자'], B: ['둘', '이서'] }, tally: { A: { kills: 1, tripleKills: 0 }, B: { kills: 1, tripleKills: 0 } } }),
     )
 
-    expect(settlement.playerScores).toEqual({ 혼자: 10, 둘: 10, 이서: 10 })
+    expect(settlement.playerScores).toEqual({ 혼자: 15, 둘: 15, 이서: 15 })
     expect(settlement.playerTiers).toEqual({ 혼자: 1, 둘: 1, 이서: 1 })
+  })
+
+  it('1인 팀은 라이프가 2라 한 번 맞아도 생존 보너스를 받는다', () => {
+    const settlement = settleRound(ledger({ teams: { A: ['혼자'], B: ['둘', '이서'] }, hits: { A: 1, B: 1 } }))
+
+    expect(settlement.teamScores).toEqual({ A: 5, B: 0 })
   })
 })
 
 describe('settleRound — 모드 위임', () => {
   it('원장의 모드가 가진 scoring으로 원점수를 내고 등급·포인트만 붙인다', () => {
-    // 아직 자기 규칙이 없는 모드는 기본 킬 규칙이라 일반전과 같은 결과가 나온다(M4 전 동작 보존)
+    // 일반전은 생존 5가 붙고, 아직 자기 규칙이 없는 모드(그룹전)는 기본 킬 규칙뿐이다
     const base = ledger({ tally: { A: { kills: 1, tripleKills: 0 } } })
     const asNormal = settleRound({ ...base, mode: 'normal' })
     const asGroup = settleRound({ ...base, mode: 'group' })
 
-    expect(asGroup).toEqual(asNormal)
-    expect(asNormal.teamScores).toEqual({ A: 10, B: 0, C: 0 })
-    expect(asNormal.playerPoints).toEqual({ 하늘: 10, 민재: 10, 준호: 1, 소율: 1, 서연: 1, 도윤: 1 })
+    expect(asNormal.teamScores).toEqual({ A: 15, B: 5, C: 5 })
+    expect(asGroup.teamScores).toEqual({ A: 10, B: 0, C: 0 })
+    expect(asGroup.playerPoints).toEqual({ 하늘: 10, 민재: 10, 준호: 1, 소율: 1, 서연: 1, 도윤: 1 })
+  })
+})
+
+describe('teamOutStatus · aliveTeamCount (탈락 모델)', () => {
+  it('맞은 횟수가 라이프에 닿은 팀만 아웃이고 생존 팀 수를 센다 — 1인 팀은 라이프 2', () => {
+    const l = ledger({ teams: { A: ['하늘', '민재'], B: ['혼자'], C: ['서연', '도윤'] }, hits: { A: 1, B: 1 } })
+
+    expect(teamOutStatus(l)).toEqual({ A: true, B: false, C: false })
+    expect(aliveTeamCount(l)).toBe(2)
+  })
+
+  it('hits가 없으면 전원 생존', () => {
+    expect(aliveTeamCount(ledger())).toBe(3)
   })
 })
 
