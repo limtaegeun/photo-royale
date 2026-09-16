@@ -19,6 +19,7 @@ import {
 import { useToast } from '@/shared/composables/useToast'
 import { useAppHeader } from '@/shared/composables/useAppHeader'
 import KickableRosterChip from './components/KickableRosterChip.vue'
+import StandingsCard from './components/StandingsCard.vue'
 import { normalizeRoomCode, type Participant } from './api/rooms'
 import { hasPlayedRound } from './roundPlayMarker'
 import { useWaitingRoomStore } from './stores/useWaitingRoomStore'
@@ -50,6 +51,8 @@ const {
   gameStatus,
   isRoundLive,
   isRoundOver,
+  settledRoundCount,
+  standings,
 } = storeToRefs(store)
 
 /**
@@ -339,6 +342,15 @@ async function copyInviteLink() {
             </p>
           </div>
         </BaseCard>
+
+        <!-- 누적 순위(P07) — 정산이 끝난 라운드가 하나라도 있으면 전원에게 보인다. 배정 카드가
+             룸 카드를 대체하는 게스트에게도 보여야 하므로 뷰 분기 밖에 둔다. 배정 보드가 열리면
+             보드가 화면을 차지해야 하니 그때만 감춘다 -->
+        <StandingsCard
+          v-if="!showAssignmentBoard && settledRoundCount > 0"
+          :rows="standings"
+          :settled-round-count="settledRoundCount"
+        />
 
         <!-- 호스트: 팀 배정 보드(대기실 콘텐츠·하단 CTA를 대체) -->
         <AssignmentBoard
