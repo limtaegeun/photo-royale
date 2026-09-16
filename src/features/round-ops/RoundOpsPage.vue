@@ -17,6 +17,7 @@ import NoticeSheet from './components/NoticeSheet.vue'
 import RecordDetailSheet from './components/RecordDetailSheet.vue'
 import RecordLogList from './components/RecordLogList.vue'
 import RoundTimerCard from './components/RoundTimerCard.vue'
+import RoundSettlementCard from './components/RoundSettlementCard.vue'
 import TimeAdjustCard from './components/TimeAdjustCard.vue'
 import { useRoundTimer } from './composables/useRoundTimer'
 import { ROUND_STATE_LABEL, ROUND_STATE_TIME_CLASS, ROUND_STATE_TONE } from './roundStateStyles'
@@ -55,6 +56,7 @@ const {
   submissionListenError,
   recordListenError,
   isSendingNotice,
+  settlementPreview,
 } = storeToRefs(store)
 
 /** 운영 중인 방 코드 — 새로고침·딥링크에도 유지되도록 경로 파라미터에서 읽는다 */
@@ -457,17 +459,21 @@ onUnmounted(() => {
             </BaseButton>
           </div>
           <!-- 20분이 끝난 라운드는 여기서 닫고 대기실(재편성)로 넘긴다. 타이머 재시작 버튼을
-               두지 않는 이유는 isRoundEnded 주석 참조 -->
-          <BaseButton
-            v-else-if="isRoundEnded"
-            variant="primary"
-            size="lg"
-            class="w-full"
-            :loading="pendingAction === 'end'"
-            @click="requestFinishRound"
-          >
-            라운드 종료
-          </BaseButton>
+               두지 않는 이유는 isRoundEnded 주석 참조. 종료가 곧 정산 확정이라 미리보기(P07)를
+               버튼 위에 둔다 — 미판정 킬샷이 없으면 다이얼로그 없이 바로 닫히므로 여기 아니면
+               진행자가 확정될 값을 볼 자리가 없다 -->
+          <template v-else-if="isRoundEnded">
+            <RoundSettlementCard v-if="settlementPreview !== null" :groups="settlementPreview" />
+            <BaseButton
+              variant="primary"
+              size="lg"
+              class="w-full"
+              :loading="pendingAction === 'end'"
+              @click="requestFinishRound"
+            >
+              라운드 종료
+            </BaseButton>
+          </template>
           <BaseButton
             v-else
             variant="primary"

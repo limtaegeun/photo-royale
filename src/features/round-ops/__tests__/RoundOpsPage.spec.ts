@@ -42,6 +42,13 @@ const resumeRoundMock = vi.fn<(code: string, remainingMs: number) => Promise<voi
 const adjustRoundMock =
   vi.fn<(code: string, status: string, remainingMs: number, deltaMs: number) => Promise<void>>()
 
+vi.mock('@/features/round-ledger', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/round-ledger')>()),
+  // 원장 구독은 실제 Firestore 리스너라 막는다 — 이 스펙은 원장 없는 라운드(도입 전 배정)를 전제한다
+  subscribeToRoundLedger: () => () => {},
+  subscribeToRoundLedgers: () => () => {},
+}))
+
 vi.mock('../api/round', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/round')>()
   return {
