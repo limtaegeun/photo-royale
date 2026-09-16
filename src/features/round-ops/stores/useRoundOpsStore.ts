@@ -10,6 +10,7 @@ import {
   type RoomInfo,
   serverNow,
 } from '@/features/waiting-room'
+import { settleRound, subscribeToRoundLedger, type RoundLedger } from '@/features/round-ledger'
 import {
   NOTICE_TEXT_MAX_LENGTH,
   sendNotice,
@@ -85,6 +86,12 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
    * 없어, 화면이 구독 직후에 "아직 기록이 없어요"라는 확언을 띄우던 오표시를 막는다.
    */
   const recordsLoaded = ref(false)
+  /**
+   * 현재 차수의 라운드 원장(P07) — 판정 배치가 집계를 얹을지(문서 존재 여부)와 종료 시 정산의
+   * 입력이다. 원장 도입 전에 배정된 라운드는 문서가 없어 null — 그 라운드는 집계·정산 없이
+   * 기존 경로 그대로 판정·종료된다(없는 문서에 update를 얹으면 배치 전체가 실패한다).
+   */
+  const currentLedger = ref<RoundLedger | null>(null)
   /** −1분/+1분으로 쌓는 로컬 대기값 — '반영'을 눌러야 서버(참가자 전원)에 커밋된다 */
   const pendingAdjustMinutes = ref(0)
   const pendingAction = ref<RoundOpsAction | null>(null)
@@ -100,6 +107,7 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
   let unsubscribeNotice: (() => void) | null = null
   let unsubscribeSubmissions: (() => void) | null = null
   let unsubscribeRecords: (() => void) | null = null
+  let unsubscribeLedger: (() => void) | null = null
   let subscribedSubmissionRound: number | null = null
   /** leave/enter를 거친 이전 화면의 비동기 완료가 현재 화면 상태를 덮지 못하게 하는 세대값 */
   let sessionGeneration = 0
@@ -115,8 +123,24 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     if (subscribedSubmissionRound === roundNumber) return
 
     unsubscribeSubmissions?.()
+    unsubscribeLedger?.()
     pendingSubmissions.value = []
+    currentLedger.value = null
     subscribedSubmissionRound = roundNumber
+    // 원장은 판정 큐와 같은 차수를 따라간다. 구독 오류는 "원장 없음"과 같게 둔다 — 그 라운드는
+    // 집계·정산 없이 진행되고, 판정 큐 쪽 안내가 연결 문제를 이미 알린다.
+    unsubscribeLedger = subscribeToRoundLedger(
+      code,
+      roundNumber,
+      (ledger) => {
+        if (subscribedSubmissionRound !== roundNumber) return
+        currentLedger.value = ledger
+      },
+      () => {
+        if (subscribedSubmissionRound !== roundNumber) return
+        currentLedger.value = null
+      },
+    )
     unsubscribeSubmissions = subscribeToPendingSubmissions(
       code,
       roundNumber,
@@ -151,8 +175,11 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
       if (nextRoom === null) {
         unsubscribeSubmissions?.()
         unsubscribeSubmissions = null
+        unsubscribeLedger?.()
+        unsubscribeLedger = null
         subscribedSubmissionRound = null
         pendingSubmissions.value = []
+        currentLedger.value = null
         unsubscribeRecords?.()
         unsubscribeRecords = null
         submissionRecords.value = []
@@ -176,11 +203,13 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     unsubscribeNotice?.()
     unsubscribeSubmissions?.()
     unsubscribeRecords?.()
+    unsubscribeLedger?.()
     unsubscribeRoom = null
     unsubscribeParticipants = null
     unsubscribeNotice = null
     unsubscribeSubmissions = null
     unsubscribeRecords = null
+    unsubscribeLedger = null
     subscribedSubmissionRound = null
     roomCode.value = null
     room.value = null
@@ -189,6 +218,7 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     pendingSubmissions.value = []
     submissionRecords.value = []
     recordsLoaded.value = false
+    currentLedger.value = null
     pendingAdjustMinutes.value = 0
     pendingAction.value = null
     actionError.value = null
@@ -317,7 +347,12 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     ) {
       return false
     }
-    return runAction('end', () => endGame(roomCode.value!), false)
+    // 정산(P07)은 종료와 같은 배치에 실린다. 원장이 있는 라운드만 — 클릭 순간의 집계로 계산하고,
+    // 같은 차수를 재시작해 다시 종료하면 result를 덮어쓴다(마지막 종료가 정본).
+    const ledger = currentLedger.value
+    const settlement =
+      ledger === null ? undefined : { roundNo: ledger.roundNo, result: settleRound(ledger) }
+    return runAction('end', () => endGame(roomCode.value!, settlement), false)
   }
 
   /**
@@ -326,9 +361,18 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
    */
   async function approveSubmission(submissionId: string, target: SubmissionTarget) {
     if (!canWriteRound()) return false
+    // 원장 집계(P07)는 원장 문서가 있는 라운드에서만 같은 배치에 얹는다. 공격 완장은 큐의 킬샷
+    // 문서에서 읽는다 — 큐에 없는 제출(다른 기기가 먼저 판정해 빠진 경우)은 집계 없이 시도하고
+    // rules의 선판정 충돌로 실패한다(기존 경로).
+    const submission = pendingSubmissions.value.find((entry) => entry.id === submissionId)
+    const ledger = currentLedger.value
+    const tally =
+      ledger !== null && submission !== undefined && submission.round === ledger.roundNo
+        ? { roundNo: ledger.roundNo, attackerTeam: submission.team }
+        : undefined
     return runAction(
       'judge',
-      () => requestApproveSubmission(roomCode.value!, submissionId, target),
+      () => requestApproveSubmission(roomCode.value!, submissionId, target, tally),
       false,
     )
   }
@@ -386,6 +430,7 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     pendingSubmissions,
     submissionRecords,
     recordsLoaded,
+    currentLedger,
     pendingAdjustMinutes,
     pendingAction,
     isActionPending,
