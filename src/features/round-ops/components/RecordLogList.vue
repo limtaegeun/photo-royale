@@ -215,6 +215,8 @@ function roundGroupLabel(round: number): string {
                     <BaseBadge :team="displayGroup(record.targetTeam) ?? undefined">
                       {{ teamChipLabel(record.targetTeam) }}
                     </BaseBadge>
+                    <!-- 낙오 포착 킬(3배) — 점수가 다른 확정이라 기록에서도 구분한다(P07 M2) -->
+                    <BaseBadge v-if="record.multiplier === 3" tone="accent">3배</BaseBadge>
                   </template>
                 </span>
                 <span class="truncate text-label text-content">{{ participantName(participants, record.uid) }}</span>

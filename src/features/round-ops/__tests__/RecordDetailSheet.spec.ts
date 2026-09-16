@@ -30,6 +30,7 @@ function record(overrides: Partial<SubmissionRecord> = {}): SubmissionRecord {
     status: 'approved',
     createdAtMs: NOW,
     targetTeam: 'A',
+    multiplier: 1,
     judgedAtMs: NOW,
     ...overrides,
   }
@@ -77,6 +78,12 @@ describe('RecordDetailSheet', () => {
     expect(text).toContain('방금 판정')
     const photo = document.body.querySelector<HTMLImageElement>('img[alt="제출된 킬샷"]')!
     expect(photo.getAttribute('src')).toBe('data:image/jpeg;base64,killshot')
+  })
+
+  it('낙오 포착(배율 3) 확정은 잡힌 팀 옆에 3배 배지를 보여준다', async () => {
+    await mountSheet(record({ multiplier: 3 }))
+
+    expect(document.body.textContent).toContain('낙오 포착 3배')
   })
 
   it('반려 기록은 잡힌 팀 없이 반려 안내를 보여준다', async () => {

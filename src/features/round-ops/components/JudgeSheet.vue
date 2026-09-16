@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import BaseBadge from '@/shared/components/BaseBadge.vue'
 import BaseBottomSheet from '@/shared/components/BaseBottomSheet.vue'
 import BaseButton from '@/shared/components/BaseButton.vue'
+import BaseSwitch from '@/shared/components/BaseSwitch.vue'
 import {
   GROUP_LABELS,
   TEAM_GROUP_ORDER,
@@ -12,7 +13,7 @@ import {
   type TeamGroup,
 } from '@/features/team-assignment'
 import { isAssignedInRound, type Participant } from '@/features/waiting-room'
-import type { Submission, SubmissionTarget } from '../api/submissions'
+import type { KillMultiplier, Submission, SubmissionTarget } from '../api/submissions'
 import KillshotPhotoHeader from './KillshotPhotoHeader.vue'
 import { participantName } from '../submissionDisplay'
 
@@ -32,13 +33,18 @@ interface Props {
   judging: boolean
   /** 상대 시각 계산 기준 */
   nowMs: number
+  /**
+   * 낙오 포착(3배) 토글 노출 — 일반전에서만 true. 기획서 §3.1의 "낙오(팀원과 2m 이탈) 포착 킬 3배"는
+   * 일반전 규정이고, 사진으로 거리를 판별할 수 없어 호스트가 판정 시트에서 정한다(P07 M2).
+   */
+  allowTripleKill?: boolean
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), { allowTripleKill: false })
 
 const emit = defineEmits<{
-  /** 판정 확정 — 사진 속 완장의 팀 */
-  approve: [target: SubmissionTarget]
+  /** 판정 확정 — 사진 속 완장의 팀과 킬 배율(낙오 포착이면 3) */
+  approve: [target: SubmissionTarget, multiplier: KillMultiplier]
   /** 반려 — 사유 없음 */
   reject: []
 }>()
@@ -46,6 +52,8 @@ const emit = defineEmits<{
 const open = defineModel<boolean>('open', { default: false })
 
 const selectedTarget = ref<SubmissionTarget | null>(null)
+/** 낙오 포착 토글 — 킬샷마다 새로 정한다(기본 일반 킬). 노출되지 않는 모드에서는 무시된다 */
+const isTripleKill = ref(false)
 /** 확정/반려 중 어느 버튼이 눌렸는지 — 진행 표시를 눌린 버튼에만 준다 */
 const lastIntent = ref<'approve' | 'reject' | null>(null)
 
@@ -54,6 +62,7 @@ watch(
   () => props.submission?.id,
   () => {
     selectedTarget.value = null
+    isTripleKill.value = false
     lastIntent.value = null
   },
 )
@@ -138,7 +147,7 @@ function chooseTeam(option: TeamOption) {
 function handleApprove() {
   if (selectedTarget.value === null) return
   lastIntent.value = 'approve'
-  emit('approve', selectedTarget.value)
+  emit('approve', selectedTarget.value, props.allowTripleKill && isTripleKill.value ? 3 : 1)
 }
 
 function handleReject() {
@@ -213,6 +222,25 @@ function handleReject() {
             </li>
           </ul>
         </section>
+      </div>
+
+      <!-- 낙오 포착(3배) — 일반전에서만. 보이는 텍스트가 라벨이라 스위치 aria-label도 같은 문구 -->
+      <div
+        v-if="allowTripleKill"
+        class="flex items-center justify-between gap-4 rounded-md border border-stroke bg-surface px-4 py-3"
+      >
+        <div class="min-w-0">
+          <p class="text-label text-content">낙오 포착 킬 (3배)</p>
+          <p class="mt-1 text-caption break-keep text-content-secondary">
+            팀원과 2m 넘게 떨어진 사람을 찍었으면 켜 주세요. 10점 대신 30점이에요.
+          </p>
+        </div>
+        <BaseSwitch
+          v-model="isTripleKill"
+          label="낙오 포착 킬 (3배)"
+          :disabled="judging"
+          data-testid="triple-kill-switch"
+        />
       </div>
 
       <div class="grid grid-cols-2 gap-3">

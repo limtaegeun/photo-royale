@@ -31,6 +31,7 @@ function record(id: string, overrides: Partial<SubmissionRecord> = {}): Submissi
     status: 'pending',
     createdAtMs: NOW,
     targetTeam: null,
+    multiplier: 1,
     judgedAtMs: null,
     ...overrides,
   }
@@ -93,6 +94,15 @@ describe('RecordLogList', () => {
     expect(wrapper.text()).toContain('팀 B · 주황')
     expect(wrapper.text()).toContain('팀 A · 파랑')
     expect(wrapper.find('button[data-record="r1"]').text()).toContain('확정')
+    expect(wrapper.text()).not.toContain('3배')
+  })
+
+  it('낙오 포착(배율 3) 확정 건은 3배 배지를 병기한다', () => {
+    const wrapper = mountList([
+      record('r1', { status: 'approved', targetTeam: 'A', multiplier: 3, judgedAtMs: NOW }),
+    ])
+
+    expect(wrapper.find('button[data-record="r1"]').text()).toContain('3배')
   })
 
   it('상태 필터로 반려만 남긴다', async () => {

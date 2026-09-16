@@ -115,6 +115,8 @@ const STATUS_DESCRIPTION: Partial<Record<SubmissionStatus, string>> = {
             <BaseBadge :team="displayGroup(record.targetTeam) ?? undefined">
               {{ teamChipLabel(record.targetTeam) }}
             </BaseBadge>
+            <!-- 낙오 포착 킬(3배) — 일반 킬 10점 대신 30점으로 정산된 확정(P07 M2) -->
+            <BaseBadge v-if="record.multiplier === 3" tone="accent">낙오 포착 3배</BaseBadge>
           </div>
           <p
             v-if="memberNames(record.targetTeam) !== ''"
