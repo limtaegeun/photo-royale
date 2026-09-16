@@ -1,6 +1,7 @@
 import { doc, writeBatch } from 'firebase/firestore'
 import { db } from '@/shared/api/firebase'
 import type { GameModeId } from '@/features/game-mode'
+import { addRoundSnapshotToBatch } from '@/features/round-ledger'
 
 /** 확정된 팀의 한 멤버에게 쓸 이월값 */
 export interface ConfirmedMemberWrite {
@@ -19,7 +20,7 @@ export interface ConfirmedTeamWrite {
 /**
  * 배정 확정 — 단일 writeBatch로 원자 커밋한다. 참가자마다 team(완장)·isXTeam·이월값을 쓰고
  * isReady를 false로 리셋(라운드마다 재레디), 방 문서 assignmentRound를 올리며 이번 차수의
- * 모드를 roundModes 이력에 남긴다.
+ * 모드를 roundModes 이력에 남기고, 라운드 원장(rounds/{차수})에 편성 스냅샷을 만든다.
  * 드래프트 단계에선 아무것도 쓰지 않으므로 재배정을 몇 번 돌려도 이력이 오염되지 않는다.
  *
  * @param code      방 초대 코드(= 방 문서 ID)
@@ -59,6 +60,21 @@ export async function confirmAssignment(
     // dot-path로 해당 차수 키만 병합한다 — 맵을 통째로 쓰면 과거 차수를 지울 위험이 있다.
     [`roundModes.${nextRound}`]: gameMode,
   })
+
+  // 점수 정산(P07)의 귀속 근거 — 참가자 문서의 team은 다음 배정에 덮어써지므로 "이 차수의 팀 A는
+  // 누구였나"를 여기서 굳힌다. rules가 문서 ID·모드를 이 배치의 방 문서 갱신과 대조하므로
+  // 같은 배치여야 한다(rules 배포가 앱보다 먼저여야 하는 이유이기도 하다).
+  addRoundSnapshotToBatch(
+    batch,
+    code,
+    nextRound,
+    gameMode,
+    teams.map((team) => ({
+      armband: team.armband,
+      isXTeam: team.isXTeam,
+      memberIds: team.members.map((member) => member.id),
+    })),
+  )
 
   await batch.commit()
 }
