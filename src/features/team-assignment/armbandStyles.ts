@@ -8,7 +8,7 @@
  * 색만으로 의미를 전달하지 않는다는 규칙(DESIGN_SYSTEM §3-6)에 따라, 이 클래스를 쓰는 곳은
  * 항상 GROUP_LABELS의 한글/영문 라벨을 함께 노출해야 한다.
  */
-import { GROUP_LABELS, groupForArmband, type TeamGroup } from './armbands'
+import { GROUP_LABELS, groupForArmband, type TeamGroup } from '@/features/game-mode'
 
 /** 인라인 텍스트로 쓰는 그룹 색 */
 const GROUP_TEXT = {

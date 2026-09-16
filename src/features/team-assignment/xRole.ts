@@ -1,4 +1,4 @@
-import { groupForArmband } from './armbands'
+import { groupForArmband } from '@/features/game-mode'
 
 /**
  * X 모듈 — 그룹마다 팀 중 1팀을 랜덤 선정해 특수 완장 X를 겸하게 한다(왕잡기에선 X가 왕).

@@ -1,16 +1,8 @@
 // 외부에 공개하는 것만 re-export한다. 팀 배정은 순수 함수 + 타입 + 호스트 드래프트 스토어를 노출한다.
 export { assignTeams, deriveCarryover, MIN_TEAM_CANDIDATES } from './teamAssignment'
 export type { TeamCandidate, AssignedTeam, TeamAssignmentResult } from './teamAssignment'
-export {
-  TEAM_GROUP_ORDER,
-  ARMBAND_LABELS,
-  SPECIAL_ARMBAND,
-  GROUP_LABELS,
-  MAX_ASSIGNABLE_MEMBERS,
-  armbandForTeamIndex,
-  groupForArmband,
-} from './armbands'
-export type { TeamGroup } from './armbands'
+// 완장 → 그룹 색 규칙(TeamGroup·groupForArmband·GROUP_LABELS)은 game-mode가 소유한다
+export { ARMBAND_LABELS, MAX_ASSIGNABLE_MEMBERS, armbandForTeamIndex } from './armbands'
 // 완장 → 그룹 색 유틸리티 클래스 매핑의 단일 소스 — 그룹 색을 쓰는 모든 화면이 여기서 가져간다
 export {
   displayGroup,

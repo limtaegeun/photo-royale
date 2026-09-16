@@ -6,7 +6,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Gender } from '@/features/auth'
-import { GROUP_LABELS, displayGroup, groupSolidBorderClass } from '@/features/team-assignment'
+import { GROUP_LABELS } from '@/features/game-mode'
+import { displayGroup, groupSolidBorderClass } from '@/features/team-assignment'
 
 interface Props {
   name: string

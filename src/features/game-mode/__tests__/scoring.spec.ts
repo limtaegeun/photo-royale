@@ -1,5 +1,17 @@
 import { describe, it, expect } from 'vitest'
-import { applyTeamScale, distributeToPlayers, isTeamOut, killScoreOf, killScoring, livesOf, normalScoring, teamScaleOf } from '../scoring'
+import {
+  applyTeamScale,
+  distributeToPlayers,
+  groupAssistScoreOf,
+  groupScoring,
+  isTeamOut,
+  killCountOf,
+  killScoreOf,
+  killScoring,
+  livesOf,
+  normalScoring,
+  teamScaleOf,
+} from '../scoring'
 import { GAME_MODES } from '../registry'
 
 const TEAMS = { A: ['하늘', '민재'], B: ['준호'], C: ['서연', '도윤'] }
@@ -86,5 +98,40 @@ describe('1인 팀 보정 (규칙서: 목숨과 포인트가 2배)', () => {
 
     expect(output.teamScores.B).toBe(80)
     expect(output.playerScores.준호).toBe(80)
+  })
+})
+
+describe('그룹전 (P07 §4.3)', () => {
+  /** A·E = 파랑 그룹, B = 주황, C = 초록 — 그룹 동료가 있는 팀은 A·E뿐 */
+  const GROUP_TEAMS = { A: ['하늘', '민재'], E: ['지우'], B: ['준호'], C: ['서연', '도윤'] }
+
+  it('killCountOf는 배율과 무관한 킬 건수다', () => {
+    expect(killCountOf({ A: { kills: 2, tripleKills: 1 } }, 'A')).toBe(3)
+    expect(killCountOf({}, 'A')).toBe(0)
+  })
+
+  it('그룹 동료 킬은 같은 그룹 다른 팀의 킬 건수 × 5 — 자기 킬과 다른 그룹 킬은 세지 않는다', () => {
+    const tally = { A: { kills: 2, tripleKills: 0 }, E: { kills: 1, tripleKills: 0 }, B: { kills: 3, tripleKills: 0 } }
+    expect(groupAssistScoreOf({ teams: GROUP_TEAMS, tally }, 'A')).toBe(5)
+    expect(groupAssistScoreOf({ teams: GROUP_TEAMS, tally }, 'E')).toBe(10)
+    expect(groupAssistScoreOf({ teams: GROUP_TEAMS, tally }, 'B')).toBe(0)
+    expect(groupAssistScoreOf({ teams: GROUP_TEAMS, tally }, 'C')).toBe(0)
+  })
+
+  it('내 킬 10 + 동료 킬 5를 팀원 각자에게 — 직접 킬한 팀이 동료보다 위, 생존 보너스는 없다', () => {
+    const output = groupScoring({
+      teams: GROUP_TEAMS,
+      xTeams: [],
+      tally: { A: { kills: 2, tripleKills: 0 } },
+      hits: { B: 1 },
+    })
+
+    // A 20(내 킬 2건) · E 20(동료 킬 2건 × 5 = 10, 1인 팀 2배) · B 0(아웃이어도 감점 없음) · C 0(생존해도 보너스 없음)
+    expect(output.teamScores).toEqual({ A: 20, E: 20, B: 0, C: 0 })
+    expect(output.playerScores).toEqual({ 하늘: 20, 민재: 20, 지우: 20, 준호: 0, 서연: 0, 도윤: 0 })
+  })
+
+  it('레지스트리의 그룹전 정의가 이 규칙을 쓴다', () => {
+    expect(GAME_MODES.group.scoring).toBe(groupScoring)
   })
 })

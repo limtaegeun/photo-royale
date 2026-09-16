@@ -3,6 +3,7 @@
  * 각 모드 파일의 scoring이 이것들로 자기 규칙을 조립한다. 등급·포인트 변환은 여기 없다
  * (모드와 무관한 공통 단계라 round-ledger가 맡는다).
  */
+import { isSameGroup } from './armbandGroups'
 import type { ModeScoringInput, ModeScoringOutput } from './types'
 
 /** 킬 1건의 원점수 — 기획서의 3배(+30)·2배(+20)에서 역산한 확정값 */
@@ -14,6 +15,28 @@ export const TRIPLE_KILL_POINTS = 30
 export function killScoreOf(tally: ModeScoringInput['tally'], armband: string): number {
   const entry = tally[armband]
   return (entry?.kills ?? 0) * KILL_POINTS + (entry?.tripleKills ?? 0) * TRIPLE_KILL_POINTS
+}
+
+/** 공격 완장 1개의 킬 건수 — 배율과 무관하게 잡은 횟수(그룹 동료 킬은 건수로 센다) */
+export function killCountOf(tally: ModeScoringInput['tally'], armband: string): number {
+  const entry = tally[armband]
+  return (entry?.kills ?? 0) + (entry?.tripleKills ?? 0)
+}
+
+/**
+ * 같은 그룹 다른 팀의 킬 1건 — 그룹원 각자에게(P07 §4.3, 결정 2). 직접 킬한 팀(10)이 그룹 동료(5)보다
+ * 한 등급 위에 서도록 킬 점수의 절반이다. 그룹전·왕잡기가 쓴다.
+ */
+export const GROUP_ASSIST_POINTS = 5
+
+/** 완장 1개의 그룹 동료 킬 원점수 — 같은 그룹의 다른 완장이 올린 킬 건수 × 5. 자기 킬은 제외 */
+export function groupAssistScoreOf(input: Pick<ModeScoringInput, 'teams' | 'tally'>, armband: string): number {
+  let assists = 0
+  for (const other of Object.keys(input.teams)) {
+    if (other === armband || !isSameGroup(armband, other)) continue
+    assists += killCountOf(input.tally, other)
+  }
+  return assists * GROUP_ASSIST_POINTS
 }
 
 /**
@@ -94,6 +117,19 @@ export function normalScoring(input: ModeScoringInput): ModeScoringOutput {
   const raw: Record<string, number> = {}
   for (const armband of Object.keys(input.teams)) {
     raw[armband] = killScoreOf(input.tally, armband) + survivalScoreOf(input, armband)
+  }
+  const teamScores = applyTeamScale(input.teams, raw)
+  return { teamScores, playerScores: distributeToPlayers(input.teams, teamScores) }
+}
+
+/**
+ * 그룹전(P07 §4.3) — 내 팀 킬 10 · 같은 그룹 다른 팀의 킬 5, 팀원 각자에게. 생존 보너스는 없다
+ * (결정 5는 일반전·꼬리잡기 한정). 1인 팀은 2배.
+ */
+export function groupScoring(input: ModeScoringInput): ModeScoringOutput {
+  const raw: Record<string, number> = {}
+  for (const armband of Object.keys(input.teams)) {
+    raw[armband] = killScoreOf(input.tally, armband) + groupAssistScoreOf(input, armband)
   }
   const teamScores = applyTeamScale(input.teams, raw)
   return { teamScores, playerScores: distributeToPlayers(input.teams, teamScores) }

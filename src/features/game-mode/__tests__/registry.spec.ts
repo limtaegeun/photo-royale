@@ -58,13 +58,25 @@ describe('game-mode registry', () => {
     expect(rules.every((rule) => rule.kind === 'static')).toBe(true)
   })
 
-  it('게임플레이가 구현된 일반전(normal)만 available이고, 나머지 7종은 미구현이라 비활성이다', () => {
+  it('게임플레이가 구현된 일반전·그룹전만 available이고, 나머지 6종은 미구현이라 비활성이다', () => {
     expect(GAME_MODES.normal.available).toBe(true)
+    expect(GAME_MODES.group.available).toBe(true)
 
-    const otherIds = GAME_MODE_IDS.filter((id) => id !== 'normal')
-    expect(otherIds).toHaveLength(7)
+    const otherIds = GAME_MODE_IDS.filter((id) => id !== 'normal' && id !== 'group')
+    expect(otherIds).toHaveLength(6)
     for (const id of otherIds) {
       expect(GAME_MODES[id].available).toBe(false)
+    }
+  })
+
+  it('그룹전만 대상 제한을 가진다 — 같은 그룹은 잡을 수 없고 다른 그룹은 잡을 수 있다', () => {
+    const targeting = GAME_MODES.group.targeting!
+    expect(targeting.blockedBadge).toBe('같은 그룹')
+    expect(targeting.canTarget('B', 'F')).toBe(false)
+    expect(targeting.canTarget('B', 'A')).toBe(true)
+
+    for (const id of GAME_MODE_IDS.filter((id) => id !== 'group')) {
+      expect(GAME_MODES[id].targeting).toBeUndefined()
     }
   })
 

@@ -4,14 +4,8 @@ import BaseBadge from '@/shared/components/BaseBadge.vue'
 import BaseBottomSheet from '@/shared/components/BaseBottomSheet.vue'
 import BaseButton from '@/shared/components/BaseButton.vue'
 import BaseSwitch from '@/shared/components/BaseSwitch.vue'
-import {
-  GROUP_LABELS,
-  TEAM_GROUP_ORDER,
-  displayGroup,
-  groupSolidBgClass,
-  groupTextClass,
-  type TeamGroup,
-} from '@/features/team-assignment'
+import { GROUP_LABELS, TEAM_GROUP_ORDER, type TeamGroup, type TargetRule } from '@/features/game-mode'
+import { displayGroup, groupSolidBgClass, groupTextClass } from '@/features/team-assignment'
 import { isAssignedInRound, type Participant } from '@/features/waiting-room'
 import type { KillMultiplier, Submission, SubmissionTarget } from '../api/submissions'
 import KillshotPhotoHeader from './KillshotPhotoHeader.vue'
@@ -43,9 +37,18 @@ interface Props {
    * 바꾸지 않으므로 선택을 막고 배지로 알린다. 원장이 없는 라운드면 빈 배열.
    */
   outTeams?: string[]
+  /**
+   * 모드의 대상 제한(P07 M4) — 제출 팀이 잡을 수 없는 팀(그룹전의 같은 그룹 동맹)을 비활성화하고
+   * 이유 배지를 붙인다. 제한이 없는 모드면 null.
+   */
+  targetRule?: TargetRule | null
 }
 
-const props = withDefaults(defineProps<Props>(), { allowTripleKill: false, outTeams: () => [] })
+const props = withDefaults(defineProps<Props>(), {
+  allowTripleKill: false,
+  outTeams: () => [],
+  targetRule: null,
+})
 
 const emit = defineEmits<{
   /** 판정 확정 — 사진 속 완장의 팀과 킬 배율(낙오 포착이면 3) */
@@ -82,6 +85,13 @@ interface TeamOption {
   isSubmitterTeam: boolean
   /** 이미 탈락한 팀 — 또 잡은 판정은 성립하지 않아 비활성화한다(P07 M3) */
   isOut: boolean
+  /** 모드 규칙상 제출 팀이 잡을 수 없는 팀(그룹전의 동맹) — 비활성화하고 이유 배지를 붙인다(P07 M4) */
+  isBlockedTarget: boolean
+}
+
+/** 제출 팀·탈락·모드 제한 중 하나라도 걸리면 선택할 수 없다 */
+function isUnselectable(option: TeamOption): boolean {
+  return option.isSubmitterTeam || option.isOut || option.isBlockedTarget
 }
 
 interface GroupSection {
@@ -117,6 +127,11 @@ const groupSections = computed<GroupSection[]>(() => {
         participantUid: members.participantUid,
         isSubmitterTeam: armband === props.submission?.team,
         isOut: props.outTeams.includes(armband),
+        isBlockedTarget:
+          props.targetRule !== null &&
+          props.submission !== null &&
+          armband !== props.submission.team &&
+          !props.targetRule.canTarget(props.submission.team, armband),
       }))
     const firstTeam = teams[0]
     return {
@@ -141,14 +156,14 @@ const OPTION_CLASS = {
 } as const
 
 function optionClass(option: TeamOption): string {
-  if (option.isSubmitterTeam || option.isOut) return OPTION_CLASS.disabled
+  if (isUnselectable(option)) return OPTION_CLASS.disabled
   return selectedTarget.value?.team === option.armband
     ? OPTION_CLASS.selected
     : OPTION_CLASS.selectable
 }
 
 function chooseTeam(option: TeamOption) {
-  if (option.isSubmitterTeam || option.isOut || props.judging) return
+  if (isUnselectable(option) || props.judging) return
   selectedTarget.value = { team: option.armband, participantUid: option.participantUid }
 }
 
@@ -196,8 +211,8 @@ function handleReject() {
                 type="button"
                 :data-team="option.armband"
                 :aria-pressed="selectedTarget?.team === option.armband"
-                :disabled="option.isSubmitterTeam || option.isOut || judging"
-                :aria-disabled="option.isSubmitterTeam || option.isOut || judging"
+                :disabled="isUnselectable(option) || judging"
+                :aria-disabled="isUnselectable(option) || judging"
                 class="flex min-h-(--pr-size-control-md) w-full items-center gap-3 rounded-md
                        px-4 py-2 text-left transition-colors duration-100 ease-standard
                        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand
@@ -213,13 +228,13 @@ function handleReject() {
                 ></span>
                 <span
                   class="shrink-0 text-label"
-                  :class="option.isSubmitterTeam || option.isOut ? 'text-content-disabled' : 'text-content'"
+                  :class="isUnselectable(option) ? 'text-content-disabled' : 'text-content'"
                 >
                   팀 {{ option.armband }}
                 </span>
                 <span
                   class="min-w-0 flex-1 truncate text-caption"
-                  :class="option.isSubmitterTeam || option.isOut ? 'text-content-disabled' : 'text-content-secondary'"
+                  :class="isUnselectable(option) ? 'text-content-disabled' : 'text-content-secondary'"
                 >
                   {{ option.memberNames }}
                 </span>
@@ -228,6 +243,14 @@ function handleReject() {
                 </BaseBadge>
                 <BaseBadge v-else-if="option.isOut" tone="danger" appearance="outline" class="shrink-0">
                   탈락
+                </BaseBadge>
+                <BaseBadge
+                  v-else-if="option.isBlockedTarget"
+                  tone="neutral"
+                  appearance="outline"
+                  class="shrink-0"
+                >
+                  {{ targetRule?.blockedBadge }}
                 </BaseBadge>
               </button>
             </li>

@@ -1581,6 +1581,43 @@ describe('RoundOpsPage', () => {
       expect(sheetButton('판정 확정')!.hasAttribute('disabled')).toBe(true)
     })
 
+    /** 그룹전(P07 M4) — 제출 팀과 같은 색 그룹은 동맹이라 대상에서 비활성화되고 '같은 그룹' 배지가 붙는다 */
+    it('그룹전에서는 제출 팀과 같은 그룹 팀을 고를 수 없고, 다른 그룹은 고를 수 있다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      deliver.room(hostRoom({ round: running(), gameMode: 'group' }))
+      // 제출 팀 B(주황)와 같은 그룹 F(주황), 다른 그룹 A(파랑)
+      deliver.participants([assigned('u1', 'A'), assigned('u2', 'F'), assigned('u3', 'B')])
+      deliver.submissions([pendingSubmission()])
+      await flushPromises()
+      await wrapper.find('[data-value="judge"]').trigger('click')
+      await wrapper.find('button[data-submission="s1"]').trigger('click')
+      await flushPromises()
+
+      const allyTeam = document.body.querySelector<HTMLButtonElement>('button[data-team="F"]')!
+      expect(allyTeam.disabled).toBe(true)
+      expect(allyTeam.textContent).toContain('같은 그룹')
+      const enemyTeam = document.body.querySelector<HTMLButtonElement>('button[data-team="A"]')!
+      expect(enemyTeam.disabled).toBe(false)
+      expect(enemyTeam.textContent).not.toContain('같은 그룹')
+
+      enemyTeam.click()
+      await flushPromises()
+      expect(sheetButton('판정 확정')!.hasAttribute('disabled')).toBe(false)
+    })
+
+    it('일반전에서는 같은 그룹 팀도 고를 수 있다 — 대상 제한은 모드가 정한다', async () => {
+      const { deliver, wrapper } = await openJudgeTab()
+      deliver.participants([assigned('u1', 'A'), assigned('u2', 'F'), assigned('u3', 'B')])
+      await flushPromises()
+      await wrapper.find('button[data-submission="s1"]').trigger('click')
+      await flushPromises()
+
+      const sameGroupTeam = document.body.querySelector<HTMLButtonElement>('button[data-team="F"]')!
+      expect(sameGroupTeam.disabled).toBe(false)
+      expect(sameGroupTeam.textContent).not.toContain('같은 그룹')
+    })
+
     it('일반전이 아니면 낙오 포착 토글이 없다', async () => {
       const deliver = captureSnapshotCallbacks()
       const wrapper = mountPage()
