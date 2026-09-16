@@ -1,4 +1,5 @@
 import type { GameModeDefinition } from '../types'
+import { killScoring } from '../scoring'
 
 /** 꼼꼬미 — 술래를 피해 숨고 꼼꼬미 QR로 확정 생존하는 숨바꼭질 × 포토 게임 */
 export const kkomkkomiMode: GameModeDefinition = {
@@ -13,5 +14,7 @@ export const kkomkkomiMode: GameModeDefinition = {
       caption: '술래의 촬영 시각이 내 스캔 시각보다 빠르면 아웃입니다.',
     },
   ],
+  // 자기 원점수 규칙이 아직 없다 — 기본 킬 규칙(M4에서 교체)
+  scoring: killScoring,
   available: false,
 }

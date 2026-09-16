@@ -1,4 +1,5 @@
 import type { GameModeDefinition } from '../types'
+import { killScoring } from '../scoring'
 
 /** 꼬리잡기 — 알파벳 상성으로 바로 다음 완장만 사냥하는 꼬리물기 */
 export const tailChaseMode: GameModeDefinition = {
@@ -14,5 +15,7 @@ export const tailChaseMode: GameModeDefinition = {
     },
     { kind: 'static', text: '잡히면 완장을 떼고 잡은 팀의 꼬리로 편입됩니다.' },
   ],
+  // 자기 원점수 규칙이 아직 없다 — 기본 킬 규칙(M4에서 교체)
+  scoring: killScoring,
   available: false,
 }

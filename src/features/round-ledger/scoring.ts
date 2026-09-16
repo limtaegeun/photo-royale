@@ -3,16 +3,11 @@
  * 낸다. 전부 순수 함수다(쓰기는 api/rounds.ts, 화면은 각 feature).
  *
  * 기획 docs/plans/p07-round-scoring.md §3 — 라운드 안은 원점수, 라운드 사이는 등급 포인트.
- * M1은 일반전 킬 +10(낙오 3배 킬 +30은 tally.tripleKills로 이미 분리 집계돼 여기서 합산)만
- * 안다. 모드별 원점수 규칙(그룹 확산·왕 배율·생존)은 M4에서 GameModeDefinition.scoring으로
- * 옮기고, 등급·포인트 단계는 모드와 무관하니 여기 남는다.
+ * 원점수 규칙은 모드가 소유한다(GameModeDefinition.scoring — 모드 1개 = 파일 1개). 여기는
+ * 모드와 무관한 등급·포인트 단계와 누적 순위만 맡는다.
  */
-import type { ArmbandMap, RoundLedger, RoundResult } from './types'
-
-/** 킬 1건의 원점수 — 기획서의 3배(+30)·2배(+20)에서 역산한 확정값 */
-export const KILL_POINTS = 10
-/** 낙오(팀원과 2m 이탈) 포착 킬 — 판정 시트 토글로 호스트가 정한다(M2) */
-export const TRIPLE_KILL_POINTS = 30
+import { GAME_MODES } from '@/features/game-mode'
+import type { RoundLedger, RoundResult } from './types'
 
 /**
  * 등급 → 포인트(결정 8). 인덱스 = 등급 - 1. 표 밖의 등급(5등급 이하)은 TIER_FLOOR_POINTS,
@@ -48,19 +43,16 @@ export function rankTiers(playerScores: Record<string, number>): Record<string, 
 }
 
 /**
- * 라운드 정산 — 원장의 편성 스냅샷과 집계로 팀 원점수·개인 원점수·등급·포인트를 낸다.
- * 팀 원점수는 팀원 전원에게 동일 지급한다(결정: 나누지 않는다 — 1인 팀에 중립).
- * 스냅샷에 없는 uid는 결과에 없다(= 그 라운드 0포인트, 결정 11).
+ * 라운드 정산 — 원장의 모드가 가진 원점수 규칙으로 팀·개인 원점수를 낸 뒤 등급·포인트를 붙인다.
+ * 개인 귀속(동일 지급·스냅샷 밖 uid 제외)은 모드 규칙의 몫이라 여기서 다시 손대지 않는다.
  */
 export function settleRound(ledger: RoundLedger): RoundSettlement {
-  const teamScores: ArmbandMap<number> = {}
-  const playerScores: Record<string, number> = {}
-  for (const [armband, memberIds] of Object.entries(ledger.teams)) {
-    const tally = ledger.tally?.[armband]
-    const score = (tally?.kills ?? 0) * KILL_POINTS + (tally?.tripleKills ?? 0) * TRIPLE_KILL_POINTS
-    teamScores[armband] = score
-    for (const uid of memberIds) playerScores[uid] = score
-  }
+  const { teamScores, playerScores } = GAME_MODES[ledger.mode].scoring({
+    teams: ledger.teams,
+    xTeams: ledger.xTeams,
+    tally: ledger.tally ?? {},
+    hits: ledger.hits ?? {},
+  })
   const playerTiers = rankTiers(playerScores)
   const playerPoints: Record<string, number> = {}
   for (const [uid, tier] of Object.entries(playerTiers)) playerPoints[uid] = pointsForTier(tier)

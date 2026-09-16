@@ -1,4 +1,5 @@
 import type { GameModeDefinition } from '../types'
+import { killScoring } from '../scoring'
 
 /** 일반전 — 2인 1조 기본 생존 서바이벌. 유일하게 게임플레이가 구현된 모드다. */
 export const normalMode: GameModeDefinition = {
@@ -10,5 +11,7 @@ export const normalMode: GameModeDefinition = {
     { kind: 'group' },
     { kind: 'static', text: '상대 완장 알파벳을 찍어 제출하세요.' },
   ],
+  // 일반전 원점수(P07 §4.1) — 팀 킬 10 · 낙오 포착 킬 30, 팀원 각자에게. 생존 +5는 M3.
+  scoring: killScoring,
   available: true,
 }

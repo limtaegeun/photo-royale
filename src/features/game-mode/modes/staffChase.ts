@@ -1,4 +1,5 @@
 import type { GameModeDefinition } from '../types'
+import { killScoring } from '../scoring'
 
 /** 스태프 추격전 — 참가자 전원이 동맹이 되어 사냥꾼(스태프)을 피하는 협동 도망 모드 */
 export const staffChaseMode: GameModeDefinition = {
@@ -9,5 +10,7 @@ export const staffChaseMode: GameModeDefinition = {
     { kind: 'static', text: '모든 참가자는 동맹입니다. 사냥꾼(스태프)을 피해 생존하세요.' },
     { kind: 'static', text: '제한 시간까지 생존한 인원에 비례해 전체 점수를 얻습니다.' },
   ],
+  // 자기 원점수 규칙이 아직 없다 — 기본 킬 규칙(M4에서 교체)
+  scoring: killScoring,
   available: false,
 }

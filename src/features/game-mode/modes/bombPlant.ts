@@ -1,4 +1,5 @@
 import type { GameModeDefinition } from '../types'
+import { killScoring } from '../scoring'
 
 /** 폭탄설치전 — 거점 A·B의 QR을 두고 공격/수비가 겨루는 점령전 */
 export const bombPlantMode: GameModeDefinition = {
@@ -17,5 +18,7 @@ export const bombPlantMode: GameModeDefinition = {
       text: '하나라도 폭파되면 공격 승리, 전원 아웃되거나 무폭파면 수비 승리입니다.',
     },
   ],
+  // 자기 원점수 규칙이 아직 없다 — 기본 킬 규칙(M4에서 교체)
+  scoring: killScoring,
   available: false,
 }
