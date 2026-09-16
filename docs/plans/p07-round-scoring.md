@@ -263,9 +263,11 @@ M4에서 모드별 원점수 규칙이 `GameModeDefinition.scoring`으로 옮겨
 | A | rules `match /rounds/{roundNo}` 3갈래 + `round-ledger` 타입·필드명 + rules 동기화 가드 스펙 + TestRuleset 매트릭스 | `feat/round-ledger-rules` | 머지 #32 (2026-09-16) |
 | B | `round-ledger/api/rounds.ts`(문서 참조·구독·스냅샷 쓰기) + 배정 확정 배치에 편성 스냅샷 | `feat/round-ledger-snapshot` | 머지 #33 (2026-09-16) |
 | C | `scoring.ts`(settleRound·computeStandings) + 판정 배치에 tally increment + 종료 배치에 result | `feat/round-ledger-settle` | 머지 #34 (2026-09-16) |
-| D | 대기실 누적 순위 카드 + 종료 다이얼로그 정산 미리보기 | `feat/round-ledger-standings` | 대기 |
+| D | 대기실 누적 순위 카드 + 종료 다이얼로그 정산 미리보기 | `feat/round-ledger-standings` | 머지 #35 (2026-09-16) |
 
-**사용자 확인 필요 — 배포.** 머지는 배포가 아니다(CI 없음, `firebase deploy` 수동). B 이후 코드가 배포본에 실리기 전에 **rules를 먼저 배포**해야 한다: `npx -y firebase-tools@latest deploy --only firestore:rules --project photo-royale-scc` → 그다음 hosting. 이 순서는 사람이 지킨다.
+**M1 코드는 전부 main에 있다(#32~#35, 2026-09-16).** 남은 것은 사람 몫이다.
+
+**사용자 확인 필요 — 배포.** 머지는 배포가 아니다(CI 없음, `firebase deploy` 수동). 지금 main이 배포본에 실리기 전에 **rules를 먼저 배포**해야 한다: `npx -y firebase-tools@latest deploy --only firestore:rules --project photo-royale-scc` → 그다음 hosting. 이 순서를 어기면 배정 확정 배치(rounds 스냅샷 포함)가 전멸한다. 배포 뒤 방 1개로 2라운드를 돌려 순위 카드·정산 미리보기를 실측하는 것(§10.4 DoD)도 아직 안 했다.
 
 ### 10.3 순서 (rules → 쓰기 3갈래 → 계산기 → 화면)
 
