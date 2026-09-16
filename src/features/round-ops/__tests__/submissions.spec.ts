@@ -352,6 +352,25 @@ describe('판정 쓰기', () => {
     )
   })
 
+  /** 왕잡기(P07 M4-3) — 피격 팀이 X 겸직 팀이면 kills와 함께 kingKills도 올린다(부분집합) */
+  it('kingTarget이면 원장 집계에 kingKills increment를 함께 얹는다', async () => {
+    await approveSubmission(
+      'AB2C',
+      's1',
+      { team: 'B', participantUid: 'u3' },
+      { roundNo: 2, attackerTeam: 'A', kingTarget: true },
+    )
+
+    expect(batchUpdateMock).toHaveBeenCalledWith(
+      { path: 'rooms/AB2C/rounds/2' },
+      {
+        'tally.A.kills': { increment: 1 },
+        'tally.A.kingKills': { increment: 1 },
+        'hits.B': { increment: 1 },
+      },
+    )
+  })
+
   it('배율 3으로 확정된 기록은 multiplier 3으로 읽는다', () => {
     onSnapshotMock.mockReturnValue(vi.fn<() => void>())
     const onChange = vi.fn<(records: Array<{ multiplier: number }>) => void>()

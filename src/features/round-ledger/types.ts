@@ -14,10 +14,15 @@ import type { GameModeId } from '@/features/game-mode'
 /** 완장 문자(A~Z) → 값. 팀 단위 맵의 공통 형태 */
 export type ArmbandMap<T> = Record<string, T>
 
-/** 공격 완장 1개의 판정 집계 — 3배(낙오 포착) 킬은 tripleKills에만 센다(M2) */
+/**
+ * 공격 완장 1개의 판정 집계 — 3배(낙오 포착) 킬은 tripleKills에만 센다(M2).
+ * kingKills는 그중 X 겸직 팀(왕)을 잡은 건수 — 왕잡기의 왕 사냥 근거(M4-3). 모드와 무관하게
+ * 사실만 남기고, 읽는 쪽(왕잡기 규칙)만 쓴다. 도입 전 문서는 0으로 읽는다.
+ */
 export interface TeamTally {
   kills: number
   tripleKills: number
+  kingKills: number
 }
 
 /** ① 배정 확정 시 — 편성 스냅샷. 이후 라운드가 끝나도 바뀌지 않는다 */

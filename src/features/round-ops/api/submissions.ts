@@ -250,6 +250,8 @@ export interface ApprovalTally {
   roundNo: number
   /** 공격 완장 = 킬샷의 team */
   attackerTeam: string
+  /** 피격 팀이 이 라운드의 X 겸직 팀(왕)인지 — 원장 kingKills(왕잡기 왕 사냥) 근거. 생략 = false */
+  kingTarget?: boolean
 }
 
 /**
@@ -274,7 +276,15 @@ export async function approveSubmission(
     judgedAt: serverTimestamp(),
   })
   if (tally !== undefined) {
-    addTallyToBatch(batch, code, tally.roundNo, tally.attackerTeam, target.team, multiplier)
+    addTallyToBatch(
+      batch,
+      code,
+      tally.roundNo,
+      tally.attackerTeam,
+      target.team,
+      multiplier,
+      tally.kingTarget ?? false,
+    )
   }
   await batch.commit()
 }

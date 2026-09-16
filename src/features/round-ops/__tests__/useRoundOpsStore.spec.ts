@@ -122,7 +122,7 @@ const approveSubmissionMock =
       code: string,
       submissionId: string,
       target: { team: string; participantUid: string },
-      tally?: { roundNo: number; attackerTeam: string },
+      tally?: { roundNo: number; attackerTeam: string; kingTarget?: boolean },
       multiplier?: 1 | 3,
     ) => Promise<void>
   >()
@@ -135,7 +135,7 @@ vi.mock('../api/submissions', () => ({
     code: string,
     submissionId: string,
     target: { team: string; participantUid: string },
-    tally?: { roundNo: number; attackerTeam: string },
+    tally?: { roundNo: number; attackerTeam: string; kingTarget?: boolean },
     multiplier?: 1 | 3,
   ) => approveSubmissionMock(code, submissionId, target, tally, multiplier),
   rejectSubmission: (code: string, submissionId: string) =>
@@ -215,7 +215,7 @@ function ledger(overrides: Partial<RoundLedger> = {}): RoundLedger {
     teams: { A: ['u1', 'u2'], B: ['u3'] },
     xTeams: [],
     confirmedAtMs: NOW,
-    tally: { A: { kills: 1, tripleKills: 0 } },
+    tally: { A: { kills: 1, tripleKills: 0, kingKills: 0 } },
     hits: { B: 1 },
     result: null,
     ...overrides,
@@ -816,8 +816,31 @@ describe('useRoundOpsStore', () => {
       expect(approveSubmissionMock).toHaveBeenNthCalledWith(1, 'AB2C', 's1', target, {
         roundNo: 2,
         attackerTeam: 'B',
+        kingTarget: false,
       }, 1)
       expect(approveSubmissionMock).toHaveBeenNthCalledWith(2, 'AB2C', 'missing', target, undefined, 1)
+    })
+
+    /** 왕잡기(P07 M4-3) — 피격 팀이 편성 스냅샷의 X 겸직 팀이면 왕 사냥으로도 센다 */
+    it('피격 팀이 이번 라운드 X 팀이면 kingTarget을 켜서 넘긴다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room({ round: RUNNING }))
+      deliver.ledger(ledger({ xTeams: ['A'] }))
+      deliver.submissions([
+        { id: 's1', uid: 'u3', team: 'B', round: 2, photo: 'data:', status: 'pending', createdAtMs: NOW },
+      ])
+
+      await store.approveSubmission('s1', { team: 'A', participantUid: 'u1' })
+
+      expect(approveSubmissionMock).toHaveBeenCalledExactlyOnceWith(
+        'AB2C',
+        's1',
+        { team: 'A', participantUid: 'u1' },
+        { roundNo: 2, attackerTeam: 'B', kingTarget: true },
+        1,
+      )
     })
 
     it('반려는 문서 ID만 넘긴다 — 사유는 남기지 않는다', async () => {

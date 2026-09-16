@@ -402,9 +402,14 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     // rules의 선판정 충돌로 실패한다(기존 경로).
     const submission = pendingSubmissions.value.find((entry) => entry.id === submissionId)
     const ledger = currentLedger.value
+    // 피격 팀이 편성 스냅샷의 X 겸직 팀이면 왕 사냥(kingKills)으로도 센다 — 왕잡기 원점수 근거
     const tally =
       ledger !== null && submission !== undefined && submission.round === ledger.roundNo
-        ? { roundNo: ledger.roundNo, attackerTeam: submission.team }
+        ? {
+            roundNo: ledger.roundNo,
+            attackerTeam: submission.team,
+            kingTarget: ledger.xTeams.includes(target.team),
+          }
         : undefined
     return runAction(
       'judge',
