@@ -1,4 +1,5 @@
 import type { GameModeDefinition } from '../types'
+import { killScoring } from '../scoring'
 
 /** 왕잡기 — 그룹의 왕을 지키고 상대 왕을 사냥하는 그룹전 변형 */
 export const kingHuntMode: GameModeDefinition = {
@@ -15,5 +16,7 @@ export const kingHuntMode: GameModeDefinition = {
       caption: '왕이 잡히면 그룹 전체가 막대한 감점을 받습니다.',
     },
   ],
+  // 자기 원점수 규칙이 아직 없다 — 기본 킬 규칙(M4에서 교체)
+  scoring: killScoring,
   available: false,
 }

@@ -12,10 +12,8 @@ export {
 } from './api/rounds'
 export type { RoundSnapshotTeam } from './api/rounds'
 export {
-  KILL_POINTS,
   TIER_POINTS,
   TIER_FLOOR_POINTS,
-  TRIPLE_KILL_POINTS,
   ZERO_SCORE_POINTS,
   computeStandings,
   groupByTier,

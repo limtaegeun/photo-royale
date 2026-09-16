@@ -101,6 +101,19 @@ describe('settleRound', () => {
   })
 })
 
+describe('settleRound — 모드 위임', () => {
+  it('원장의 모드가 가진 scoring으로 원점수를 내고 등급·포인트만 붙인다', () => {
+    // 아직 자기 규칙이 없는 모드는 기본 킬 규칙이라 일반전과 같은 결과가 나온다(M4 전 동작 보존)
+    const base = ledger({ tally: { A: { kills: 1, tripleKills: 0 } } })
+    const asNormal = settleRound({ ...base, mode: 'normal' })
+    const asGroup = settleRound({ ...base, mode: 'group' })
+
+    expect(asGroup).toEqual(asNormal)
+    expect(asNormal.teamScores).toEqual({ A: 10, B: 0, C: 0 })
+    expect(asNormal.playerPoints).toEqual({ 하늘: 10, 민재: 10, 준호: 1, 소율: 1, 서연: 1, 도윤: 1 })
+  })
+})
+
 describe('groupByTier', () => {
   it('1등급부터 차례로 묶고 등급 없음(0점 이하)은 마지막에 둔다', () => {
     const groups = groupByTier({

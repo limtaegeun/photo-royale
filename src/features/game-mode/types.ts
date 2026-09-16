@@ -25,6 +25,31 @@ export type GameModeRuleEntry =
   | { kind: 'group' } // 그룹 규칙 — "그룹은 완장 색깔" + 이번 라운드 그룹 색 문구
   | { kind: 'static'; text: string; caption?: string }
 
+/**
+ * 정산 입력(P07) — 라운드 원장(round-ledger)이 자기 문서를 이 형태로 넘긴다. 모드 파일이 원장
+ * 타입을 몰라도 되게 여기서 정의한다(round-ledger → game-mode 한 방향 의존).
+ */
+export interface ModeScoringInput {
+  /** 완장 → 그 라운드 팀원 uid (편성 스냅샷) */
+  teams: Record<string, string[]>
+  /** X 겸직 완장 — 왕잡기의 왕 팀 */
+  xTeams: string[]
+  /** 공격 완장별 판정 집계. 판정이 없던 완장은 키 자체가 없다 */
+  tally: Record<string, { kills: number; tripleKills: number }>
+  /** 피격 완장별 집계 */
+  hits: Record<string, number>
+}
+
+/** 정산 출력 — 라운드 안 원점수. 등급·포인트 변환은 round-ledger의 공통 단계가 맡는다 */
+export interface ModeScoringOutput {
+  /** 완장 → 팀 원점수 */
+  teamScores: Record<string, number>
+  /** uid → 개인 원점수. 스냅샷에 없는 uid는 넣지 않는다(= 그 라운드 미참가) */
+  playerScores: Record<string, number>
+}
+
+export type ModeScoring = (input: ModeScoringInput) => ModeScoringOutput
+
 export interface GameModeDefinition {
   id: GameModeId
   /** 규칙서 배지·모드 선택 리스트에 쓰는 한글 라벨 */
@@ -33,6 +58,11 @@ export interface GameModeDefinition {
   description: string
   /** 규칙서 — 배열 순서대로 번호를 매겨 렌더한다 */
   rules: GameModeRuleEntry[]
+  /**
+   * 라운드 원점수 규칙(P07 §4) — 모드 1개 = 파일 1개 원칙대로 각 모드가 소유한다.
+   * 아직 자기 규칙이 없는 모드는 기본 킬 규칙(scoring.ts killScoring)을 둔다.
+   */
+  scoring: ModeScoring
   /** 게임플레이가 구현되어 선택 가능한 모드인지 — 미구현 모드는 선택 시트에서 비활성화된다 */
   available: boolean
 }
