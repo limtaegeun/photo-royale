@@ -10,7 +10,18 @@ export type {
   ModeScoringOutput,
 } from './types'
 // 원점수 재료 — round-ledger의 정산 단계와 모드 스펙이 함께 쓴다
-export { KILL_POINTS, TRIPLE_KILL_POINTS, distributeToPlayers, killScoreOf, killScoring } from './scoring'
+export {
+  KILL_POINTS,
+  SURVIVAL_POINTS,
+  TRIPLE_KILL_POINTS,
+  distributeToPlayers,
+  isTeamOut,
+  killScoreOf,
+  killScoring,
+  livesOf,
+  normalScoring,
+  survivalScoreOf,
+} from './scoring'
 export { default as GameModeRulebook } from './components/GameModeRulebook.vue'
 // 모드 선택 UI도 이 기능이 소유한다 — 호출부(배정 보드)는 선택 결과만 받는다
 export { default as GameModePicker } from './components/GameModePicker.vue'

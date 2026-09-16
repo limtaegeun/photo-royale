@@ -15,11 +15,13 @@ export {
   TIER_POINTS,
   TIER_FLOOR_POINTS,
   ZERO_SCORE_POINTS,
+  aliveTeamCount,
   computeStandings,
   groupByTier,
   pointsForTier,
   rankTiers,
   settleRound,
+  teamOutStatus,
 } from './scoring'
 export type { RoundSettlement, Standing, TierGroup } from './scoring'
 export { ROUND_RESULT_KEYS, ROUND_SNAPSHOT_KEYS, ROUND_TALLY_KEYS } from './types'

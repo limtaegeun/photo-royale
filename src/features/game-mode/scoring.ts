@@ -32,13 +32,43 @@ export function distributeToPlayers(
 }
 
 /**
- * 기본 킬 규칙 — 팀 킬 ×10(+낙오 3배 ×30)을 팀원 각자에게. 일반전의 규칙이자, 아직 자기 규칙이
- * 없는 모드의 기본값이다(오늘까지 모든 모드가 이렇게 정산됐다).
+ * 기본 킬 규칙 — 팀 킬 ×10(+낙오 3배 ×30)을 팀원 각자에게. 아직 자기 규칙이 없는 모드의 기본값이다
+ * (일반전은 여기에 생존 보너스를 더한 normalScoring을 쓴다).
  */
 export function killScoring(input: ModeScoringInput): ModeScoringOutput {
   const teamScores: Record<string, number> = {}
   for (const armband of Object.keys(input.teams)) {
     teamScores[armband] = killScoreOf(input.tally, armband)
+  }
+  return { teamScores, playerScores: distributeToPlayers(input.teams, teamScores) }
+}
+
+/**
+ * 탈락 모델(P07 M3, docs/plans/p07-elimination.md) — 팀 라이프. 2인 팀 1, 1인 팀 2
+ * (앱 규칙 카드 "1인 팀은 목숨과 포인트가 2배" 중 목숨 보정. 포인트 2배는 기획자 확인 전 미적용).
+ */
+export function livesOf(teams: ModeScoringInput['teams'], armband: string): number {
+  return (teams[armband]?.length ?? 0) === 1 ? 2 : 1
+}
+
+/** 아웃 = 맞은 횟수(hits)가 라이프에 닿음. 원장에 별도 필드 없이 파생한다 */
+export function isTeamOut(input: Pick<ModeScoringInput, 'teams' | 'hits'>, armband: string): boolean {
+  return (input.hits[armband] ?? 0) >= livesOf(input.teams, armband)
+}
+
+/** 라운드 종료 시 생존(아웃 아님) 보너스 — 결정 5. 킬 없이 산 사람이 킬 없이 잡힌 사람보다 위 */
+export const SURVIVAL_POINTS = 5
+
+/** 팀별 생존 보너스 원점수 — 아웃 아닌 팀 SURVIVAL_POINTS, 아웃 팀 0 */
+export function survivalScoreOf(input: Pick<ModeScoringInput, 'teams' | 'hits'>, armband: string): number {
+  return isTeamOut(input, armband) ? 0 : SURVIVAL_POINTS
+}
+
+/** 일반전(P07 §4.1) — 팀 킬 10 · 낙오 포착 킬 30 · 종료 시 생존 5, 팀원 각자에게 */
+export function normalScoring(input: ModeScoringInput): ModeScoringOutput {
+  const teamScores: Record<string, number> = {}
+  for (const armband of Object.keys(input.teams)) {
+    teamScores[armband] = killScoreOf(input.tally, armband) + survivalScoreOf(input, armband)
   }
   return { teamScores, playerScores: distributeToPlayers(input.teams, teamScores) }
 }
