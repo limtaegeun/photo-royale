@@ -91,4 +91,12 @@ describe('GameModeRulebook', () => {
     const wrapper = mountRulebook({ isXTeam: false })
     expect(wrapper.text()).not.toContain('특수 완장 X')
   })
+
+  it('왕잡기에서는 X 겸직이어도 "X끼리만 사냥" 항목을 덧붙이지 않는다 — 왕 규칙이 모드 규칙에 있다', () => {
+    const wrapper = mountRulebook({ gameMode: 'king-hunt', isXTeam: true })
+
+    expect(wrapper.text()).not.toContain('X끼리만 서로 사냥')
+    expect(wrapper.text()).toContain('각 그룹의 왕은 특수 완장 X를 겸합니다.')
+    expect(wrapper.text()).toContain('왕의 킬은 2배, 상대 왕을 잡으면 3배 점수입니다.')
+  })
 })
