@@ -318,6 +318,61 @@ service cloud.firestore {
         // 판정 이력은 정정하지 않는다(재판정·삭제 플로우 없음).
         allow delete: if false;
       }
+
+      // 라운드 원장(P07). 문서 ID = 팀편성 차수(rooms.assignmentRound) 문자열. 사진이 실린
+      // submissions를 열지 않고 점수·순위를 내기 위한 경량 문서로, 세 시점에 세 갈래로 쓴다 —
+      // 배정 확정(편성 스냅샷 create) · 판정 확정(집계 update) · 라운드 종료(정산 update).
+      // 점수 계산 주체는 호스트 클라이언트다(서버 함수 없음). rules는 "누가 언제 어떤 키를"만
+      // 검증하고 수치는 신뢰한다. 키 목록은 src/features/round-ledger/types.ts와 같아야 한다
+      // (round-ledger의 rules 동기화 가드 스펙이 대조 검증).
+      match /rounds/{roundNo} {
+        // 순위는 전원이 본다(participants·notices와 같은 정책 — 경로 접근에 초대 코드 필요).
+        allow read: if request.auth != null;
+
+        // 1) 배정 확정 배치 — 편성 스냅샷. 방 문서의 차수 증가와 같은 배치에만 성립한다:
+        //    문서 ID와 mode를 커밋 후 방 문서(getAfter)의 assignmentRound·gameMode와 대조하므로
+        //    스냅샷만 단독으로 만들거나 다른 차수·다른 모드로 만들 수 없다.
+        allow create: if request.auth != null
+          && get(/databases/$(database)/documents/rooms/$(roomCode)).data.hostUid == request.auth.uid
+          && get(/databases/$(database)/documents/rooms/$(roomCode)).data.status == 'waiting'
+          && roundNo == string(getAfter(/databases/$(database)/documents/rooms/$(roomCode)).data.assignmentRound)
+          && request.resource.data.keys().hasAll(['mode', 'teams', 'xTeams', 'confirmedAt'])
+          && request.resource.data.keys().hasOnly(['mode', 'teams', 'xTeams', 'confirmedAt'])
+          && request.resource.data.mode
+            == getAfter(/databases/$(database)/documents/rooms/$(roomCode)).data.gameMode
+          && request.resource.data.teams is map
+          && request.resource.data.xTeams is list
+          && request.resource.data.confirmedAt == request.time;
+
+        // 호스트 본인이 현재 차수 문서에만 쓴다. 두 갈래로 나뉜다.
+        allow update: if request.auth != null
+          && get(/databases/$(database)/documents/rooms/$(roomCode)).data.hostUid == request.auth.uid
+          && roundNo == string(get(/databases/$(database)/documents/rooms/$(roomCode)).data.assignmentRound)
+          && get(/databases/$(database)/documents/rooms/$(roomCode)).data.status == 'playing'
+          && (
+            // 2) 판정 집계 — 판정(approve) 배치가 공격 완장별 tally·피격 완장별 hits를 increment로
+            //    올린다. 게임 중에만, 이 두 키만. (판정 자체의 조건은 submissions 갈래가 검증한다.)
+            (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['tally', 'hits'])
+              && request.resource.data.tally is map
+              && request.resource.data.hits is map)
+            // 3) 정산 확정 — 게임 종료 배치(playing → waiting)와 함께만 성립한다. 커밋 후 방 상태가
+            //    waiting이어야 하므로 종료 없이 result만 쓰거나 종료 뒤에 고쳐 쓸 수 없다. 같은 차수를
+            //    재시작해 다시 종료하면(방이 다시 playing) 덮어쓰기가 허용된다 — 마지막 종료가 정본.
+            //    네 맵은 형태만 본다(수치 검증은 클라 계산 신뢰 — 서버 함수 부재 전제).
+            || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['result'])
+              && getAfter(/databases/$(database)/documents/rooms/$(roomCode)).data.status == 'waiting'
+              && request.resource.data.result.keys().hasAll(['teamScores', 'playerScores', 'playerTiers', 'playerPoints', 'finishedAt'])
+              && request.resource.data.result.keys().hasOnly(['teamScores', 'playerScores', 'playerTiers', 'playerPoints', 'finishedAt'])
+              && request.resource.data.result.teamScores is map
+              && request.resource.data.result.playerScores is map
+              && request.resource.data.result.playerTiers is map
+              && request.resource.data.result.playerPoints is map
+              && request.resource.data.result.finishedAt == request.time)
+          );
+
+        // 원장은 지우지 않는다(정정은 재시작 → 재종료로만).
+        allow delete: if false;
+      }
     }
   }
 }
