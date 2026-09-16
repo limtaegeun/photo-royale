@@ -67,6 +67,36 @@ export function settleRound(ledger: RoundLedger): RoundSettlement {
   return { teamScores, playerScores, playerTiers, playerPoints }
 }
 
+/** 정산을 등급별로 묶은 한 줄 — 종료 미리보기·발표가 "1등급 10P — 누구누구"로 읽는다 */
+export interface TierGroup {
+  /** 0 = 원점수 0 이하(등급 없음) */
+  tier: number
+  points: number
+  /** 원점수 내림차순 → uid 오름차순 */
+  uids: string[]
+}
+
+/** 정산 결과를 등급 오름차순(1등급 먼저, 등급 없음은 마지막)으로 묶는다 */
+export function groupByTier(settlement: RoundSettlement): TierGroup[] {
+  const byTier = new Map<number, string[]>()
+  for (const [uid, tier] of Object.entries(settlement.playerTiers)) {
+    const group = byTier.get(tier) ?? []
+    group.push(uid)
+    byTier.set(tier, group)
+  }
+  return [...byTier.entries()]
+    .sort(([a], [b]) => (a === 0 ? 1 : b === 0 ? -1 : a - b))
+    .map(([tier, uids]) => ({
+      tier,
+      points: pointsForTier(tier),
+      uids: uids.sort(
+        (a, b) =>
+          (settlement.playerScores[b] ?? 0) - (settlement.playerScores[a] ?? 0) ||
+          a.localeCompare(b),
+      ),
+    }))
+}
+
 /** 누적 순위 한 줄 — 화면은 uid를 참가자 명단과 조인해 이름을 붙인다 */
 export interface Standing {
   uid: string

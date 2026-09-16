@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computeStandings, pointsForTier, rankTiers, settleRound } from '../scoring'
+import { computeStandings, groupByTier, pointsForTier, rankTiers, settleRound } from '../scoring'
 import type { RoundLedger } from '../types'
 
 function ledger(overrides: Partial<RoundLedger> = {}): RoundLedger {
@@ -98,6 +98,29 @@ describe('settleRound', () => {
 
     expect(settlement.playerScores).toEqual({ 혼자: 10, 둘: 10, 이서: 10 })
     expect(settlement.playerTiers).toEqual({ 혼자: 1, 둘: 1, 이서: 1 })
+  })
+})
+
+describe('groupByTier', () => {
+  it('1등급부터 차례로 묶고 등급 없음(0점 이하)은 마지막에 둔다', () => {
+    const groups = groupByTier({
+      teamScores: {},
+      playerScores: { 서연: 40, 도윤: 40, 하늘: 10, 준호: 0, 민재: -10 },
+      playerTiers: { 서연: 1, 도윤: 1, 하늘: 2, 준호: 0, 민재: 0 },
+      playerPoints: { 서연: 10, 도윤: 10, 하늘: 7, 준호: 1, 민재: 1 },
+    })
+
+    expect(groups).toEqual([
+      { tier: 1, points: 10, uids: ['도윤', '서연'] },
+      { tier: 2, points: 7, uids: ['하늘'] },
+      { tier: 0, points: 1, uids: ['준호', '민재'] },
+    ])
+  })
+
+  it('정산할 사람이 없으면 빈 목록', () => {
+    expect(
+      groupByTier({ teamScores: {}, playerScores: {}, playerTiers: {}, playerPoints: {} }),
+    ).toEqual([])
   })
 })
 
