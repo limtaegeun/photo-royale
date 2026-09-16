@@ -261,7 +261,7 @@ M4에서 모드별 원점수 규칙이 `GameModeDefinition.scoring`으로 옮겨
 | # | 작업 | 브랜치 | 상태 |
 |---|---|---|---|
 | A | rules `match /rounds/{roundNo}` 3갈래 + `round-ledger` 타입·필드명 + rules 동기화 가드 스펙 + TestRuleset 매트릭스 | `feat/round-ledger-rules` | 머지 #32 (2026-09-16) |
-| B | `round-ledger/api/rounds.ts`(문서 참조·구독·스냅샷 쓰기) + 배정 확정 배치에 편성 스냅샷 | `feat/round-ledger-snapshot` | 대기 |
+| B | `round-ledger/api/rounds.ts`(문서 참조·구독·스냅샷 쓰기) + 배정 확정 배치에 편성 스냅샷 | `feat/round-ledger-snapshot` | 머지 #33 (2026-09-16) |
 | C | `scoring.ts`(settleRound·computeStandings) + 판정 배치에 tally increment + 종료 배치에 result | `feat/round-ledger-settle` | 대기 |
 | D | 대기실 누적 순위 카드 + 종료 다이얼로그 정산 미리보기 | `feat/round-ledger-standings` | 대기 |
 
