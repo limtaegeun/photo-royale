@@ -35,6 +35,7 @@ import {
   rejectSubmission as requestRejectSubmission,
   subscribeToPendingSubmissions,
   subscribeToSubmissionLog,
+  type KillMultiplier,
   type Submission,
   type SubmissionRecord,
   type SubmissionTarget,
@@ -380,7 +381,11 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
    * 판정 확정 — 사진 속 완장의 팀을 기록한다. rules가 pending → approved 단방향만 허용하므로
    * 다른 기기에서 먼저 판정된 문서면 실패한다(화면은 에러 토스트 후 스냅샷으로 수렴).
    */
-  async function approveSubmission(submissionId: string, target: SubmissionTarget) {
+  async function approveSubmission(
+    submissionId: string,
+    target: SubmissionTarget,
+    multiplier: KillMultiplier = 1,
+  ) {
     if (!canWriteRound()) return false
     // 원장 집계(P07)는 원장 문서가 있는 라운드에서만 같은 배치에 얹는다. 공격 완장은 큐의 킬샷
     // 문서에서 읽는다 — 큐에 없는 제출(다른 기기가 먼저 판정해 빠진 경우)은 집계 없이 시도하고
@@ -393,7 +398,7 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
         : undefined
     return runAction(
       'judge',
-      () => requestApproveSubmission(roomCode.value!, submissionId, target, tally),
+      () => requestApproveSubmission(roomCode.value!, submissionId, target, tally, multiplier),
       false,
     )
   }

@@ -123,6 +123,7 @@ const approveSubmissionMock =
       submissionId: string,
       target: { team: string; participantUid: string },
       tally?: { roundNo: number; attackerTeam: string },
+      multiplier?: 1 | 3,
     ) => Promise<void>
   >()
 const rejectSubmissionMock = vi.fn<(code: string, submissionId: string) => Promise<void>>()
@@ -135,7 +136,8 @@ vi.mock('../api/submissions', () => ({
     submissionId: string,
     target: { team: string; participantUid: string },
     tally?: { roundNo: number; attackerTeam: string },
-  ) => approveSubmissionMock(code, submissionId, target, tally),
+    multiplier?: 1 | 3,
+  ) => approveSubmissionMock(code, submissionId, target, tally, multiplier),
   rejectSubmission: (code: string, submissionId: string) =>
     rejectSubmissionMock(code, submissionId),
   getSubmissionStatusFromServer: (code: string, submissionId: string) =>
@@ -763,8 +765,20 @@ describe('useRoundOpsStore', () => {
       const target = { team: 'A', participantUid: 'u1' }
       await expect(store.approveSubmission('s1', target)).resolves.toBe(true)
 
-      // 원장이 없는 라운드는 집계 없이 판정만 — 없는 문서 update로 배치가 죽지 않게
-      expect(approveSubmissionMock).toHaveBeenCalledExactlyOnceWith('AB2C', 's1', target, undefined)
+      // 원장이 없는 라운드는 집계 없이 판정만 — 없는 문서 update로 배치가 죽지 않게. 배율 기본 1
+      expect(approveSubmissionMock).toHaveBeenCalledExactlyOnceWith('AB2C', 's1', target, undefined, 1)
+    })
+
+    it('낙오 포착 배율 3을 그대로 api에 넘긴다(P07 M2)', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room({ round: RUNNING }))
+
+      const target = { team: 'A', participantUid: 'u1' }
+      await store.approveSubmission('s1', target, 3)
+
+      expect(approveSubmissionMock).toHaveBeenCalledExactlyOnceWith('AB2C', 's1', target, undefined, 3)
     })
 
     /**
@@ -788,8 +802,8 @@ describe('useRoundOpsStore', () => {
       expect(approveSubmissionMock).toHaveBeenNthCalledWith(1, 'AB2C', 's1', target, {
         roundNo: 2,
         attackerTeam: 'B',
-      })
-      expect(approveSubmissionMock).toHaveBeenNthCalledWith(2, 'AB2C', 'missing', target, undefined)
+      }, 1)
+      expect(approveSubmissionMock).toHaveBeenNthCalledWith(2, 'AB2C', 'missing', target, undefined, 1)
     })
 
     it('반려는 문서 ID만 넘긴다 — 사유는 남기지 않는다', async () => {
@@ -903,6 +917,7 @@ describe('useRoundOpsStore', () => {
         status: 'approved',
         createdAtMs: NOW,
         targetTeam: 'A',
+        multiplier: 1,
         judgedAtMs: NOW,
         ...overrides,
       }

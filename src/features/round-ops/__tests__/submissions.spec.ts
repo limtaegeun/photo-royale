@@ -219,6 +219,8 @@ describe('subscribeToSubmissionLog', () => {
         status: 'approved',
         createdAtMs: 1_000,
         targetTeam: 'A',
+        // 배율 필드가 없는 확정(배율 도입 전 판정)은 일반 킬로 읽는다
+        multiplier: 1,
         judgedAtMs: 2_000,
       },
     ])
@@ -311,7 +313,7 @@ describe('판정 쓰기', () => {
     await expect(getSubmissionStatusFromServer('AB2C', 'broken')).resolves.toBeNull()
   })
 
-  it('확정은 approved 상태·대상 완장·서버 시각을 한 번에 쓴다', async () => {
+  it('확정은 approved 상태·대상 완장·배율(기본 1)·서버 시각을 한 번에 쓴다', async () => {
     await approveSubmission('AB2C', 's1', { team: 'A', participantUid: 'u1' })
 
     expect(batchUpdateMock).toHaveBeenCalledExactlyOnceWith(
@@ -320,10 +322,49 @@ describe('판정 쓰기', () => {
         status: 'approved',
         targetTeam: 'A',
         targetParticipantUid: 'u1',
+        multiplier: 1,
         judgedAt: 'server-timestamp',
       },
     )
     expect(batchCommitMock).toHaveBeenCalledTimes(1)
+  })
+
+  /**
+   * 낙오 포착 킬(P07 M2) — 배율 3은 문서에 남고, 원장 집계는 kills가 아니라 tripleKills로 간다.
+   * 정산 계산기가 tripleKills × 30을 이미 알고 있어 이 한 줄이 곧 점수다.
+   */
+  it('배율 3이면 문서에 multiplier 3을 쓰고 원장 집계를 tripleKills로 올린다', async () => {
+    await approveSubmission(
+      'AB2C',
+      's1',
+      { team: 'B', participantUid: 'u3' },
+      { roundNo: 2, attackerTeam: 'A' },
+      3,
+    )
+
+    expect(batchUpdateMock).toHaveBeenCalledWith(
+      { path: 'rooms/AB2C/submissions/s1' },
+      expect.objectContaining({ status: 'approved', multiplier: 3 }),
+    )
+    expect(batchUpdateMock).toHaveBeenCalledWith(
+      { path: 'rooms/AB2C/rounds/2' },
+      { 'tally.A.tripleKills': { increment: 1 }, 'hits.B': { increment: 1 } },
+    )
+  })
+
+  it('배율 3으로 확정된 기록은 multiplier 3으로 읽는다', () => {
+    onSnapshotMock.mockReturnValue(vi.fn<() => void>())
+    const onChange = vi.fn<(records: Array<{ multiplier: number }>) => void>()
+    subscribeToSubmissionLog('AB2C', onChange)
+    const onNext = onSnapshotMock.mock.calls[0]![1]
+    onNext({
+      docs: [
+        pendingDoc('s1', { toMillis: () => 1_000 }, {
+          status: 'approved', targetTeam: 'A', targetParticipantUid: 'u1', multiplier: 3, judgedAt: { toMillis: () => 2_000 },
+        }),
+      ],
+    })
+    expect(onChange.mock.calls[0]![0][0]!.multiplier).toBe(3)
   })
 
   /**
@@ -399,8 +440,11 @@ describe('firestore.rules 킬샷 규칙 동기화 가드', () => {
     expect(submissionsBlock[0]).toContain('resource.data.round')
     expect(submissionsBlock[0]).toContain('request.resource.data.targetTeam != resource.data.team')
     expect(submissionsBlock[0]).toContain(
-      "['status', 'targetTeam', 'targetParticipantUid', 'judgedAt']",
+      "['status', 'targetTeam', 'targetParticipantUid', 'judgedAt', 'multiplier']",
     )
+    // 배율은 1·3만, 반려에는 배율이 없어야 한다(P07 M2)
+    expect(submissionsBlock[0]).toContain('request.resource.data.multiplier in [1, 3]')
+    expect(submissionsBlock[0]).toContain("!('multiplier' in request.resource.data))")
     expect(submissionsBlock[0]).toContain('allow delete: if false;')
   })
 })

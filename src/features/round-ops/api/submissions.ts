@@ -79,9 +79,17 @@ export interface SubmissionTarget {
 export interface SubmissionRecord extends Submission {
   /** 확정 시 잡힌 팀 완장(A~Z 1글자) — 대기·반려는 null */
   targetTeam: string | null
+  /** 확정 시 킬 배율 — 3이면 낙오 포착 킬(+30). 배율 필드가 없는 확정(배율 도입 전)은 1 */
+  multiplier: KillMultiplier
   /** 판정 시각 — 대기 중이거나 serverTimestamp 반영 전이면 null */
   judgedAtMs: number | null
 }
+
+/**
+ * 킬 배율(P07 M2) — 1은 일반 킬(+10), 3은 낙오 포착 킬(+30: 팀원과 2m 넘게 떨어진 사람을 찍은 킬,
+ * 사진으로 거리를 판별할 수 없어 호스트가 판정 시트에서 정한다). rules가 이 두 값만 허용한다.
+ */
+export type KillMultiplier = 1 | 3
 
 interface FirestoreTimestamp {
   toMillis: () => number
@@ -138,6 +146,7 @@ function toSubmissionRecord(id: string, data: Record<string, unknown>): Submissi
     status: data.status,
     createdAtMs: isFirestoreTimestamp(data.createdAt) ? data.createdAt.toMillis() : null,
     targetTeam: data.status === 'approved' && typeof data.targetTeam === 'string' ? data.targetTeam : null,
+    multiplier: data.status === 'approved' && data.multiplier === 3 ? 3 : 1,
     judgedAtMs: isFirestoreTimestamp(data.judgedAt) ? data.judgedAt.toMillis() : null,
   }
 }
@@ -244,26 +253,28 @@ export interface ApprovalTally {
 }
 
 /**
- * 판정 확정 — 사진 속 완장이 어느 팀(=그룹은 완장에서 파생)인지 기록한다. tally가 있으면
- * 라운드 원장의 집계 increment를 같은 writeBatch에 얹어 원자 커밋한다 — 판정만 남고 집계가
- * 빠지거나 그 반대가 되지 않는다. 원장 문서가 없는 라운드(도입 전 배정)는 tally 없이 부른다:
- * 없는 문서에 update를 얹으면 배치 전체가 실패해 판정까지 막힌다.
+ * 판정 확정 — 사진 속 완장이 어느 팀(=그룹은 완장에서 파생)인지와 킬 배율을 기록한다. tally가
+ * 있으면 라운드 원장의 집계 increment(배율 3이면 tripleKills)를 같은 writeBatch에 얹어 원자
+ * 커밋한다 — 판정만 남고 집계가 빠지거나 그 반대가 되지 않는다. 원장 문서가 없는 라운드(도입 전
+ * 배정)는 tally 없이 부른다: 없는 문서에 update를 얹으면 배치 전체가 실패해 판정까지 막힌다.
  */
 export async function approveSubmission(
   code: string,
   submissionId: string,
   target: SubmissionTarget,
   tally?: ApprovalTally,
+  multiplier: KillMultiplier = 1,
 ): Promise<void> {
   const batch = writeBatch(db)
   batch.update(doc(db, 'rooms', code, 'submissions', submissionId), {
     status: 'approved',
     targetTeam: target.team,
     targetParticipantUid: target.participantUid,
+    multiplier,
     judgedAt: serverTimestamp(),
   })
   if (tally !== undefined) {
-    addTallyToBatch(batch, code, tally.roundNo, tally.attackerTeam, target.team)
+    addTallyToBatch(batch, code, tally.roundNo, tally.attackerTeam, target.team, multiplier)
   }
   await batch.commit()
 }
