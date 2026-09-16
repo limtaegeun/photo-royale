@@ -4,14 +4,8 @@ import BaseBadge from '@/shared/components/BaseBadge.vue'
 import BaseBottomSheet from '@/shared/components/BaseBottomSheet.vue'
 import BaseButton from '@/shared/components/BaseButton.vue'
 import BaseSwitch from '@/shared/components/BaseSwitch.vue'
-import {
-  GROUP_LABELS,
-  TEAM_GROUP_ORDER,
-  displayGroup,
-  groupSolidBgClass,
-  groupTextClass,
-  type TeamGroup,
-} from '@/features/team-assignment'
+import { GROUP_LABELS, TEAM_GROUP_ORDER, type TeamGroup } from '@/features/game-mode'
+import { displayGroup, groupSolidBgClass, groupTextClass } from '@/features/team-assignment'
 import { isAssignedInRound, type Participant } from '@/features/waiting-room'
 import type { KillMultiplier, Submission, SubmissionTarget } from '../api/submissions'
 import KillshotPhotoHeader from './KillshotPhotoHeader.vue'

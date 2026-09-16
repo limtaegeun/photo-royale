@@ -1,9 +1,9 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import type { Gender } from '@/features/auth'
-import { DEFAULT_GAME_MODE, GAME_MODES, type GameModeId } from '@/features/game-mode'
+import { DEFAULT_GAME_MODE, GAME_MODES, groupForArmband, type GameModeId } from '@/features/game-mode'
 import { assignTeams, deriveCarryover } from '../teamAssignment'
-import { ARMBAND_LABELS, armbandForTeamIndex, groupForArmband } from '../armbands'
+import { ARMBAND_LABELS, armbandForTeamIndex } from '../armbands'
 import { pickXTeams } from '../xRole'
 import { confirmAssignment, type ConfirmedTeamWrite } from '../api/assignment'
 
