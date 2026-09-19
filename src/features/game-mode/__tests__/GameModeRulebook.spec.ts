@@ -57,6 +57,7 @@ describe('GameModeRulebook', () => {
     expect(wrapper.text()).toContain('바로 다음 알파벳만 사냥할 수 있습니다.')
     expect(wrapper.text()).toContain('A는 B만, Z는 A를 사냥합니다.')
     expect(wrapper.text()).toContain('잡히면 완장을 떼고 잡은 팀의 꼬리로 편입됩니다.')
+    expect(wrapper.text()).toContain('잡은 팀은 잡힌 팀의 사냥감을 이어서 노립니다.')
     // 꼬리잡기는 group 규칙이 없으므로 그룹 문구가 없다
     expect(wrapper.text()).not.toContain('그룹은 완장 색깔입니다.')
   })

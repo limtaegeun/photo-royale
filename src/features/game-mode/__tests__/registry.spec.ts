@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, it, expect } from 'vitest'
 import { DEFAULT_GAME_MODE, GAME_MODE_IDS, GAME_MODES, isGameModeId } from '../registry'
+import { TAIL_CHASE_TARGETING } from '../targeting'
 import type { GameModeId } from '../types'
 
 describe('game-mode registry', () => {
@@ -59,25 +60,31 @@ describe('game-mode registry', () => {
     expect(rules.every((rule) => rule.kind === 'static')).toBe(true)
   })
 
-  it('게임플레이가 구현된 일반전·그룹전·왕잡기만 available이고, 나머지 5종은 미구현이라 비활성이다', () => {
-    const openIds: GameModeId[] = ['normal', 'group', 'king-hunt']
+  it('게임플레이가 구현된 일반전·꼬리잡기·그룹전·왕잡기만 available이고, 나머지 4종은 미구현이라 비활성이다', () => {
+    const openIds: GameModeId[] = ['normal', 'tail-chase', 'group', 'king-hunt']
     for (const id of openIds) expect(GAME_MODES[id].available).toBe(true)
 
     const otherIds = GAME_MODE_IDS.filter((id) => !openIds.includes(id))
-    expect(otherIds).toHaveLength(5)
+    expect(otherIds).toHaveLength(4)
     for (const id of otherIds) {
       expect(GAME_MODES[id].available).toBe(false)
     }
   })
 
-  it('그룹전·왕잡기는 같은 그룹을 잡을 수 없는 대상 제한을 공유하고, 나머지는 제한이 없다', () => {
+  it('그룹전·왕잡기는 같은 그룹을 잡을 수 없는 대상 제한을 공유하고, 꼬리잡기는 다음 알파벳만 허용하며, 나머지는 제한이 없다', () => {
+    const context = { teams: ['A', 'B', 'F'], outTeams: [] }
     for (const id of ['group', 'king-hunt'] as const) {
       const targeting = GAME_MODES[id].targeting!
       expect(targeting.blockedBadge).toBe('같은 그룹')
-      expect(targeting.canTarget('B', 'F')).toBe(false)
-      expect(targeting.canTarget('B', 'A')).toBe(true)
+      expect(targeting.canTarget('B', 'F', context)).toBe(false)
+      expect(targeting.canTarget('B', 'A', context)).toBe(true)
     }
-    for (const id of GAME_MODE_IDS.filter((id) => id !== 'group' && id !== 'king-hunt')) {
+
+    expect(GAME_MODES['tail-chase'].targeting).toBe(TAIL_CHASE_TARGETING)
+
+    for (const id of GAME_MODE_IDS.filter(
+      (id) => id !== 'group' && id !== 'king-hunt' && id !== 'tail-chase',
+    )) {
       expect(GAME_MODES[id].targeting).toBeUndefined()
     }
   })

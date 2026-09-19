@@ -1606,6 +1606,57 @@ describe('RoundOpsPage', () => {
       expect(sheetButton('판정 확정')!.hasAttribute('disabled')).toBe(false)
     })
 
+    /** 꼬리잡기(P07 M4) — 바로 다음 알파벳만 대상이 되고, 탈락하면 대상이 다음 알파벳으로 넘어간다 */
+    it('꼬리잡기에서는 바로 다음 알파벳만 고를 수 있고, 탈락하면 대상이 다음 알파벳으로 넘어간다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      deliver.room(hostRoom({ round: running(), gameMode: 'tail-chase' }))
+      deliver.participants([
+        assigned('u1', 'A'),
+        assigned('u2', 'C'),
+        assigned('u3', 'B'),
+        assigned('u4', 'F'),
+      ])
+      // 제출 팀은 기본값 B — 다음 알파벳은 C
+      deliver.submissions([pendingSubmission()])
+      await flushPromises()
+      await wrapper.find('[data-value="judge"]').trigger('click')
+      await wrapper.find('button[data-submission="s1"]').trigger('click')
+      await flushPromises()
+
+      const nextTeam = document.body.querySelector<HTMLButtonElement>('button[data-team="C"]')!
+      expect(nextTeam.disabled).toBe(false)
+      expect(nextTeam.textContent).not.toContain('다음 알파벳 아님')
+      const blockedA = document.body.querySelector<HTMLButtonElement>('button[data-team="A"]')!
+      const blockedF = document.body.querySelector<HTMLButtonElement>('button[data-team="F"]')!
+      expect(blockedA.disabled).toBe(true)
+      expect(blockedA.textContent).toContain('다음 알파벳 아님')
+      expect(blockedF.disabled).toBe(true)
+      expect(blockedF.textContent).toContain('다음 알파벳 아님')
+
+      // C가 1인 팀으로 탈락(hits 2 ≥ 라이프 2) → B의 다음 대상은 살아 있는 F로 넘어간다
+      deliver.ledger({
+        roundNo: 2,
+        mode: 'tail-chase',
+        teams: { A: ['u1'], B: ['u3'], C: ['u2'], F: ['u4'] },
+        xTeams: [],
+        confirmedAtMs: 0,
+        tally: null,
+        hits: { C: 2 },
+        result: null,
+      })
+      await flushPromises()
+
+      const outC = document.body.querySelector<HTMLButtonElement>('button[data-team="C"]')!
+      expect(outC.disabled).toBe(true)
+      expect(outC.textContent).toContain('탈락')
+      const nowOpenF = document.body.querySelector<HTMLButtonElement>('button[data-team="F"]')!
+      expect(nowOpenF.disabled).toBe(false)
+      expect(nowOpenF.textContent).not.toContain('다음 알파벳 아님')
+      const stillBlockedA = document.body.querySelector<HTMLButtonElement>('button[data-team="A"]')!
+      expect(stillBlockedA.disabled).toBe(true)
+    })
+
     it('일반전에서는 같은 그룹 팀도 고를 수 있다 — 대상 제한은 모드가 정한다', async () => {
       const { deliver, wrapper } = await openJudgeTab()
       deliver.participants([assigned('u1', 'A'), assigned('u2', 'F'), assigned('u3', 'B')])

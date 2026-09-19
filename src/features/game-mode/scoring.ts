@@ -122,6 +122,20 @@ export function normalScoring(input: ModeScoringInput): ModeScoringOutput {
   return { teamScores, playerScores: distributeToPlayers(input.teams, teamScores) }
 }
 
+/**
+ * 꼬리잡기(P07 §4.2) — 킬 10 · 종료 시 미편입 생존 5(잡히지 않은 팀 = 아웃 아님), 팀원 각자에게. 1인 팀은 2배.
+ * 편입자(잡힌 뒤 잡은 팀 꼬리로 합류한 인원)에게 새 팀의 이후 킬을 귀속하는 것은 원장에 킬 시점 소속이
+ * 없어 후속이다 — 지금은 원래 완장 기준으로만 정산한다. 낙오 3배 토글은 일반전 한정이라 들어오지 않는다.
+ */
+export function tailChaseScoring(input: ModeScoringInput): ModeScoringOutput {
+  const raw: Record<string, number> = {}
+  for (const armband of Object.keys(input.teams)) {
+    raw[armband] = killScoreOf(input.tally, armband) + survivalScoreOf(input, armband)
+  }
+  const teamScores = applyTeamScale(input.teams, raw)
+  return { teamScores, playerScores: distributeToPlayers(input.teams, teamScores) }
+}
+
 /** 왕(X 겸직 팀)의 킬 — 일반 킬의 2배(P07 §4.4) */
 export const KING_KILL_POINTS = 20
 /** 왕 사냥 — 상대 왕을 잡은 킬. 누가 잡았든 3배 */

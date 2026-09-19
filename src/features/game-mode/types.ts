@@ -53,13 +53,21 @@ export interface ModeScoringOutput {
 
 export type ModeScoring = (input: ModeScoringInput) => ModeScoringOutput
 
+/** 대상 제한 판정에 필요한 라운드 상황 — 꼬리잡기의 "다음 알파벳"은 살아 있는 팀 목록에 따라 달라진다 */
+export interface TargetContext {
+  /** 이번 라운드 팀 완장 전부 */
+  teams: string[]
+  /** 이미 탈락한 완장(hits ≥ 라이프) */
+  outTeams: string[]
+}
+
 /**
  * 판정 시트의 대상 제한(P07 §11 "누구를 잡을 수 있나") — 모드가 잡을 수 없는 팀을 정하면
  * 시트가 그 팀을 비활성화하고 이유 배지를 붙인다. 점수 계산은 이 제한과 무관하게 판정 결과를 신뢰한다.
  */
 export interface TargetRule {
-  /** 제출 팀(attacker)이 이 팀(target)을 잡을 수 있는가 — 둘 다 이번 라운드 팀 완장 */
-  canTarget: (attacker: string, target: string) => boolean
+  /** 제출 팀(attacker)이 이 팀(target)을 잡을 수 있는가 — 둘 다 이번 라운드 팀 완장. context는 판정 시점의 라운드 상황(팀 목록·탈락 팀) */
+  canTarget: (attacker: string, target: string, context: TargetContext) => boolean
   /** 막힌 팀 옆에 붙는 짧은 이유(예: '같은 그룹') */
   blockedBadge: string
 }
