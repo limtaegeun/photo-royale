@@ -101,6 +101,11 @@ const isPaused = computed(() => displayState.value === 'paused')
 const currentMode = computed(() => GAME_MODES[room.value?.gameMode ?? 'normal'])
 /** 모드가 킬샷을 쓰지 않으면(스태프 추격전) 콕핏이 셔터를 잠그고 이 문구로 이유를 보인다 */
 const modeKillshotLock = computed(() => currentMode.value.killshotLock ?? null)
+/** 셔터가 잠긴 모든 이유의 합 — 버튼 disabled와 손잡이 색이 같은 근거를 본다 */
+const isShutterLocked = computed(() => isPaused.value || isMyTeamOut.value || modeKillshotLock.value !== null)
+/** 셔터 손잡이 색 — 잠기면 링(BaseButton disabled)과 함께 손잡이도 꺼진다. 동적 클래스는 리터럴 맵(스캐너 대응) */
+const SHUTTER_KNOB_CLASS = { ready: 'bg-brand', locked: 'bg-disabled' } as const
+const shutterKnobClass = computed(() => (isShutterLocked.value ? SHUTTER_KNOB_CLASS.locked : SHUTTER_KNOB_CLASS.ready))
 const objective = computed(
   () =>
     currentMode.value.rules.find((rule) => rule.kind === 'static')?.text ??
@@ -539,10 +544,10 @@ function subscribeToCurrentRoundLedger(roundNumber: number) {
             padding="none"
             aria-label="킬샷 촬영"
             class="shutter col-start-2 row-start-1 mb-7 min-h-20 w-20"
-            :disabled="isPaused || isMyTeamOut || modeKillshotLock !== null"
+            :disabled="isShutterLocked"
             @click="shoot"
           >
-            <span class="size-14 rounded-full bg-brand"></span>
+            <span class="size-14 rounded-full" :class="shutterKnobClass" data-testid="shutter-knob"></span>
           </BaseButton>
         </div>
       </div>

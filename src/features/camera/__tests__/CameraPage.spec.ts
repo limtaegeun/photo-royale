@@ -263,6 +263,10 @@ function findShutter(wrapper: VueWrapper) {
   return wrapper.find('button[aria-label="킬샷 촬영"]')
 }
 
+function findShutterKnob(wrapper: VueWrapper) {
+  return wrapper.find('[data-testid="shutter-knob"]')
+}
+
 beforeEach(() => {
   createObjectURL.mockClear()
   revokeObjectURL.mockClear()
@@ -545,6 +549,8 @@ describe('CameraPage 탈락 게이트 (P07 M3)', () => {
     await flushPromises()
 
     expect(findShutter(wrapper).attributes('disabled')).toBeDefined()
+    expect(findShutterKnob(wrapper).classes()).toContain('bg-disabled')
+    expect(findShutterKnob(wrapper).classes()).not.toContain('bg-brand')
     expect(wrapper.text()).toContain('우리 팀이 잡혔어요. 이번 라운드는 촬영할 수 없어요.')
     // 목표 문구는 그대로 — 탈락은 자기 자리에서 알린다
     expect(wrapper.text()).toContain('상대 완장 알파벳을 찍어 제출하세요.')
@@ -612,6 +618,8 @@ describe('CameraPage 모드 킬샷 잠금 (스태프 추격전)', () => {
     await flushPromises()
 
     expect(findShutter(wrapper).attributes('disabled')).toBeDefined()
+    expect(findShutterKnob(wrapper).classes()).toContain('bg-disabled')
+    expect(findShutterKnob(wrapper).classes()).not.toContain('bg-brand')
     expect(wrapper.text()).toContain('스태프 추격전')
     expect(wrapper.text()).toContain('이 모드에서는 킬샷을 찍지 않아요.')
   })
@@ -633,6 +641,8 @@ describe('CameraPage 일시정지 게이트', () => {
     const wrapper = await mountWithActiveCamera()
 
     expect(findShutter(wrapper).attributes('disabled')).toBeDefined()
+    expect(findShutterKnob(wrapper).classes()).toContain('bg-disabled')
+    expect(findShutterKnob(wrapper).classes()).not.toContain('bg-brand')
     expect(wrapper.text()).toContain('진행자가 게임을 멈췄어요. 자리에 멈춰 안내를 기다려 주세요.')
     // 일시정지는 별도 블록이라 목표 문구를 밀어내지 않는다 — 재개 후 다시 읽을 필요가 없어야 한다
     expect(wrapper.text()).toContain('상대 완장 알파벳을 찍어 제출하세요.')
@@ -648,6 +658,7 @@ describe('CameraPage 일시정지 게이트', () => {
     const wrapper = await mountWithActiveCamera()
 
     expect(findShutter(wrapper).attributes('disabled')).toBeUndefined()
+    expect(findShutterKnob(wrapper).classes()).toContain('bg-brand')
   })
 
   it('일시정지가 재개되면 셔터가 다시 활성화된다', async () => {
