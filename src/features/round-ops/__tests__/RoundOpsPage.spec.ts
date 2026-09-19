@@ -100,7 +100,7 @@ const subscribeSubmissionsMock =
     (
       code: string,
       round: number,
-      onChange: (submissions: Submission[]) => void,
+      onChange: (submissions: Submission[], meta: { fromCache: boolean }) => void,
       onError?: (error: Error) => void,
     ) => () => void
   >()
@@ -131,7 +131,7 @@ vi.mock('../api/submissions', async (importOriginal) => {
     subscribeToPendingSubmissions: (
       code: string,
       round: number,
-      onChange: (submissions: Submission[]) => void,
+      onChange: (submissions: Submission[], meta: { fromCache: boolean }) => void,
       onError?: (error: Error) => void,
     ) => subscribeSubmissionsMock(code, round, onChange, onError),
     subscribeToSubmissionLog: (
@@ -166,7 +166,7 @@ function captureSnapshotCallbacks() {
   let deliverRoom: (room: RoomInfo | null) => void = () => {}
   let deliverParticipants: (participants: Participant[]) => void = () => {}
   let deliverNotice: (notice: Notice | null) => void = () => {}
-  let deliverSubmissions: (submissions: Submission[]) => void = () => {}
+  let deliverSubmissions: (submissions: Submission[], meta: { fromCache: boolean }) => void = () => {}
   let failSubmissions: (error: Error) => void = () => {}
   let deliverRecords: (records: SubmissionRecord[]) => void = () => {}
   let failRecords: (error: Error) => void = () => {}
@@ -201,7 +201,8 @@ function captureSnapshotCallbacks() {
     room: (room: RoomInfo | null) => deliverRoom(room),
     participants: (participants: Participant[]) => deliverParticipants(participants),
     notice: (notice: Notice | null) => deliverNotice(notice),
-    submissions: (submissions: Submission[]) => deliverSubmissions(submissions),
+    submissions: (submissions: Submission[], meta: { fromCache: boolean } = { fromCache: false }) =>
+      deliverSubmissions(submissions, meta),
     submissionsError: (error: Error) => failSubmissions(error),
     records: (records: SubmissionRecord[]) => deliverRecords(records),
     recordsError: (error: Error) => failRecords(error),
@@ -1381,6 +1382,30 @@ describe('RoundOpsPage', () => {
     })
 
     /**
+     * 리스너는 살아 있어 오류 카드가 뜨지 않지만, 오프라인(음영지역)에서는 로컬 캐시로만 큐가
+     * 서빙된다. "0건"이 서버가 확인해 준 값이 아니므로 종료 확인 없이 넘어가면 안 된다
+     * (p06 §7 행사 전 필수 수정 2).
+     */
+    it('캐시에서만 나온 0건(fromCache)이면 리스너 오류가 없어도 확인을 받는다', async () => {
+      const { deliver, wrapper } = await openEndedRound(0)
+
+      deliver.submissions([], { fromCache: true })
+      await flushPromises()
+
+      await findButton(wrapper, '라운드 종료')!.trigger('click')
+      await flushPromises()
+
+      expect(document.body.textContent).toContain('대기 건수를 확인할 수 없어요')
+      expect(document.body.textContent).toContain('서버와 연결이 불안정해')
+      const buttonLabels = [...document.body.querySelectorAll<HTMLElement>('button')].map(
+        (button) => button.textContent?.trim(),
+      )
+      expect(buttonLabels).not.toContain('먼저 판정하기')
+      expect(buttonLabels).toContain('닫기')
+      expect(endGameMock).not.toHaveBeenCalled()
+    })
+
+    /**
      * 대기가 없으면 다이얼로그 없이 바로 실행되는 경로다 — 실패를 알리지 않으면 화면에 아무 흔적도
      * 남지 않아, 진행자는 라운드가 닫힌 줄 알고 다음 순서로 넘어간다.
      */
@@ -1866,6 +1891,32 @@ describe('RoundOpsPage', () => {
       expect(wrapper.text()).toContain('판정 큐 연결 오류')
       expect(wrapper.text()).toContain('연결이 복구되기 전에는 남아 있던 판정 항목을 사용할 수 없어요.')
       expect(wrapper.find('button[data-submission="s1"]').exists()).toBe(false)
+    })
+
+    /**
+     * 리스너는 살아 있어 오류 카드는 뜨지 않지만, 캐시에서만 나온 큐라 서버가 확인한 값이
+     * 아니다 — 종료 확인의 stale 판단과 같은 근거를 판정 탭에서도 보여준다(p06 §7 필수 수정 2).
+     */
+    it('캐시에서만 나온 큐(fromCache)일 때만 연결 불안정 안내가 보인다', async () => {
+      const { deliver, wrapper } = await openJudgeTab()
+
+      expect(wrapper.text()).not.toContain('서버와 연결이 불안정해요.')
+
+      deliver.submissions([pendingSubmission()], { fromCache: true })
+      await flushPromises()
+      expect(wrapper.text()).toContain('서버와 연결이 불안정해요.')
+
+      deliver.submissions([pendingSubmission()], { fromCache: false })
+      await flushPromises()
+      expect(wrapper.text()).not.toContain('서버와 연결이 불안정해요.')
+
+      // 리스너가 죽으면 오류 카드가 큐 화면 자체를 대체한다 — 안내 문구는 그 아래 있던 문구다
+      deliver.submissions([pendingSubmission()], { fromCache: true })
+      await flushPromises()
+      deliver.submissionsError(new Error('permission-denied'))
+      await flushPromises()
+      expect(wrapper.text()).not.toContain('서버와 연결이 불안정해요.')
+      expect(wrapper.text()).toContain('판정 큐 연결 오류')
     })
 
     it('판정 시트가 열린 중 큐 Listen 오류가 나도 선판정으로 오인하지 않는다', async () => {

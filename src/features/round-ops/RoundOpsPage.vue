@@ -52,6 +52,7 @@ const {
   participants,
   latestNotice,
   pendingSubmissions,
+  isPendingQueueStale,
   submissionRecords,
   recordsLoaded,
   pendingAdjustMinutes,
@@ -108,7 +109,7 @@ const isFinishRoundDialogOpen = ref(false)
  * 떠 있는 동안 다른 기기가 판정을 끝냈을 때 문구가 "0건이 남았어요"로 바뀌어, 진행자가 읽고
  * 판단한 근거와 실제로 확인 중인 대상이 어긋난다.
  */
-const finishDialogInfo = ref<{ count: number; uncertain: boolean } | null>(null)
+const finishDialogInfo = ref<{ count: number; uncertain: boolean; stale: boolean } | null>(null)
 const isJudgeSheetOpen = ref(false)
 /** 시트에서 판정 중인 킬샷 — 큐에서 고른 스냅샷을 들고 있는다(닫힌 뒤에도 애니메이션 동안 유지) */
 const judgingSubmission = ref<Submission | null>(null)
@@ -267,11 +268,13 @@ async function finishRound() {
 function requestFinishRound() {
   // 큐 리스너가 죽으면 store가 stale 큐를 비우므로 "알 수 없음"이 "0건"으로 위장한다 — 그대로
   // 두면 남은 킬샷이 확인 한 번 없이 영구 미판정으로 넘어간다. 모르는 상태는 아는 0건과 다르게
-  // 취급해 확인을 끼운다.
-  const uncertain = submissionListenError.value !== null
+  // 취급해 확인을 끼운다. 캐시에서만 나온 큐(오프라인·음영지역)도 "아는 0건"이 아니다 — 리스너는
+  // 살아 있어 오류는 없지만 서버가 확인해 준 값이 아니기 때문이다.
+  const stale = submissionListenError.value === null && isPendingQueueStale.value
+  const uncertain = submissionListenError.value !== null || stale
   const count = pendingSubmissions.value.length
   if (count > 0 || uncertain) {
-    finishDialogInfo.value = { count, uncertain }
+    finishDialogInfo.value = { count, uncertain, stale }
     isFinishRoundDialogOpen.value = true
     return
   }
@@ -282,6 +285,9 @@ function requestFinishRound() {
 const finishDialogDescription = computed(() => {
   const info = finishDialogInfo.value
   if (info === null) return ''
+  if (info.stale) {
+    return '서버와 연결이 불안정해 대기 건수가 최신인지 확인할 수 없어요. 판정되지 않은 킬샷은 킬로 인정되지 않아요.'
+  }
   return info.uncertain
     ? '판정 큐 연결이 끊겨 대기 건수를 확인할 수 없어요. 판정되지 않은 킬샷은 킬로 인정되지 않아요.'
     : `대기 중인 킬샷 ${info.count}건이 남았어요. 판정되지 않은 킬샷은 킬로 인정되지 않아요.`
@@ -607,13 +613,23 @@ onUnmounted(() => {
             {{ submissionListenError }} 연결이 복구되기 전에는 남아 있던 판정 항목을 사용할 수 없어요.
           </p>
         </BaseCard>
-        <JudgeQueueList
-          v-else-if="phase === 'ready' && isPlaying"
-          :submissions="pendingSubmissions"
-          :participants="participants"
-          :now-ms="nowMs"
-          @select="openJudgeSheet"
-        />
+        <div v-else-if="phase === 'ready' && isPlaying" class="flex flex-col gap-3">
+          <!-- 리스너는 살아 있어 오류 카드는 뜨지 않지만, 캐시에서만 나온 큐라 서버가 확인한
+               값이 아니다 — 종료 확인의 stale 판단과 같은 근거를 판정 탭에서도 보여준다 -->
+          <p
+            v-if="isPendingQueueStale && submissionListenError === null"
+            role="status"
+            class="text-caption break-keep text-warning"
+          >
+            서버와 연결이 불안정해요. 목록이 최신이 아닐 수 있어요.
+          </p>
+          <JudgeQueueList
+            :submissions="pendingSubmissions"
+            :participants="participants"
+            :now-ms="nowMs"
+            @select="openJudgeSheet"
+          />
+        </div>
 
         <!-- rules도 playing에서만 제출을 허용한다 — 시작 전에는 모일 킬샷이 없다.
              assignmentRound>0(적어도 한 번 라운드를 치른 방)에서는 "시작 전" 카피가 사실과

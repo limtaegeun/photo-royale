@@ -87,6 +87,11 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
   const latestNotice = ref<Notice | null>(null)
   /** 판정 대기 킬샷 — 오래된 순(api가 정렬). 판정되면 서버 필터(pending)로 자연 제거된다 */
   const pendingSubmissions = ref<Submission[]>([])
+  /**
+   * 판정 큐가 서버 확인 없이 로컬 캐시에서만 나온 상태(음영지역). 종료 확인이 "0건"을
+   * 아는 0건으로 취급하지 않게 하는 근거 — p06 §7 필수 수정 2.
+   */
+  const isPendingQueueStale = ref(false)
   /** 전 라운드 판정 이력 — 최신이 위(api가 정렬). 기록 탭이 처음 열릴 때만 구독한다 */
   const submissionRecords = ref<SubmissionRecord[]>([])
   /**
@@ -158,6 +163,7 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     unsubscribeSubmissions?.()
     unsubscribeLedger?.()
     pendingSubmissions.value = []
+    isPendingQueueStale.value = false
     currentLedger.value = null
     subscribedSubmissionRound = roundNumber
     // 원장은 판정 큐와 같은 차수를 따라간다. 구독 오류는 "원장 없음"과 같게 둔다 — 그 라운드는
@@ -177,14 +183,16 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     unsubscribeSubmissions = subscribeToPendingSubmissions(
       code,
       roundNumber,
-      (submissions) => {
+      (submissions, meta) => {
         if (subscribedSubmissionRound !== roundNumber) return
         submissionListenError.value = null
         pendingSubmissions.value = submissions
+        isPendingQueueStale.value = meta.fromCache
       },
       () => {
         if (subscribedSubmissionRound !== roundNumber) return
         pendingSubmissions.value = []
+        isPendingQueueStale.value = false
         submissionListenError.value = SUBMISSIONS_LISTEN_ERROR_MESSAGE
       },
     )
@@ -212,6 +220,7 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
         unsubscribeLedger = null
         subscribedSubmissionRound = null
         pendingSubmissions.value = []
+        isPendingQueueStale.value = false
         currentLedger.value = null
         unsubscribeRecords?.()
         unsubscribeRecords = null
@@ -249,6 +258,7 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     participants.value = []
     latestNotice.value = null
     pendingSubmissions.value = []
+    isPendingQueueStale.value = false
     submissionRecords.value = []
     recordsLoaded.value = false
     currentLedger.value = null
@@ -480,6 +490,7 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     participants,
     latestNotice,
     pendingSubmissions,
+    isPendingQueueStale,
     submissionRecords,
     recordsLoaded,
     currentLedger,
