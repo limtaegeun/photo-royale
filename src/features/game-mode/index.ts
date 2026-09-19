@@ -17,10 +17,11 @@ export type {
   ModeScoring,
   ModeScoringInput,
   ModeScoringOutput,
+  TargetContext,
   TargetRule,
 } from './types'
 // 원점수 재료 — round-ledger의 정산 단계와 모드 스펙이 함께 쓴다
-export { ALLY_GROUP_TARGETING } from './targeting'
+export { ALLY_GROUP_TARGETING, TAIL_CHASE_TARGETING, nextPreyOf } from './targeting'
 export {
   GROUP_ASSIST_POINTS,
   KILL_POINTS,
@@ -43,6 +44,7 @@ export {
   livesOf,
   normalScoring,
   survivalScoreOf,
+  tailChaseScoring,
   teamScaleOf,
 } from './scoring'
 export { default as GameModeRulebook } from './components/GameModeRulebook.vue'

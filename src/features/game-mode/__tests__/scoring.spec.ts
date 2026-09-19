@@ -12,6 +12,7 @@ import {
   kingHuntScoring,
   livesOf,
   normalScoring,
+  tailChaseScoring,
   teamScaleOf,
 } from '../scoring'
 import { GAME_MODES } from '../registry'
@@ -100,6 +101,26 @@ describe('1인 팀 보정 (규칙서: 목숨과 포인트가 2배)', () => {
 
     expect(output.teamScores.B).toBe(80)
     expect(output.playerScores.준호).toBe(80)
+  })
+})
+
+describe('꼬리잡기 (P07 §4.2)', () => {
+  it('킬 10 + 생존 5(아웃 제외)를 팀원 각자에게 — 1인 팀은 2배', () => {
+    const teams = { A: ['u1', 'u2'], B: ['u3', 'u4'], C: ['u5'] }
+    const output = tailChaseScoring({
+      teams,
+      xTeams: [],
+      tally: { A: { kills: 1, tripleKills: 0 } },
+      hits: { B: 1 },
+    })
+
+    // B는 아웃(hits 1 ≥ 라이프 1)이라 생존 보너스가 없다 · C는 1인 팀이라 생존 5 × 2 = 10
+    expect(output.teamScores).toEqual({ A: 15, B: 0, C: 10 })
+    expect(output.playerScores).toEqual({ u1: 15, u2: 15, u3: 0, u4: 0, u5: 10 })
+  })
+
+  it('레지스트리의 꼬리잡기 정의가 이 규칙을 쓴다', () => {
+    expect(GAME_MODES['tail-chase'].scoring).toBe(tailChaseScoring)
   })
 })
 

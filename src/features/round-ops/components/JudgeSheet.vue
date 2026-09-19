@@ -38,8 +38,8 @@ interface Props {
    */
   outTeams?: string[]
   /**
-   * 모드의 대상 제한(P07 M4) — 제출 팀이 잡을 수 없는 팀(그룹전의 같은 그룹 동맹)을 비활성화하고
-   * 이유 배지를 붙인다. 제한이 없는 모드면 null.
+   * 모드의 대상 제한(P07 M4) — 제출 팀이 잡을 수 없는 팀(그룹전의 같은 그룹 동맹, 꼬리잡기의 다음
+   * 알파벳이 아닌 팀)을 비활성화하고 이유 배지를 붙인다. 제한이 없는 모드면 null.
    */
   targetRule?: TargetRule | null
 }
@@ -117,6 +117,8 @@ const groupSections = computed<GroupSection[]>(() => {
     membersByTeam.set(participant.team, members)
   }
 
+  const targetContext = { teams: [...membersByTeam.keys()], outTeams: props.outTeams }
+
   return TEAM_GROUP_ORDER.map((group) => {
     const teams = [...membersByTeam.entries()]
       .filter(([armband]) => displayGroup(armband) === group)
@@ -131,7 +133,7 @@ const groupSections = computed<GroupSection[]>(() => {
           props.targetRule !== null &&
           props.submission !== null &&
           armband !== props.submission.team &&
-          !props.targetRule.canTarget(props.submission.team, armband),
+          !props.targetRule.canTarget(props.submission.team, armband, targetContext),
       }))
     const firstTeam = teams[0]
     return {
