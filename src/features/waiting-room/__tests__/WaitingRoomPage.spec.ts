@@ -266,6 +266,8 @@ describe('WaitingRoomPage', () => {
         confirmedAtMs: 0,
         tally: null,
         hits: null,
+        tails: null,
+        credits: null,
         result: {
           teamScores: {},
           playerScores: { me: 10, [ROSTER[1]!.id]: 40 },

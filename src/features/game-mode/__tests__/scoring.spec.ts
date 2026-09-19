@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  absorbKillEffect,
   applyTeamScale,
   distributeToPlayers,
   groupAssistScoreOf,
@@ -122,6 +123,99 @@ describe('꼬리잡기 (P07 §4.2)', () => {
 
   it('레지스트리의 꼬리잡기 정의가 이 규칙을 쓴다', () => {
     expect(GAME_MODES['tail-chase'].scoring).toBe(tailChaseScoring)
+  })
+})
+
+describe('꼬리잡기 편입 (P07 §4.2, M4-6)', () => {
+  /** A(a1·a2)·B(b1·b2)·C(c1·c2)는 2인 팀(라이프 1), D(d1)는 1인 팀(라이프 2) */
+  const TC_TEAMS = { A: ['a1', 'a2'], B: ['b1', 'b2'], C: ['c1', 'c2'], D: ['d1'] }
+
+  describe('absorbKillEffect — 킬 1건이 원장에 남길 것', () => {
+    it('크레딧은 공격 팀원 + 이미 그 팀 꼬리로 편입된 인원 — 같은 uid는 한 번만', () => {
+      const effect = absorbKillEffect(
+        { teams: TC_TEAMS, hits: {}, tails: { A: ['b1', 'b2', 'a2'] } },
+        'A',
+        'C',
+      )
+
+      expect(effect.creditUids).toEqual(['a1', 'a2', 'b1', 'b2'])
+    })
+
+    it('2인 팀은 첫 히트로 아웃 — 팀원과 그 팀이 끌던 꼬리가 잡은 팀에 합류한다(이 킬의 크레딧은 못 받는다)', () => {
+      const effect = absorbKillEffect(
+        { teams: TC_TEAMS, hits: {}, tails: { B: ['c1', 'c2'] } },
+        'A',
+        'B',
+      )
+
+      expect(effect.creditUids).toEqual(['a1', 'a2'])
+      expect(effect.absorbedUids).toEqual(['b1', 'b2', 'c1', 'c2'])
+    })
+
+    it('1인 팀은 라이프 2라 첫 히트로는 합류하지 않고 두 번째 히트로 합류한다', () => {
+      expect(absorbKillEffect({ teams: TC_TEAMS, hits: {} }, 'C', 'D').absorbedUids).toEqual([])
+      expect(absorbKillEffect({ teams: TC_TEAMS, hits: { D: 1 } }, 'C', 'D').absorbedUids).toEqual(['d1'])
+    })
+
+    it('tails가 없는 원장(첫 아웃 전)은 팀원만으로 계산한다', () => {
+      expect(absorbKillEffect({ teams: TC_TEAMS, hits: {} }, 'A', 'B')).toEqual({
+        creditUids: ['a1', 'a2'],
+        absorbedUids: ['b1', 'b2'],
+      })
+    })
+  })
+
+  describe('tailChaseScoring — 크레딧 귀속', () => {
+    /**
+     * A가 B를 잡고(B 합류) → A가 C를 잡고(a1·a2·b1·b2 크레딧, C 합류) → D가 A를 잡았다(A 아웃).
+     * 크레딧: a1·a2 = 2, b1·b2 = 1(편입 뒤 킬 1건), c1·c2 = 0(편입 뒤 킬 없음), d1 = 1.
+     */
+    const input = {
+      teams: TC_TEAMS,
+      xTeams: [],
+      tally: { A: { kills: 2, tripleKills: 0 }, D: { kills: 1, tripleKills: 0 } },
+      hits: { B: 1, C: 1, A: 1 },
+    }
+    const credits = { a1: 2, a2: 2, b1: 1, b2: 1, d1: 1 }
+
+    it('개인 원점수 = 내 크레딧 × 10 + 원래 완장의 생존 5 — 편입자는 팀원과 달라진다(결정 9), 1인 팀 2배', () => {
+      const output = tailChaseScoring({ ...input, credits })
+
+      // a1·a2: 킬 2건 20, A는 잡혀서 생존 없음 · b1·b2: 편입 뒤 킬 1건 10, B 아웃 · c1·c2: 0
+      // d1: 킬 1건 10 + 생존 5 = 15, 1인 팀 2배 = 30
+      expect(output.playerScores).toEqual({ a1: 20, a2: 20, b1: 10, b2: 10, c1: 0, c2: 0, d1: 30 })
+    })
+
+    it('팀 원점수는 크레딧과 무관하게 공격 완장의 tally 기준 그대로다', () => {
+      expect(tailChaseScoring({ ...input, credits }).teamScores).toEqual({ A: 20, B: 0, C: 0, D: 30 })
+      expect(tailChaseScoring({ ...input, credits }).teamScores).toEqual(tailChaseScoring(input).teamScores)
+    })
+
+    it('credits가 없는 원장(편입 도입 전 문서)은 팀 원점수 동일 지급이다', () => {
+      expect(tailChaseScoring(input).playerScores).toEqual({
+        a1: 20,
+        a2: 20,
+        b1: 0,
+        b2: 0,
+        c1: 0,
+        c2: 0,
+        d1: 30,
+      })
+    })
+
+    it('편성 스냅샷 밖 uid의 크레딧은 결과에 넣지 않는다 — 그 라운드 미참가(결정 11)', () => {
+      const output = tailChaseScoring({ ...input, credits: { ...credits, ghost: 5 } })
+
+      expect(output.playerScores).not.toHaveProperty('ghost')
+    })
+
+    it('레지스트리의 꼬리잡기만 편입 모드다 — 판정 배치가 tails·credits를 쓰는 근거', () => {
+      const absorbing = Object.values(GAME_MODES)
+        .filter((mode) => mode.absorbsCaughtTeam === true)
+        .map((mode) => mode.id)
+
+      expect(absorbing).toEqual(['tail-chase'])
+    })
   })
 })
 

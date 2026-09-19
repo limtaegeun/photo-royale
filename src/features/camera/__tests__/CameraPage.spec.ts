@@ -135,6 +135,8 @@ function ledgerWith(hits: Record<string, number>): RoundLedger {
     confirmedAtMs: 0,
     tally: null,
     hits,
+    tails: null,
+    credits: null,
     result: null,
   }
 }

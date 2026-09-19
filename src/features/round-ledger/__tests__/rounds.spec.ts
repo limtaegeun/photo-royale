@@ -33,6 +33,7 @@ vi.mock('firebase/firestore', () => ({
   onSnapshot: (...args: Parameters<typeof onSnapshotMock>) => onSnapshotMock(...args),
   serverTimestamp: () => SERVER_TIMESTAMP,
   increment: (n: number) => ({ increment: n }),
+  arrayUnion: (...items: string[]) => ({ arrayUnion: items }),
   // 실제 runTransaction의 재시도는 커밋 경합에서만 일어나므로, 콜백 1회 실행으로 충분하다
   runTransaction: <T>(
     _db: unknown,
@@ -45,6 +46,7 @@ vi.mock('firebase/firestore', () => ({
 
 import {
   addRoundSnapshotToBatch,
+  addTallyToBatch,
   recordStaffOut,
   roundLedgerDoc,
   subscribeToRoundLedger,
@@ -107,6 +109,61 @@ describe('addRoundSnapshotToBatch', () => {
   })
 })
 
+describe('addTallyToBatch (판정 집계)', () => {
+  function tallyBatch() {
+    return { update: vi.fn<(ref: FakeRef, data: Record<string, unknown>) => void>() }
+  }
+
+  it('공격 완장 kills와 피격 완장 hits를 1씩 올린다 — absorb가 없으면 tails·credits는 건드리지 않는다', () => {
+    const batch = tallyBatch()
+
+    addTallyToBatch(batch as never, 'AB2C', 2, 'A', 'B')
+
+    expect(batch.update).toHaveBeenCalledExactlyOnceWith(
+      { path: 'rooms/AB2C/rounds/2' },
+      { 'tally.A.kills': { increment: 1 }, 'hits.B': { increment: 1 } },
+    )
+  })
+
+  /**
+   * 꼬리잡기 편입(P07 §4.2, M4-6) — 킬 시점의 사냥 팀 소속 전원에게 credits 1, 이 킬로 아웃된 팀의
+   * 인원은 공격 완장의 tails에 합류. 같은 update에 실려 tally·hits와 원자적으로 남는다(rules ② 한 갈래).
+   */
+  it('absorb가 있으면 크레딧 대상 uid마다 credits를 1 올리고 합류 인원을 공격 완장 tails에 arrayUnion한다', () => {
+    const batch = tallyBatch()
+
+    addTallyToBatch(batch as never, 'AB2C', 2, 'A', 'B', 1, false, {
+      creditUids: ['u1', 'u2', 'u5'],
+      absorbedUids: ['u3', 'u4'],
+    })
+
+    expect(batch.update).toHaveBeenCalledExactlyOnceWith(
+      { path: 'rooms/AB2C/rounds/2' },
+      {
+        'tally.A.kills': { increment: 1 },
+        'hits.B': { increment: 1 },
+        'credits.u1': { increment: 1 },
+        'credits.u2': { increment: 1 },
+        'credits.u5': { increment: 1 },
+        'tails.A': { arrayUnion: ['u3', 'u4'] },
+      },
+    )
+  })
+
+  it('이 킬로 피격 팀이 아웃되지 않으면(합류 없음) credits만 올리고 tails는 쓰지 않는다 — 3배·왕 사냥과도 함께', () => {
+    const batch = tallyBatch()
+
+    addTallyToBatch(batch as never, 'AB2C', 2, 'A', 'B', 3, true, { creditUids: ['u1'], absorbedUids: [] })
+
+    expect(batch.update.mock.calls[0]![1]).toEqual({
+      'tally.A.tripleKills': { increment: 1 },
+      'tally.A.kingKills': { increment: 1 },
+      'hits.B': { increment: 1 },
+      'credits.u1': { increment: 1 },
+    })
+  })
+})
+
 describe('recordStaffOut (스태프 추격전 수동 아웃, P07 §4.5)', () => {
   it('tally가 없는 원장이면 hits 증가와 함께 빈 tally 맵을 만든다', async () => {
     transactionGetMock.mockResolvedValue({ exists: () => true, data: () => ({ ...SNAPSHOT_DATA }) })
@@ -143,7 +200,7 @@ describe('recordStaffOut (스태프 추격전 수동 아웃, P07 §4.5)', () => 
 })
 
 describe('toRoundLedger', () => {
-  it('스냅샷만 있는 문서는 tally·hits·result가 null이다', () => {
+  it('스냅샷만 있는 문서는 tally·hits·tails·credits·result가 null이다', () => {
     expect(toRoundLedger('2', SNAPSHOT_DATA)).toEqual({
       roundNo: 2,
       mode: 'normal',
@@ -152,6 +209,8 @@ describe('toRoundLedger', () => {
       confirmedAtMs: 1_000,
       tally: null,
       hits: null,
+      tails: null,
+      credits: null,
       result: null,
     })
   })
@@ -182,6 +241,18 @@ describe('toRoundLedger', () => {
       playerPoints: { u1: 10, u2: 10, u3: 7 },
       finishedAtMs: null,
     })
+  })
+
+  it('편입 모드의 tails·credits를 읽는다 — 문자열이 아닌 꼬리 원소·숫자가 아닌 크레딧은 그 엔트리만 버린다', () => {
+    const ledger = toRoundLedger('2', {
+      ...SNAPSHOT_DATA,
+      mode: 'tail-chase',
+      tails: { A: ['u3', 9], B: 'u1' },
+      credits: { u1: 2, u2: 'two' },
+    })
+
+    expect(ledger?.tails).toEqual({ A: ['u3'] })
+    expect(ledger?.credits).toEqual({ u1: 2 })
   })
 
   it('차수가 아닌 문서 ID나 알 수 없는 모드는 null — 손상된 문서 하나가 순위 계산을 세우지 않게', () => {

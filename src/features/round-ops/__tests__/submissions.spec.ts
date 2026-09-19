@@ -65,6 +65,7 @@ vi.mock('firebase/firestore', () => ({
   getDocFromServer: (ref: FakeRef) => getDocFromServerMock(ref),
   writeBatch: () => ({ update: batchUpdateMock, commit: batchCommitMock }),
   increment: (n: number) => ({ increment: n }),
+  arrayUnion: (...items: string[]) => ({ arrayUnion: items }),
 }))
 
 import {
@@ -416,6 +417,32 @@ describe('판정 쓰기', () => {
         'hits.B': { increment: 1 },
       },
     )
+  })
+
+  /** 꼬리잡기 편입(P07 §4.2, M4-6) — 킬 시점 소속의 크레딧과 아웃된 팀의 꼬리 합류를 같은 배치에 얹는다 */
+  it('absorb가 있으면 원장 집계에 credits increment와 tails arrayUnion을 함께 얹는다', async () => {
+    await approveSubmission(
+      'AB2C',
+      's1',
+      { team: 'B', participantUid: 'u3' },
+      {
+        roundNo: 2,
+        attackerTeam: 'A',
+        absorb: { creditUids: ['u1', 'u2'], absorbedUids: ['u3', 'u4'] },
+      },
+    )
+
+    expect(batchUpdateMock).toHaveBeenCalledWith(
+      { path: 'rooms/AB2C/rounds/2' },
+      {
+        'tally.A.kills': { increment: 1 },
+        'hits.B': { increment: 1 },
+        'credits.u1': { increment: 1 },
+        'credits.u2': { increment: 1 },
+        'tails.A': { arrayUnion: ['u3', 'u4'] },
+      },
+    )
+    expect(batchCommitMock).toHaveBeenCalledTimes(1)
   })
 
   it('배율 3으로 확정된 기록은 multiplier 3으로 읽는다', () => {

@@ -14,6 +14,7 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore'
 import { db } from '@/shared/api/firebase'
+import type { AbsorbKillEffect } from '@/features/game-mode'
 import { addTallyToBatch } from '@/features/round-ledger'
 
 /** 킬샷 데이터 URL 접두 — JPEG만 허용한다(firestore.rules의 matches 정규식과 같은 규칙) */
@@ -265,6 +266,11 @@ export interface ApprovalTally {
   attackerTeam: string
   /** 피격 팀이 이 라운드의 X 겸직 팀(왕)인지 — 원장 kingKills(왕잡기 왕 사냥) 근거. 생략 = false */
   kingTarget?: boolean
+  /**
+   * 편입 모드(꼬리잡기, P07 §4.2)의 킬 효과 — 킬 시점의 사냥 팀 소속(credits)과 이 킬로 아웃된 팀의
+   * 꼬리 합류(tails)를 원장에 같이 남긴다. 편입이 없는 모드는 생략(원장에 두 키를 쓰지 않는다)
+   */
+  absorb?: AbsorbKillEffect
 }
 
 /**
@@ -297,6 +303,7 @@ export async function approveSubmission(
       target.team,
       multiplier,
       tally.kingTarget ?? false,
+      tally.absorb,
     )
   }
   await batch.commit()

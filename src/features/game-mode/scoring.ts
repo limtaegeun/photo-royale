@@ -123,9 +123,46 @@ export function normalScoring(input: ModeScoringInput): ModeScoringOutput {
 }
 
 /**
- * 꼬리잡기(P07 §4.2) — 킬 10 · 종료 시 미편입 생존 5(잡히지 않은 팀 = 아웃 아님), 팀원 각자에게. 1인 팀은 2배.
- * 편입자(잡힌 뒤 잡은 팀 꼬리로 합류한 인원)에게 새 팀의 이후 킬을 귀속하는 것은 원장에 킬 시점 소속이
- * 없어 후속이다 — 지금은 원래 완장 기준으로만 정산한다. 낙오 3배 토글은 일반전 한정이라 들어오지 않는다.
+ * 편입 모드(꼬리잡기)의 킬 1건이 원장에 남길 것 — 킬 시점의 사냥 팀 소속 전원(팀원 + 꼬리)의 크레딧과,
+ * 이 킬로 잡힌 팀이 아웃되면 잡은 팀 꼬리로 합류할 uid. 판정 배치(round-ledger addTallyToBatch)가 그대로 쓴다.
+ */
+export interface AbsorbKillEffect {
+  /** 이 킬로 크레딧 1을 받을 uid — 공격 팀원 + 이미 그 팀 꼬리로 편입돼 있던 인원. 이 킬로 합류하는 인원은 아니다 */
+  creditUids: string[]
+  /** 이 킬로 target이 아웃될 때만 채워진다(target 팀원 + target이 끌던 꼬리). 아니면 빈 배열 */
+  absorbedUids: string[]
+}
+
+/** 두 uid 목록의 합집합 — 같은 uid가 두 번 쓰이지 않게(팀원이 꼬리에도 들어간 손상 데이터 방어) */
+function unionUids(members: string[] | undefined, tails: string[] | undefined): string[] {
+  return [...new Set([...(members ?? []), ...(tails ?? [])])]
+}
+
+/**
+ * 킬 1건의 편입 효과(P07 §4.2 "킬 +10 → 킬 시점의 사냥 팀 소속 전원 — 편입돼 있던 인원 포함").
+ * 크레딧은 공격 팀의 현재 소속(팀원 ∪ 꼬리), 합류는 이 킬로 target의 hits가 라이프에 닿을 때만 —
+ * 1인 팀은 라이프 2라 첫 히트로는 합류하지 않는다. 판정 시점의 원장(hits·tails)을 넘긴다.
+ */
+export function absorbKillEffect(
+  input: Pick<ModeScoringInput, 'teams' | 'hits' | 'tails'>,
+  attacker: string,
+  target: string,
+): AbsorbKillEffect {
+  const tails = input.tails ?? {}
+  const targetOutAfterKill = (input.hits[target] ?? 0) + 1 >= livesOf(input.teams, target)
+  return {
+    creditUids: unionUids(input.teams[attacker], tails[attacker]),
+    absorbedUids: targetOutAfterKill ? unionUids(input.teams[target], tails[target]) : [],
+  }
+}
+
+/**
+ * 꼬리잡기(P07 §4.2) — 킬 10 · 종료 시 미편입 생존 5(잡히지 않은 팀 = 아웃 아님). 1인 팀은 2배.
+ * 팀 원점수는 공격 완장의 tally 기준 그대로다. 개인 원점수는 원장에 킬 크레딧(credits)이 있으면
+ * "내가 받은 크레딧 × 10 + 원래 완장의 생존 5"로 낸다 — 편입자는 원래 완장의 생존 판정(잡혔으니 0)과
+ * 새 팀에서 받은 킬 크레딧을 합쳐 개인 원점수가 팀원과 달라지고, 등급은 개인 단위라 그대로 처리된다(결정 9).
+ * 1인 팀 2배는 그 사람의 원래 편성을 따른다. credits가 없으면(편입 도입 전 문서) 팀 원점수 동일 지급이다.
+ * 낙오 3배 토글은 일반전 한정이라 크레딧에는 배율이 없다.
  */
 export function tailChaseScoring(input: ModeScoringInput): ModeScoringOutput {
   const raw: Record<string, number> = {}
@@ -133,7 +170,19 @@ export function tailChaseScoring(input: ModeScoringInput): ModeScoringOutput {
     raw[armband] = killScoreOf(input.tally, armband) + survivalScoreOf(input, armband)
   }
   const teamScores = applyTeamScale(input.teams, raw)
-  return { teamScores, playerScores: distributeToPlayers(input.teams, teamScores) }
+  const credits = input.credits
+  if (credits === undefined) {
+    return { teamScores, playerScores: distributeToPlayers(input.teams, teamScores) }
+  }
+  const playerScores: Record<string, number> = {}
+  for (const [armband, memberIds] of Object.entries(input.teams)) {
+    const survival = survivalScoreOf(input, armband)
+    const scale = teamScaleOf(input.teams, armband)
+    for (const uid of memberIds) {
+      playerScores[uid] = ((credits[uid] ?? 0) * KILL_POINTS + survival) * scale
+    }
+  }
+  return { teamScores, playerScores }
 }
 
 /** 왕(X 겸직 팀)의 킬 — 일반 킬의 2배(P07 §4.4) */
