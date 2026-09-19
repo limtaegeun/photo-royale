@@ -188,3 +188,22 @@ export function groupScoring(input: ModeScoringInput): ModeScoringOutput {
   const teamScores = applyTeamScale(input.teams, raw)
   return { teamScores, playerScores: distributeToPlayers(input.teams, teamScores) }
 }
+
+/** 스태프 추격전 — 라운드 끝까지 스태프에게 잡히지 않은 팀원 각자(P07 §4.5, 결정 4: 생존자가 위 등급) */
+export const STAFF_SURVIVAL_POINTS = 15
+/** 스태프 추격전 — 스태프에게 잡혀 아웃된 팀원 각자(아래 등급) */
+export const STAFF_OUT_POINTS = 5
+
+/**
+ * 스태프 추격전(P07 §4.5) — 생존 15 · 아웃 5, 팀원 각자에게. 킬은 없다(참가자 전원이 동맹이고
+ * 스태프의 태그는 호스트의 수동 아웃 처리 = hits로만 들어온다). 1인 팀 2배 보정은 **하지 않는다** —
+ * 결정 4가 정한 것은 순서(생존자 위·아웃자 아래) 하나뿐이라, 2배를 주면 1인 생존자가 별도 1등급이 되어
+ * 두 등급 설계가 깨진다(규칙서에도 composition 항목이 없어 2배 안내가 없다). 라이프 2배(livesOf)는 그대로다.
+ */
+export function staffChaseScoring(input: ModeScoringInput): ModeScoringOutput {
+  const teamScores: Record<string, number> = {}
+  for (const armband of Object.keys(input.teams)) {
+    teamScores[armband] = isTeamOut(input, armband) ? STAFF_OUT_POINTS : STAFF_SURVIVAL_POINTS
+  }
+  return { teamScores, playerScores: distributeToPlayers(input.teams, teamScores) }
+}

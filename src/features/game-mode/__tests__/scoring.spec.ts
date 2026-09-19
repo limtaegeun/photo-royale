@@ -12,6 +12,7 @@ import {
   kingHuntScoring,
   livesOf,
   normalScoring,
+  staffChaseScoring,
   tailChaseScoring,
   teamScaleOf,
 } from '../scoring'
@@ -214,5 +215,46 @@ describe('왕잡기 (P07 §4.4)', () => {
 
   it('레지스트리의 왕잡기 정의가 이 규칙을 쓴다', () => {
     expect(GAME_MODES['king-hunt'].scoring).toBe(kingHuntScoring)
+  })
+})
+
+describe('스태프 추격전 (P07 §4.5)', () => {
+  /** A·B는 2인 팀(라이프 1), C는 1인 팀(라이프 2) */
+  const SC_TEAMS = { A: ['u1', 'u2'], B: ['u3', 'u4'], C: ['u5'] }
+
+  it('생존 팀은 15, 아웃 팀은 5를 팀원 각자에게 — 1인 팀도 2배로 뻥튀기하지 않는다', () => {
+    const output = staffChaseScoring({
+      teams: SC_TEAMS,
+      xTeams: [],
+      tally: {},
+      hits: { B: 1, C: 1 },
+    })
+
+    // B는 아웃(hits 1 ≥ 라이프 1) · C는 아직 생존(hits 1 < 라이프 2, 1인 팀이라도 2배 없이 15 그대로)
+    expect(output.teamScores).toEqual({ A: 15, B: 5, C: 15 })
+    expect(output.playerScores).toEqual({ u1: 15, u2: 15, u3: 5, u4: 5, u5: 15 })
+  })
+
+  it('1인 팀도 라이프를 다 써야 아웃이다', () => {
+    const output = staffChaseScoring({ teams: SC_TEAMS, xTeams: [], tally: {}, hits: { C: 2 } })
+
+    expect(output.teamScores.C).toBe(5)
+    expect(output.playerScores.u5).toBe(5)
+  })
+
+  it('참가자 전원이 동맹이라 킬 집계는 무시한다', () => {
+    const output = staffChaseScoring({
+      teams: SC_TEAMS,
+      xTeams: [],
+      tally: { A: { kills: 5, tripleKills: 2 } },
+      hits: {},
+    })
+
+    // 킬을 아무리 올려도 생존 15 그대로 — 등급은 hits(스태프 아웃 기록)로만 갈린다
+    expect(output.teamScores).toEqual({ A: 15, B: 15, C: 15 })
+  })
+
+  it('레지스트리의 스태프 추격전 정의가 이 규칙을 쓴다', () => {
+    expect(GAME_MODES['staff-chase'].scoring).toBe(staffChaseScoring)
   })
 })

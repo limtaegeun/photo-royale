@@ -21,6 +21,9 @@ const onSnapshotMock =
       onError?: (error: Error) => void,
     ) => () => void
   >()
+const transactionGetMock =
+  vi.fn<(ref: FakeRef) => Promise<{ exists: () => boolean; data: () => Record<string, unknown> }>>()
+const transactionUpdateMock = vi.fn<(ref: FakeRef, data: Record<string, unknown>) => void>()
 const SERVER_TIMESTAMP = { __serverTimestamp: true }
 
 vi.mock('firebase/firestore', () => ({
@@ -29,10 +32,20 @@ vi.mock('firebase/firestore', () => ({
   // 팩토리는 호이스팅되므로 mock 변수는 호출 시점에 늦게 참조한다
   onSnapshot: (...args: Parameters<typeof onSnapshotMock>) => onSnapshotMock(...args),
   serverTimestamp: () => SERVER_TIMESTAMP,
+  increment: (n: number) => ({ increment: n }),
+  // 실제 runTransaction의 재시도는 커밋 경합에서만 일어나므로, 콜백 1회 실행으로 충분하다
+  runTransaction: <T>(
+    _db: unknown,
+    fn: (transaction: {
+      get: typeof transactionGetMock
+      update: typeof transactionUpdateMock
+    }) => Promise<T>,
+  ) => fn({ get: transactionGetMock, update: transactionUpdateMock }),
 }))
 
 import {
   addRoundSnapshotToBatch,
+  recordStaffOut,
   roundLedgerDoc,
   subscribeToRoundLedger,
   subscribeToRoundLedgers,
@@ -51,6 +64,8 @@ const SNAPSHOT_DATA = {
 
 beforeEach(() => {
   onSnapshotMock.mockReset().mockReturnValue(() => {})
+  transactionGetMock.mockReset()
+  transactionUpdateMock.mockReset()
 })
 
 describe('roundLedgerDoc', () => {
@@ -89,6 +104,41 @@ describe('addRoundSnapshotToBatch', () => {
     ])
 
     expect(batch.set.mock.calls[0]![1]).toMatchObject({ xTeams: [] })
+  })
+})
+
+describe('recordStaffOut (스태프 추격전 수동 아웃, P07 §4.5)', () => {
+  it('tally가 없는 원장이면 hits 증가와 함께 빈 tally 맵을 만든다', async () => {
+    transactionGetMock.mockResolvedValue({ exists: () => true, data: () => ({ ...SNAPSHOT_DATA }) })
+
+    await recordStaffOut('AB2C', 2, 'A')
+
+    expect(transactionGetMock).toHaveBeenCalledWith({ path: 'rooms/AB2C/rounds/2' })
+    expect(transactionUpdateMock).toHaveBeenCalledExactlyOnceWith(
+      { path: 'rooms/AB2C/rounds/2' },
+      { 'hits.A': { increment: 1 }, tally: {} },
+    )
+  })
+
+  it('tally가 이미 있으면 hits만 올린다', async () => {
+    transactionGetMock.mockResolvedValue({
+      exists: () => true,
+      data: () => ({ ...SNAPSHOT_DATA, tally: { A: { kills: 1, tripleKills: 0 } } }),
+    })
+
+    await recordStaffOut('AB2C', 2, 'A')
+
+    expect(transactionUpdateMock).toHaveBeenCalledExactlyOnceWith(
+      { path: 'rooms/AB2C/rounds/2' },
+      { 'hits.A': { increment: 1 } },
+    )
+  })
+
+  it('원장이 없으면 실패한다 — 도입 전에 배정된 라운드', async () => {
+    transactionGetMock.mockResolvedValue({ exists: () => false, data: () => ({}) })
+
+    await expect(recordStaffOut('AB2C', 2, 'A')).rejects.toThrow('라운드 원장이 없습니다')
+    expect(transactionUpdateMock).not.toHaveBeenCalled()
   })
 })
 

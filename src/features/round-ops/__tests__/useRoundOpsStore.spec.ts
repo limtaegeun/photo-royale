@@ -104,6 +104,7 @@ const subscribeLedgerMock =
       onError?: (error: Error) => void,
     ) => () => void
   >()
+const recordStaffOutMock = vi.fn<(code: string, roundNo: number, team: string) => Promise<void>>()
 
 vi.mock('@/features/round-ledger', async (importOriginal) => ({
   // 정산 계산기·탈락 판정은 순수 함수라 실제 구현을 쓴다 — 종료 배치에 실리는 값이 계산기 출력 그대로여야 한다
@@ -114,6 +115,8 @@ vi.mock('@/features/round-ledger', async (importOriginal) => ({
     onChange: (ledger: RoundLedger | null) => void,
     onError?: (error: Error) => void,
   ) => subscribeLedgerMock(code, round, onChange, onError),
+  recordStaffOut: (code: string, roundNo: number, team: string) =>
+    recordStaffOutMock(code, roundNo, team),
 }))
 
 const approveSubmissionMock =
@@ -284,6 +287,7 @@ describe('useRoundOpsStore', () => {
     subscribeRecordsMock.mockReset().mockReturnValue(unsubscribeRecordsMock)
     subscribeLedgerMock.mockReset().mockReturnValue(unsubscribeLedgerMock)
     unsubscribeLedgerMock.mockReset()
+    recordStaffOutMock.mockReset().mockResolvedValue(undefined)
     unsubscribeRoomMock.mockReset()
     unsubscribeParticipantsMock.mockReset()
     unsubscribeNoticeMock.mockReset()
@@ -441,6 +445,68 @@ describe('useRoundOpsStore', () => {
 
       expect(unsubscribeLedgerMock).toHaveBeenCalledTimes(1)
       expect(store.currentLedger).toBeNull()
+    })
+  })
+
+  describe('스태프 아웃 (P07 §4.5)', () => {
+    it('호스트가 원장이 있는 라운드에서 완장을 아웃으로 기록한다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room())
+      deliver.ledger(ledger())
+
+      await expect(store.markStaffOut('A')).resolves.toBe(true)
+
+      expect(recordStaffOutMock).toHaveBeenCalledExactlyOnceWith('AB2C', 2, 'A')
+    })
+
+    it('원장이 없으면 기록하지 않는다 — 도입 전에 배정된 라운드', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room())
+
+      await expect(store.markStaffOut('A')).resolves.toBe(false)
+
+      expect(recordStaffOutMock).not.toHaveBeenCalled()
+    })
+
+    it('이미 탈락한 팀은 건너뛴다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room())
+      deliver.ledger(ledger({ hits: { B: 2 } }))
+
+      await expect(store.markStaffOut('B')).resolves.toBe(false)
+
+      expect(recordStaffOutMock).not.toHaveBeenCalled()
+    })
+
+    it('호스트가 아니면 기록하지 않는다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room({ hostUid: 'host9' }))
+      deliver.ledger(ledger())
+
+      await expect(store.markStaffOut('A')).resolves.toBe(false)
+
+      expect(recordStaffOutMock).not.toHaveBeenCalled()
+    })
+
+    it('쓰기가 실패하면 false와 안내를 남긴다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room())
+      deliver.ledger(ledger())
+
+      recordStaffOutMock.mockRejectedValueOnce(new Error('permission denied'))
+
+      await expect(store.markStaffOut('A')).resolves.toBe(false)
+      expect(store.actionError).toBe('요청을 처리하지 못했어요. 다시 시도해 주세요.')
     })
   })
 

@@ -45,12 +45,15 @@ const adjustRoundMock =
 
 const subscribeLedgerMock =
   vi.fn<(code: string, round: number, onChange: (ledger: RoundLedger | null) => void) => () => void>()
+const recordStaffOutMock = vi.fn<(code: string, roundNo: number, team: string) => Promise<void>>()
 vi.mock('@/features/round-ledger', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/features/round-ledger')>()),
   // 원장 구독은 실제 Firestore 리스너라 막는다 — 기본은 원장 없는 라운드(도입 전 배정) 전제
   subscribeToRoundLedger: (code: string, round: number, onChange: (ledger: RoundLedger | null) => void) =>
     subscribeLedgerMock(code, round, onChange),
   subscribeToRoundLedgers: () => () => {},
+  recordStaffOut: (code: string, roundNo: number, team: string) =>
+    recordStaffOutMock(code, roundNo, team),
 }))
 
 vi.mock('../api/round', async (importOriginal) => {
@@ -295,6 +298,7 @@ describe('RoundOpsPage', () => {
     endGameMock.mockReset().mockResolvedValue(undefined)
     approveSubmissionMock.mockReset().mockResolvedValue(undefined)
     subscribeLedgerMock.mockReset().mockReturnValue(() => {})
+    recordStaffOutMock.mockReset().mockResolvedValue(undefined)
     rejectSubmissionMock.mockReset().mockResolvedValue(undefined)
     getSubmissionStatusFromServerMock.mockReset().mockResolvedValue('pending')
     subscribeSubmissionsMock.mockReset().mockReturnValue(unsubscribeMock)
@@ -691,6 +695,121 @@ describe('RoundOpsPage', () => {
       expect(sendNoticeMock).toHaveBeenCalledExactlyOnceWith('AB2C', '집합')
       expect(toastMock).toHaveBeenCalledWith({ title: '공지를 보냈어요.', tone: 'success' })
       expect(document.body.textContent).not.toContain('참가자 전원에게 즉시 전달됩니다.')
+    })
+  })
+
+  /**
+   * 스태프 추격전(P07 §4.5) — 스태프의 태그는 킬샷 제출 경로로 들어오지 않아 진행자가 운영 탭에서
+   * 직접 아웃을 기록한다. 판정 시트 쪽은 참가자 전원이 동맹이라 모든 대상이 막혀야 한다(킬 자체가 없다).
+   */
+  describe('스태프 아웃', () => {
+    /** 이번 라운드 원장 — 팀 A(u1·u2)·B(u3·u4) 모두 2인 팀(라이프 1) */
+    function staffChaseLedger(overrides: Partial<RoundLedger> = {}): RoundLedger {
+      return {
+        roundNo: 2,
+        mode: 'staff-chase',
+        teams: { A: ['u1', 'u2'], B: ['u3', 'u4'] },
+        xTeams: [],
+        confirmedAtMs: 0,
+        tally: null,
+        hits: null,
+        result: null,
+        ...overrides,
+      }
+    }
+
+    function sheetButton(text: string) {
+      return [...document.body.querySelectorAll<HTMLElement>('button')].find(
+        (button) => button.textContent?.trim() === text,
+      )
+    }
+
+    it('일반전에서는 스태프 아웃 카드가 없다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      deliver.room(hostRoom({ round: running() }))
+      await flushPromises()
+
+      expect(wrapper.text()).not.toContain('스태프 아웃 처리')
+    })
+
+    it('스태프 추격전에서는 생존 현황과 함께 카드가 뜨고, 확정하면 원장에 아웃을 기록한다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      deliver.room(hostRoom({ round: running(), gameMode: 'staff-chase' }))
+      deliver.participants([
+        assigned('u1', 'A'),
+        assigned('u2', 'A'),
+        assigned('u3', 'B'),
+        assigned('u4', 'B'),
+      ])
+      deliver.ledger(staffChaseLedger())
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('스태프 아웃 처리')
+      expect(wrapper.text()).toContain('생존 2 / 2팀')
+
+      await findButton(wrapper, '아웃 처리')!.trigger('click')
+      await flushPromises()
+
+      const teamA = document.body.querySelector<HTMLButtonElement>('button[data-team="A"]')
+      expect(teamA).not.toBeNull()
+      teamA!.click()
+      await flushPromises()
+      sheetButton('아웃 확정')!.click()
+      await flushPromises()
+
+      expect(recordStaffOutMock).toHaveBeenCalledExactlyOnceWith('AB2C', 2, 'A')
+      expect(toastMock).toHaveBeenCalledWith({ title: '팀 A 아웃으로 기록했어요.', tone: 'success' })
+    })
+
+    it('이미 탈락한 팀은 시트에서 선택할 수 없다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      deliver.room(hostRoom({ round: running(), gameMode: 'staff-chase' }))
+      deliver.participants([
+        assigned('u1', 'A'),
+        assigned('u2', 'A'),
+        assigned('u3', 'B'),
+        assigned('u4', 'B'),
+      ])
+      deliver.ledger(staffChaseLedger({ hits: { B: 1 } }))
+      await flushPromises()
+
+      await findButton(wrapper, '아웃 처리')!.trigger('click')
+      await flushPromises()
+
+      const teamB = document.body.querySelector<HTMLButtonElement>('button[data-team="B"]')!
+      expect(teamB.disabled).toBe(true)
+      expect(teamB.textContent).toContain('탈락')
+    })
+
+    /** 참가자 전원이 동맹이라 킬이 성립하지 않는다 — 판정 시트는 제출 팀 외 모든 팀을 막는다 */
+    it('판정 시트는 제출 팀 외 모든 팀을 동맹으로 막는다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      deliver.room(hostRoom({ round: running(), gameMode: 'staff-chase' }))
+      deliver.participants([assigned('u1', 'A'), assigned('u2', 'A'), assigned('u3', 'B')])
+      deliver.submissions([
+        {
+          id: 's1',
+          uid: 'u3',
+          team: 'B',
+          round: 2,
+          photo: 'data:image/jpeg;base64,killshot',
+          status: 'pending',
+          createdAtMs: Date.now(),
+        },
+      ])
+      await flushPromises()
+      await wrapper.find('[data-value="judge"]').trigger('click')
+      await wrapper.find('button[data-submission="s1"]').trigger('click')
+      await flushPromises()
+
+      const otherTeam = document.body.querySelector<HTMLButtonElement>('button[data-team="A"]')!
+      expect(otherTeam.disabled).toBe(true)
+      expect(otherTeam.textContent).toContain('동맹')
+      expect(sheetButton('판정 확정')!.hasAttribute('disabled')).toBe(true)
     })
   })
 

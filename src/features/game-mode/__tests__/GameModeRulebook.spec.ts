@@ -67,7 +67,8 @@ describe('GameModeRulebook', () => {
 
     expect(wrapper.text()).toContain('스태프 추격전')
     expect(wrapper.text()).toContain('모든 참가자는 동맹입니다. 사냥꾼(스태프)을 피해 생존하세요.')
-    expect(wrapper.text()).toContain('제한 시간까지 생존한 인원에 비례해 전체 점수를 얻습니다.')
+    expect(wrapper.text()).toContain('제한 시간까지 생존하면 잡힌 사람보다 위 등급입니다.')
+    expect(wrapper.text()).toContain('스태프에게 잡히면 진행자가 아웃으로 기록합니다.')
     // composition·group 규칙이 없다
     expect(wrapper.text()).not.toContain('팀은 2인 1조입니다.')
     expect(wrapper.text()).not.toContain('그룹은 완장 색깔입니다.')

@@ -3,6 +3,7 @@ import {
   doc,
   increment,
   onSnapshot,
+  runTransaction,
   serverTimestamp,
   type DocumentData,
   type Timestamp,
@@ -75,6 +76,25 @@ export function addTallyToBatch(
     // 피격 팀이 X 겸직(왕)이면 왕 사냥 건수도 같이 올린다 — kills·tripleKills의 부분집합
     ...(kingTarget ? { [`tally.${attackerTeam}.kingKills`]: increment(1) } : {}),
     [`hits.${targetTeam}`]: increment(1),
+  })
+}
+
+/**
+ * 스태프 추격전의 수동 아웃(P07 §4.5) — 스태프의 태그는 참가자 제출 경로로 들어오지 않으므로 호스트가
+ * 피격 완장의 hits를 1 올린다(1인 팀은 라이프 2라 두 번). rules의 집계 갈래는 커밋 후 tally·hits가
+ * 모두 map이어야 하는데, 판정이 한 건도 없던 원장에는 tally가 없다 — 그래서 트랜잭션으로 읽어 tally가
+ * 없으면 빈 맵을 함께 만든다. 원장이 없으면(도입 전 배정) 실패한다.
+ */
+export async function recordStaffOut(code: string, roundNo: number, team: string): Promise<void> {
+  const ref = roundLedgerDoc(code, roundNo)
+  await runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(ref)
+    if (!snapshot.exists()) throw new Error(`라운드 원장이 없습니다: ${code}/${roundNo}`)
+    const hasTally = snapshot.data().tally !== undefined
+    transaction.update(ref, {
+      [`hits.${team}`]: increment(1),
+      ...(hasTally ? {} : { tally: {} }),
+    })
   })
 }
 
