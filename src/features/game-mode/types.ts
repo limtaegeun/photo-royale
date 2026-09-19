@@ -41,6 +41,13 @@ export interface ModeScoringInput {
   tally: Record<string, { kills: number; tripleKills: number; kingKills?: number }>
   /** 피격 완장별 집계 */
   hits: Record<string, number>
+  /**
+   * 꼬리잡기 편입(P07 §4.2) — uid별 킬 크레딧. 킬 1건마다 킬 시점의 사냥 팀 소속 전원(팀원 + 꼬리)에게
+   * 1씩 쌓인 값이라 편입자에게 새 팀의 이후 킬을 귀속할 수 있다. 없으면 팀 킬 수로 정산한다(편입 전 문서·다른 모드)
+   */
+  credits?: Record<string, number>
+  /** 꼬리잡기 편입 — 완장 → 그 팀 꼬리로 편입돼 있는 uid. 판정 배치가 다음 킬의 크레딧 대상을 여기서 읽는다 */
+  tails?: Record<string, string[]>
 }
 
 /** 정산 출력 — 라운드 안 원점수. 등급·포인트 변환은 round-ledger의 공통 단계가 맡는다 */
@@ -89,6 +96,11 @@ export interface GameModeDefinition {
   targeting?: TargetRule
   /** 배정 보드에서 특수 완장 X 모듈을 강제로 켜는 모드(왕잡기 — 그룹마다 왕이 있어야 한다) */
   requiresXModule?: boolean
+  /**
+   * 잡힌 팀이 잡은 팀의 꼬리로 편입되는 모드(꼬리잡기) — 판정 배치가 원장에 tails(편입 uid)·credits
+   * (킬 시점 소속 크레딧)를 함께 쓴다(absorbKillEffect). 없으면 킬은 공격 완장의 tally에만 남는다.
+   */
+  absorbsCaughtTeam?: boolean
   /** X 겸직 팀의 배정 카드에 보이는 역할 한 줄 — 없으면 X 모듈 기본 문구("X끼리만 서로 사냥") */
   xTeamCaption?: string
   /**

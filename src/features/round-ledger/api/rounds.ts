@@ -1,4 +1,5 @@
 import {
+  arrayUnion,
   collection,
   doc,
   increment,
@@ -11,7 +12,7 @@ import {
   type WriteBatch,
 } from 'firebase/firestore'
 import { db } from '@/shared/api/firebase'
-import { isGameModeId, type GameModeId } from '@/features/game-mode'
+import { isGameModeId, type AbsorbKillEffect, type GameModeId } from '@/features/game-mode'
 import type { RoundSettlement } from '../scoring'
 import type { ArmbandMap, RoundLedger, RoundResult, TeamTally } from '../types'
 
@@ -57,9 +58,14 @@ export function addRoundSnapshotToBatch(
 /**
  * 판정 확정 배치에 집계 update를 얹는다 — 공격 완장의 kills(3배면 tripleKills)와 피격 완장의
  * hits를 1씩 올린다. dot-path increment라 문서에 tally/hits 맵이 아직 없어도 만들어지고,
- * 재판정·취소가 없으니 단조 증가로 충분하다. rules는 게임 중 현재 차수 문서의 이 두 키만
- * 허용한다. 문서가 없으면(원장 도입 전에 배정된 라운드) update가 배치 전체를 실패시키므로
- * 호출부가 존재 여부를 보고 얹는다.
+ * 재판정·취소가 없으니 단조 증가로 충분하다. 문서가 없으면(원장 도입 전에 배정된 라운드) update가
+ * 배치 전체를 실패시키므로 호출부가 존재 여부를 보고 얹는다.
+ *
+ * absorb(편입 모드 — 꼬리잡기, P07 §4.2)가 있으면 킬 시점의 사냥 팀 소속 전원에게 credits를 1씩
+ * 올리고, 이 킬로 피격 팀이 아웃되면 그 인원을 공격 완장의 tails에 합류시킨다(arrayUnion이라 재판정
+ * 없이도 중복이 안 쌓인다). rules ②가 tally·hits와 함께 두 키를 map으로 허용한다 — 이 키를 쓰려면
+ * rules **선배포**가 필요하다(옛 rules는 hasOnly(['tally','hits'])로 배치 전체를 거부한다).
+ * credits의 dot-path 키는 uid다 — Firebase Auth uid는 영숫자라 필드 경로 구분자(.)가 들어가지 않는다.
  */
 export function addTallyToBatch(
   batch: WriteBatch,
@@ -69,13 +75,20 @@ export function addTallyToBatch(
   targetTeam: string,
   multiplier: 1 | 3 = 1,
   kingTarget = false,
+  absorb?: AbsorbKillEffect,
 ): void {
   const killField = multiplier === 3 ? 'tripleKills' : 'kills'
+  const absorbUpdates: Record<string, unknown> = {}
+  for (const uid of absorb?.creditUids ?? []) absorbUpdates[`credits.${uid}`] = increment(1)
+  if (absorb !== undefined && absorb.absorbedUids.length > 0) {
+    absorbUpdates[`tails.${attackerTeam}`] = arrayUnion(...absorb.absorbedUids)
+  }
   batch.update(roundLedgerDoc(code, roundNo), {
     [`tally.${attackerTeam}.${killField}`]: increment(1),
     // 피격 팀이 X 겸직(왕)이면 왕 사냥 건수도 같이 올린다 — kills·tripleKills의 부분집합
     ...(kingTarget ? { [`tally.${attackerTeam}.kingKills`]: increment(1) } : {}),
     [`hits.${targetTeam}`]: increment(1),
+    ...absorbUpdates,
   })
 }
 
@@ -128,6 +141,18 @@ function toNumberMap(raw: unknown): Record<string, number> {
   return map
 }
 
+/** 완장 → uid 목록 맵(teams·tails). 배열이 아닌 값은 그 엔트리를, 문자열이 아닌 원소는 그 원소만 버린다 */
+function toUidListMap(raw: unknown): ArmbandMap<string[]> {
+  if (raw === null || typeof raw !== 'object') return {}
+  const map: ArmbandMap<string[]> = {}
+  for (const [armband, members] of Object.entries(raw as Record<string, unknown>)) {
+    if (Array.isArray(members)) {
+      map[armband] = members.filter((member): member is string => typeof member === 'string')
+    }
+  }
+  return map
+}
+
 function toTally(raw: unknown): ArmbandMap<TeamTally> | null {
   if (raw === null || typeof raw !== 'object') return null
   const tally: ArmbandMap<TeamTally> = {}
@@ -164,20 +189,17 @@ export function toRoundLedger(id: string, data: DocumentData): RoundLedger | nul
   const roundNo = Number(id)
   if (!Number.isInteger(roundNo) || roundNo < 1) return null
   if (typeof data.mode !== 'string' || !isGameModeId(data.mode)) return null
-  const teams: ArmbandMap<string[]> = {}
-  if (data.teams !== null && typeof data.teams === 'object') {
-    for (const [armband, members] of Object.entries(data.teams as Record<string, unknown>)) {
-      if (Array.isArray(members)) teams[armband] = members.filter((m) => typeof m === 'string')
-    }
-  }
   return {
     roundNo,
     mode: data.mode,
-    teams,
+    teams: toUidListMap(data.teams),
     xTeams: Array.isArray(data.xTeams) ? data.xTeams.filter((x) => typeof x === 'string') : [],
     confirmedAtMs: toMillis(data.confirmedAt),
     tally: toTally(data.tally ?? null),
     hits: data.hits === undefined ? null : toNumberMap(data.hits),
+    // 편입 모드(꼬리잡기)의 판정 배치만 쓰는 키 — 다른 모드·편입 전 문서는 null로 읽는다
+    tails: data.tails === undefined ? null : toUidListMap(data.tails),
+    credits: data.credits === undefined ? null : toNumberMap(data.credits),
     result: toResult(data.result ?? null),
   }
 }

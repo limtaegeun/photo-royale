@@ -60,7 +60,7 @@ export function rankTiers(playerScores: Record<string, number>): Record<string, 
 
 /**
  * 라운드 정산 — 원장의 모드가 가진 원점수 규칙으로 팀·개인 원점수를 낸 뒤 등급·포인트를 붙인다.
- * 개인 귀속(동일 지급·스냅샷 밖 uid 제외)은 모드 규칙의 몫이라 여기서 다시 손대지 않는다.
+ * 개인 귀속(동일 지급·스냅샷 밖 uid 제외·편입자의 킬 크레딧)은 모드 규칙의 몫이라 여기서 다시 손대지 않는다.
  */
 export function settleRound(ledger: RoundLedger): RoundSettlement {
   const { teamScores, playerScores } = GAME_MODES[ledger.mode].scoring({
@@ -68,6 +68,9 @@ export function settleRound(ledger: RoundLedger): RoundSettlement {
     xTeams: ledger.xTeams,
     tally: ledger.tally ?? {},
     hits: ledger.hits ?? {},
+    // 편입 모드(꼬리잡기)만 쓰는 키 — 없으면(null) 넘기지 않아 모드 규칙이 팀 킬 수로 정산한다
+    credits: ledger.credits ?? undefined,
+    tails: ledger.tails ?? undefined,
   })
   const playerTiers = rankTiers(playerScores)
   const playerPoints: Record<string, number> = {}

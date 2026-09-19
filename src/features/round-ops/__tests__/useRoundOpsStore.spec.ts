@@ -119,13 +119,20 @@ vi.mock('@/features/round-ledger', async (importOriginal) => ({
     recordStaffOutMock(code, roundNo, team),
 }))
 
+/** api의 ApprovalTally와 같은 형태 — absorb는 편입 모드(꼬리잡기)에서만 실린다 */
+interface ApprovalTallyArg {
+  roundNo: number
+  attackerTeam: string
+  kingTarget?: boolean
+  absorb?: { creditUids: string[]; absorbedUids: string[] }
+}
 const approveSubmissionMock =
   vi.fn<
     (
       code: string,
       submissionId: string,
       target: { team: string; participantUid: string },
-      tally?: { roundNo: number; attackerTeam: string; kingTarget?: boolean },
+      tally?: ApprovalTallyArg,
       multiplier?: 1 | 3,
     ) => Promise<void>
   >()
@@ -138,7 +145,7 @@ vi.mock('../api/submissions', () => ({
     code: string,
     submissionId: string,
     target: { team: string; participantUid: string },
-    tally?: { roundNo: number; attackerTeam: string; kingTarget?: boolean },
+    tally?: ApprovalTallyArg,
     multiplier?: 1 | 3,
   ) => approveSubmissionMock(code, submissionId, target, tally, multiplier),
   rejectSubmission: (code: string, submissionId: string) =>
@@ -221,6 +228,8 @@ function ledger(overrides: Partial<RoundLedger> = {}): RoundLedger {
     confirmedAtMs: NOW,
     tally: { A: { kills: 1, tripleKills: 0, kingKills: 0 } },
     hits: { B: 1 },
+    tails: null,
+    credits: null,
     result: null,
     ...overrides,
   }
@@ -908,6 +917,63 @@ describe('useRoundOpsStore', () => {
         { roundNo: 2, attackerTeam: 'B', kingTarget: true },
         1,
       )
+    })
+
+    /**
+     * 꼬리잡기 편입(P07 §4.2, M4-6) — 편입 모드에서만 킬 시점의 사냥 팀 소속(팀원 + 꼬리)과 이 킬로
+     * 아웃되는 팀의 합류 인원을 absorb로 넘겨 원장 credits·tails에 남긴다. 근거는 판정 시점의 원장이다.
+     */
+    it('꼬리잡기 원장이면 킬 시점 소속의 크레딧 대상과 아웃되는 팀의 합류 인원을 absorb로 넘긴다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room({ round: RUNNING, gameMode: 'tail-chase' }))
+      // B(u3·u4)는 앞서 1인 팀 C(u5)를 두 번 잡아 u5를 꼬리로 끌고 있다. 이번 킬샷은 B가 2인 팀 A(u1·u2)를 잡은 것
+      deliver.ledger(
+        ledger({
+          mode: 'tail-chase',
+          teams: { A: ['u1', 'u2'], B: ['u3', 'u4'], C: ['u5'] },
+          tally: { B: { kills: 2, tripleKills: 0, kingKills: 0 } },
+          hits: { C: 2 },
+          tails: { B: ['u5'] },
+          credits: { u3: 2, u4: 2 },
+        }),
+      )
+      deliver.submissions([
+        { id: 's1', uid: 'u3', team: 'B', round: 2, photo: 'data:', status: 'pending', createdAtMs: NOW },
+      ])
+
+      await store.approveSubmission('s1', { team: 'A', participantUid: 'u1' })
+
+      expect(approveSubmissionMock).toHaveBeenCalledExactlyOnceWith(
+        'AB2C',
+        's1',
+        { team: 'A', participantUid: 'u1' },
+        {
+          roundNo: 2,
+          attackerTeam: 'B',
+          kingTarget: false,
+          absorb: { creditUids: ['u3', 'u4', 'u5'], absorbedUids: ['u1', 'u2'] },
+        },
+        1,
+      )
+    })
+
+    it('편입이 없는 모드(일반전)에서는 absorb를 넘기지 않는다 — 원장에 tails·credits를 쓰지 않는다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room({ round: RUNNING }))
+      deliver.ledger(ledger())
+      deliver.submissions([
+        { id: 's1', uid: 'u3', team: 'B', round: 2, photo: 'data:', status: 'pending', createdAtMs: NOW },
+      ])
+
+      await store.approveSubmission('s1', { team: 'A', participantUid: 'u1' })
+
+      const tally = approveSubmissionMock.mock.calls[0]![3]
+      expect(tally).toMatchObject({ roundNo: 2, attackerTeam: 'B' })
+      expect(tally).not.toHaveProperty('absorb')
     })
 
     it('반려는 문서 ID만 넘긴다 — 사유는 남기지 않는다', async () => {

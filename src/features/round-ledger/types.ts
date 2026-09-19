@@ -52,20 +52,30 @@ export interface RoundResult {
   finishedAtMs: number | null
 }
 
-/** rounds 문서 전체 — tally·hits·result는 그 시점이 오기 전까지 null */
+/** rounds 문서 전체 — tally·hits·tails·credits·result는 그 시점이 오기 전까지 null */
 export interface RoundLedger extends RoundSnapshot {
   /** ② 공격 완장별 판정 집계. 판정이 한 건도 없으면 null */
   tally: ArmbandMap<TeamTally> | null
   /** ② 피격 완장별 집계 — 탈락 모델·왕 아웃 근거(M3) */
   hits: ArmbandMap<number> | null
+  /**
+   * ② 꼬리잡기 편입(P07 §4.2, M4-6) — 완장 → 그 팀 꼬리로 편입돼 있는 uid. 잡힌 팀의 팀원과
+   * 그 팀이 끌던 꼬리가 잡은 팀의 꼬리로 합류한다. 편입 모드가 아니거나 아웃이 아직 없으면 null
+   */
+  tails: ArmbandMap<string[]> | null
+  /**
+   * ② 꼬리잡기 편입 — uid → 킬 크레딧. 킬 1건마다 킬 시점의 사냥 팀 소속 전원(팀원 + 꼬리)에게
+   * 1씩 쌓여, 편입자에게 새 팀의 이후 킬을 귀속하는 근거다. 편입 모드가 아니면 null
+   */
+  credits: Record<string, number> | null
   result: RoundResult | null
 }
 
 /** rules `rounds` create 갈래의 키 화이트리스트(hasAll·hasOnly 모두 이 목록) */
 export const ROUND_SNAPSHOT_KEYS = ['mode', 'teams', 'xTeams', 'confirmedAt'] as const
 
-/** rules `rounds` update 갈래 ②(판정 집계)가 허용하는 키 */
-export const ROUND_TALLY_KEYS = ['tally', 'hits'] as const
+/** rules `rounds` update 갈래 ②(판정 집계)가 허용하는 키 — tails·credits는 편입 모드만 쓰는 선택 키 */
+export const ROUND_TALLY_KEYS = ['tally', 'hits', 'tails', 'credits'] as const
 
 /** rules `rounds` update 갈래 ③(정산 확정)의 result 키 화이트리스트 */
 export const ROUND_RESULT_KEYS = [

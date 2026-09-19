@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { useAuthStore } from '@/features/auth'
+import { GAME_MODES, absorbKillEffect } from '@/features/game-mode'
 import {
   endGame,
   markRoundPlayed,
@@ -420,6 +421,17 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
             roundNo: ledger.roundNo,
             attackerTeam: submission.team,
             kingTarget: ledger.xTeams.includes(target.team),
+            // 편입 모드(꼬리잡기)에서만 — 킬 시점 소속(팀원 + 꼬리)을 크레딧으로, 이 킬로 아웃된 팀의
+            // 합류를 꼬리로 원장에 남긴다. 판정 시점 원장의 hits·tails가 근거다
+            ...(GAME_MODES[ledger.mode].absorbsCaughtTeam === true
+              ? {
+                  absorb: absorbKillEffect(
+                    { teams: ledger.teams, hits: ledger.hits ?? {}, tails: ledger.tails ?? undefined },
+                    submission.team,
+                    target.team,
+                  ),
+                }
+              : {}),
           }
         : undefined
     return runAction(

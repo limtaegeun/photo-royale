@@ -714,6 +714,8 @@ describe('RoundOpsPage', () => {
         confirmedAtMs: 0,
         tally: null,
         hits: null,
+        tails: null,
+        credits: null,
         result: null,
         ...overrides,
       }
@@ -1711,6 +1713,8 @@ describe('RoundOpsPage', () => {
         confirmedAtMs: 0,
         tally: null,
         hits: { A: 1 },
+        tails: null,
+        credits: null,
         result: null,
       })
       await flushPromises()
@@ -1787,6 +1791,8 @@ describe('RoundOpsPage', () => {
         confirmedAtMs: 0,
         tally: null,
         hits: { C: 2 },
+        tails: null,
+        credits: null,
         result: null,
       })
       await flushPromises()

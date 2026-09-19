@@ -120,6 +120,8 @@ function settledLedger(
     confirmedAtMs: 0,
     tally: null,
     hits: null,
+    tails: null,
+    credits: null,
     result: { teamScores: {}, playerScores: scores, playerTiers: tiers, playerPoints: points, finishedAtMs: 1 },
   }
 }

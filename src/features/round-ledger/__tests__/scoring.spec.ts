@@ -11,6 +11,8 @@ function ledger(overrides: Partial<RoundLedger> = {}): RoundLedger {
     confirmedAtMs: 0,
     tally: null,
     hits: null,
+    tails: null,
+    credits: null,
     result: null,
     ...overrides,
   }

@@ -33,6 +33,7 @@ export {
   STAFF_SURVIVAL_POINTS,
   SURVIVAL_POINTS,
   TRIPLE_KILL_POINTS,
+  absorbKillEffect,
   applyTeamScale,
   distributeToPlayers,
   groupAssistScoreOf,
@@ -50,6 +51,7 @@ export {
   tailChaseScoring,
   teamScaleOf,
 } from './scoring'
+export type { AbsorbKillEffect } from './scoring'
 export { default as GameModeRulebook } from './components/GameModeRulebook.vue'
 // 모드 선택 UI도 이 기능이 소유한다 — 호출부(배정 보드)는 선택 결과만 받는다
 export { default as GameModePicker } from './components/GameModePicker.vue'

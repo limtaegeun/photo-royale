@@ -357,10 +357,15 @@ service cloud.firestore {
           && get(/databases/$(database)/documents/rooms/$(roomCode)).data.status == 'playing'
           && (
             // 2) 판정 집계 — 판정(approve) 배치가 공격 완장별 tally·피격 완장별 hits를 increment로
-            //    올린다. 게임 중에만, 이 두 키만. (판정 자체의 조건은 submissions 갈래가 검증한다.)
-            (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['tally', 'hits'])
+            //    올린다. 게임 중에만, 이 네 키만. (판정 자체의 조건은 submissions 갈래가 검증한다.)
+            //    꼬리잡기 편입(tails — 완장별 편입 uid 목록)·킬 크레딧(credits — uid별 킬 시점 소속
+            //    건수)은 같은 판정 배치가 같은 갈래로 쓴다(P07 §4.2). 없어도 되는 키다 — 편입이 없는
+            //    다른 모드와 두 키를 모르는 옛 클라이언트의 판정도 통과해야 한다(rules 선배포).
+            (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['tally', 'hits', 'tails', 'credits'])
               && request.resource.data.tally is map
-              && request.resource.data.hits is map)
+              && request.resource.data.hits is map
+              && (!('tails' in request.resource.data) || request.resource.data.tails is map)
+              && (!('credits' in request.resource.data) || request.resource.data.credits is map))
             // 3) 정산 확정 — 게임 종료 배치(playing → waiting)와 함께만 성립한다. 커밋 후 방 상태가
             //    waiting이어야 하므로 종료 없이 result만 쓰거나 종료 뒤에 고쳐 쓸 수 없다. 같은 차수를
             //    재시작해 다시 종료하면(방이 다시 playing) 덮어쓰기가 허용된다 — 마지막 종료가 정본.
