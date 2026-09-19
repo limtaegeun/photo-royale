@@ -354,20 +354,20 @@ describe('AssignmentBoard', () => {
     await findButton(wrapper, '변경')!.trigger('click')
     await flushPromises()
 
-    // 게임플레이가 구현된 일반전·꼬리잡기·그룹전·왕잡기만 활성 — 나머지 4종은 disabled + '준비 중' 배지
+    // 게임플레이가 구현된 일반전·꼬리잡기·그룹전·왕잡기·스태프 추격전만 활성 — 나머지 3종은 disabled + '준비 중' 배지
     const normalOption = document.body.querySelector<HTMLButtonElement>('[data-mode="normal"]')
-    const staffChaseOption =
-      document.body.querySelector<HTMLButtonElement>('[data-mode="staff-chase"]')
+    const bombPlantOption =
+      document.body.querySelector<HTMLButtonElement>('[data-mode="bomb-plant"]')
     expect(normalOption).not.toBeNull()
-    expect(staffChaseOption).not.toBeNull()
+    expect(bombPlantOption).not.toBeNull()
     expect(normalOption!.disabled).toBe(false)
-    expect(staffChaseOption!.disabled).toBe(true)
-    expect(staffChaseOption!.getAttribute('aria-disabled')).toBe('true')
-    expect(staffChaseOption!.textContent).toContain('준비 중')
+    expect(bombPlantOption!.disabled).toBe(true)
+    expect(bombPlantOption!.getAttribute('aria-disabled')).toBe('true')
+    expect(bombPlantOption!.textContent).toContain('준비 중')
     expect(normalOption!.textContent).not.toContain('준비 중')
 
     // 비활성 옵션은 클릭해도(native disabled라 클릭 이벤트가 발생하지 않음) 스토어가 그대로다
-    staffChaseOption!.click()
+    bombPlantOption!.click()
     await flushPromises()
     expect(store.draftGameMode).toBe('normal')
   })

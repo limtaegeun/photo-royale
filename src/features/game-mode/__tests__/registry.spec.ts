@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, it, expect } from 'vitest'
 import { DEFAULT_GAME_MODE, GAME_MODE_IDS, GAME_MODES, isGameModeId } from '../registry'
-import { TAIL_CHASE_TARGETING } from '../targeting'
+import { ALL_ALLIES_TARGETING, TAIL_CHASE_TARGETING } from '../targeting'
 import type { GameModeId } from '../types'
 
 describe('game-mode registry', () => {
@@ -60,18 +60,18 @@ describe('game-mode registry', () => {
     expect(rules.every((rule) => rule.kind === 'static')).toBe(true)
   })
 
-  it('게임플레이가 구현된 일반전·꼬리잡기·그룹전·왕잡기만 available이고, 나머지 4종은 미구현이라 비활성이다', () => {
-    const openIds: GameModeId[] = ['normal', 'tail-chase', 'group', 'king-hunt']
+  it('게임플레이가 구현된 일반전·꼬리잡기·그룹전·왕잡기·스태프 추격전만 available이고, 나머지 3종은 미구현이라 비활성이다', () => {
+    const openIds: GameModeId[] = ['normal', 'tail-chase', 'group', 'king-hunt', 'staff-chase']
     for (const id of openIds) expect(GAME_MODES[id].available).toBe(true)
 
     const otherIds = GAME_MODE_IDS.filter((id) => !openIds.includes(id))
-    expect(otherIds).toHaveLength(4)
+    expect(otherIds).toHaveLength(3)
     for (const id of otherIds) {
       expect(GAME_MODES[id].available).toBe(false)
     }
   })
 
-  it('그룹전·왕잡기는 같은 그룹을 잡을 수 없는 대상 제한을 공유하고, 꼬리잡기는 다음 알파벳만 허용하며, 나머지는 제한이 없다', () => {
+  it('그룹전·왕잡기는 같은 그룹을 잡을 수 없는 대상 제한을 공유하고, 꼬리잡기는 다음 알파벳만, 스태프 추격전은 전원 동맹으로 막으며, 나머지는 제한이 없다', () => {
     const context = { teams: ['A', 'B', 'F'], outTeams: [] }
     for (const id of ['group', 'king-hunt'] as const) {
       const targeting = GAME_MODES[id].targeting!
@@ -82,8 +82,12 @@ describe('game-mode registry', () => {
 
     expect(GAME_MODES['tail-chase'].targeting).toBe(TAIL_CHASE_TARGETING)
 
+    expect(GAME_MODES['staff-chase'].targeting).toBe(ALL_ALLIES_TARGETING)
+    expect(GAME_MODES['staff-chase'].targeting!.blockedBadge).toBe('동맹')
+    expect(GAME_MODES['staff-chase'].targeting!.canTarget('A', 'B', context)).toBe(false)
+
     for (const id of GAME_MODE_IDS.filter(
-      (id) => id !== 'group' && id !== 'king-hunt' && id !== 'tail-chase',
+      (id) => id !== 'group' && id !== 'king-hunt' && id !== 'tail-chase' && id !== 'staff-chase',
     )) {
       expect(GAME_MODES[id].targeting).toBeUndefined()
     }

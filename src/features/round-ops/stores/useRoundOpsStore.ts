@@ -12,6 +12,7 @@ import {
 } from '@/features/waiting-room'
 import {
   groupByTier,
+  recordStaffOut,
   settleRound,
   subscribeToRoundLedger,
   teamOutStatus,
@@ -54,7 +55,7 @@ export type RoundOpsPhase = 'idle' | 'loading' | 'ready' | 'not-found' | 'error'
  * disabled에 물리게 되고, 왕복 한 번(로컬에서도 ~50ms)마다 관계없는 컨트롤까지 회색으로
  * 깜빡인다. 어떤 액션인지 남겨 두면 눌린 버튼에만 진행 표시를 줄 수 있다.
  */
-export type RoundOpsAction = 'start' | 'pause' | 'resume' | 'adjust' | 'end' | 'judge'
+export type RoundOpsAction = 'start' | 'pause' | 'resume' | 'adjust' | 'end' | 'judge' | 'staff-out'
 
 /** 액션 실패는 원인을 나눠 봐야 진행자가 할 일이 달라지지 않는다 — 한 문구로 모은다 */
 const ACTION_ERROR_MESSAGE = '요청을 처리하지 못했어요. 다시 시도해 주세요.'
@@ -462,6 +463,16 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     }
   }
 
+  /**
+   * 스태프 추격전 수동 아웃(P07 §4.5) — 스태프에게 잡힌 팀을 호스트가 원장 hits로 기록한다. 원장이 없는
+   * 라운드·이미 탈락한 팀은 기록할 것이 없어 건너뛴다. 성공 여부를 돌려 화면이 토스트를 띄운다.
+   */
+  async function markStaffOut(armband: string): Promise<boolean> {
+    const ledger = currentLedger.value
+    if (!isHost.value || roomCode.value === null || ledger === null || outTeams.value.includes(armband)) return false
+    return runAction('staff-out', () => recordStaffOut(roomCode.value!, ledger.roundNo, armband))
+  }
+
   return {
     roomCode,
     phase,
@@ -499,5 +510,6 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     rejectSubmission,
     getSubmissionStatus,
     submitNotice,
+    markStaffOut,
   }
 })

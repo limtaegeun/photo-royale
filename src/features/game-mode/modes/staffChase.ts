@@ -1,5 +1,6 @@
 import type { GameModeDefinition } from '../types'
-import { killScoring } from '../scoring'
+import { staffChaseScoring } from '../scoring'
+import { ALL_ALLIES_TARGETING } from '../targeting'
 
 /** 스태프 추격전 — 참가자 전원이 동맹이 되어 사냥꾼(스태프)을 피하는 협동 도망 모드 */
 export const staffChaseMode: GameModeDefinition = {
@@ -8,9 +9,14 @@ export const staffChaseMode: GameModeDefinition = {
   description: '전원 협동 도망 모드',
   rules: [
     { kind: 'static', text: '모든 참가자는 동맹입니다. 사냥꾼(스태프)을 피해 생존하세요.' },
-    { kind: 'static', text: '제한 시간까지 생존한 인원에 비례해 전체 점수를 얻습니다.' },
+    {
+      kind: 'static',
+      text: '제한 시간까지 생존하면 잡힌 사람보다 위 등급입니다.',
+      caption: '스태프에게 잡히면 진행자가 아웃으로 기록합니다.',
+    },
   ],
-  // 자기 원점수 규칙이 아직 없다 — 기본 킬 규칙(M4에서 교체)
-  scoring: killScoring,
-  available: false,
+  // 스태프 추격전 원점수(P07 §4.5) — 생존 15 · 아웃 5, 팀원 각자에게(1인 팀 2배 없음)
+  scoring: staffChaseScoring,
+  targeting: ALL_ALLIES_TARGETING,
+  available: true,
 }

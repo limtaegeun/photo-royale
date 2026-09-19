@@ -8,6 +8,7 @@ import BaseCard from '@/shared/components/BaseCard.vue'
 import BaseDialog from '@/shared/components/BaseDialog.vue'
 import BaseSegmented from '@/shared/components/BaseSegmented.vue'
 import { GAME_MODES } from '@/features/game-mode'
+import { aliveTeamCount } from '@/features/round-ledger'
 import { normalizeRoomCode } from '@/features/waiting-room'
 import { useToast } from '@/shared/composables/useToast'
 import type { KillMultiplier, Submission, SubmissionRecord, SubmissionTarget } from './api/submissions'
@@ -19,6 +20,8 @@ import RecordDetailSheet from './components/RecordDetailSheet.vue'
 import RecordLogList from './components/RecordLogList.vue'
 import RoundTimerCard from './components/RoundTimerCard.vue'
 import RoundSettlementCard from './components/RoundSettlementCard.vue'
+import StaffOutCard from './components/StaffOutCard.vue'
+import StaffOutSheet from './components/StaffOutSheet.vue'
 import TimeAdjustCard from './components/TimeAdjustCard.vue'
 import { useRoundTimer } from './composables/useRoundTimer'
 import { ROUND_STATE_LABEL, ROUND_STATE_TIME_CLASS, ROUND_STATE_TONE } from './roundStateStyles'
@@ -59,6 +62,7 @@ const {
   isSendingNotice,
   settlementPreview,
   outTeams,
+  currentLedger,
 } = storeToRefs(store)
 
 /** 운영 중인 방 코드 — 새로고침·딥링크에도 유지되도록 경로 파라미터에서 읽는다 */
@@ -94,6 +98,9 @@ const activeTab = ref<string>(
   (TAB_VALUES as readonly string[]).includes(initialTab) ? initialTab : 'ops',
 )
 const isNoticeSheetOpen = ref(false)
+/** 스태프 추격전(P07 §4.5) 전용 — 스태프의 태그는 킬샷으로 오지 않아 진행자가 직접 아웃을 기록한다 */
+const isStaffChase = computed(() => room.value?.gameMode === 'staff-chase')
+const isStaffOutSheetOpen = ref(false)
 const isEndGameDialogOpen = ref(false)
 const isFinishRoundDialogOpen = ref(false)
 /**
@@ -307,6 +314,17 @@ async function sendNotice(text: string) {
   toast({ title: '공지를 보냈어요.', tone: 'success' })
 }
 
+/**
+ * 스태프 추격전(P07 §4.5) 수동 아웃 — 성공했을 때만 시트를 닫는다. 실패 원인(원장 없음·이미 탈락 등)은
+ * store가 이미 걸러내므로, 여기서는 성공 여부만 보고 안내한다. 서버 실패는 actionError 토스트가 맡는다.
+ */
+async function markStaffOut(armband: string) {
+  const marked = await store.markStaffOut(armband)
+  if (!marked) return
+  isStaffOutSheetOpen.value = false
+  toast({ title: `팀 ${armband} 아웃으로 기록했어요.`, tone: 'success' })
+}
+
 function openJudgeSheet(submission: Submission) {
   if (pendingAction.value === 'judge') return
   judgingSubmission.value = submission
@@ -513,6 +531,14 @@ onUnmounted(() => {
             @open="isNoticeSheetOpen = true"
           />
 
+          <!-- 스태프 추격전(P07 §4.5) — 스태프의 태그는 킬샷으로 오지 않아 진행자가 아웃을 직접 기록한다 -->
+          <StaffOutCard
+            v-if="isStaffChase && currentLedger !== null"
+            :alive-count="aliveTeamCount(currentLedger)"
+            :team-count="Object.keys(currentLedger.teams).length"
+            @open="isStaffOutSheetOpen = true"
+          />
+
           <!-- 게임 종료 — 전원을 대기실로 되돌리는 파괴적 액션이라 진행 컨트롤과 멀리 떨어뜨리고
                ghost로 낮춘다. 실제 실행은 확인 다이얼로그를 거친다.
                종료 상태에서는 감춘다 — 위의 '라운드 종료'와 쓰기가 완전히 같아서, 같은 일을 하는
@@ -680,6 +706,17 @@ onUnmounted(() => {
       :participants="participants"
       :assignment-round="assignmentRound"
       :now-ms="nowMs"
+    />
+
+    <StaffOutSheet
+      v-model:open="isStaffOutSheetOpen"
+      :participants="participants"
+      :assignment-round="assignmentRound"
+      :out-teams="outTeams"
+      :teams="currentLedger?.teams ?? {}"
+      :hits="currentLedger?.hits ?? {}"
+      :marking="pendingAction === 'staff-out'"
+      @confirm="markStaffOut"
     />
 
     <!-- 종료 자체는 정규 경로라 확인을 묻지 않지만, 판정을 못 한 킬샷이 남았을 때만 끼어든다.

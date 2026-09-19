@@ -28,3 +28,9 @@ export const TAIL_CHASE_TARGETING: TargetRule = {
   canTarget: (attacker, target, context) => nextPreyOf(attacker, context) === target,
   blockedBadge: '다음 알파벳 아님',
 }
+
+/** 스태프 추격전 — 참가자 전원이 동맹이라 잡을 팀이 없다. 킬샷이 올라와도 시트는 전 팀을 막고 반려만 남긴다 */
+export const ALL_ALLIES_TARGETING: TargetRule = {
+  canTarget: () => false,
+  blockedBadge: '동맹',
+}

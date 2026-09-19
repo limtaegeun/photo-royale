@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { ALLY_GROUP_TARGETING, TAIL_CHASE_TARGETING, nextPreyOf } from '../targeting'
+import { ALL_ALLIES_TARGETING, ALLY_GROUP_TARGETING, TAIL_CHASE_TARGETING, nextPreyOf } from '../targeting'
 import type { TargetContext } from '../types'
 
 function context(teams: string[], outTeams: string[] = []): TargetContext {
@@ -43,5 +43,18 @@ describe('ALLY_GROUP_TARGETING', () => {
   it('같은 그룹(B·F는 주황)은 잡을 수 없고, 다른 그룹(A는 파랑)은 잡을 수 있다', () => {
     expect(ALLY_GROUP_TARGETING.canTarget('B', 'F', ctx)).toBe(false)
     expect(ALLY_GROUP_TARGETING.canTarget('B', 'A', ctx)).toBe(true)
+  })
+})
+
+describe('ALL_ALLIES_TARGETING (스태프 추격전 P07 §4.5)', () => {
+  const ctx = context(['A', 'B', 'C'])
+
+  it('참가자 전원이 동맹이라 어떤 팀도 잡을 수 없다', () => {
+    expect(ALL_ALLIES_TARGETING.canTarget('A', 'B', ctx)).toBe(false)
+    expect(ALL_ALLIES_TARGETING.canTarget('A', 'C', ctx)).toBe(false)
+  })
+
+  it('막힌 이유 배지는 "동맹"이다', () => {
+    expect(ALL_ALLIES_TARGETING.blockedBadge).toBe('동맹')
   })
 })

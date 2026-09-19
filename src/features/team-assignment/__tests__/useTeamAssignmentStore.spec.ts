@@ -384,7 +384,7 @@ describe('useTeamAssignmentStore', () => {
       const store = useTeamAssignmentStore()
       store.startDraft(mixedFour(), 1, 'normal', identityRandom)
 
-      store.setGameMode('staff-chase') // 미구현 모드 — UI가 막지만 방어적으로도 무시된다
+      store.setGameMode('bomb-plant') // 미구현 모드 — UI가 막지만 방어적으로도 무시된다
 
       expect(store.draftGameMode).toBe('normal')
     })

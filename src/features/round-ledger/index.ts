@@ -5,6 +5,7 @@ export {
   addRoundResultToBatch,
   addRoundSnapshotToBatch,
   addTallyToBatch,
+  recordStaffOut,
   roundLedgerDoc,
   subscribeToRoundLedger,
   subscribeToRoundLedgers,
