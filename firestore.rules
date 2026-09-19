@@ -46,6 +46,17 @@ service cloud.firestore {
           : !('pausedRemainingMs' in round));
     }
 
+    // 탈락 팀(P07 M3) 판정 — 원장 hits가 라이프에 닿은 팀. 라이프는 2인 팀 1·1인 팀 2로
+    // src/features/game-mode/scoring.ts의 livesOf와 **같아야 한다**(변경 시 양쪽을 함께 갱신·배포할 것).
+    // 콕핏은 이미 탈락 팀의 셔터·제출을 잠그지만 클라를 우회한 쓰기는 그것만으로는 통과하므로
+    // 서버에서도 같은 기준으로 막는다(p07-elimination §5). 스냅샷에 없는 완장은 판정 근거가 없어 탈락이 아니다.
+    function isTeamOutInLedger(ledger, team) {
+      return 'hits' in ledger
+        && team in ledger.hits
+        && team in ledger.teams
+        && ledger.hits[team] >= (ledger.teams[team].size() == 1 ? 2 : 1);
+    }
+
     // 닉네임 유니크 인덱스. 문서 ID = 정규화 키(trim → NFC → lowercase,
     // src/features/auth/api/signup.ts toNicknameKey와 동일 규칙), 내용은 소유자 uid뿐.
     match /nicknames/{nickname} {
@@ -286,7 +297,13 @@ service cloud.firestore {
           && request.resource.data.photo.size() <= 900000
           && request.resource.data.photo.matches('^data:image/jpeg;base64,.*')
           && request.resource.data.status == 'pending'
-          && request.resource.data.createdAt == request.time;
+          && request.resource.data.createdAt == request.time
+          // 탈락 팀은 제출할 수 없다 — 콕핏 잠금과 같은 기준을 서버에서도(P07 M3). 원장 문서가 없는
+          // 라운드(도입 전 배정)는 탈락 판정이 없으니 그대로 통과한다. 원장 접근은 exists+get 한 문서다.
+          && (!exists(/databases/$(database)/documents/rooms/$(roomCode)/rounds/$(string(request.resource.data.round)))
+            || !isTeamOutInLedger(
+              get(/databases/$(database)/documents/rooms/$(roomCode)/rounds/$(string(request.resource.data.round))).data,
+              request.resource.data.team));
 
         // 판정 — 호스트 본인이 pending에 한해 한 번만(단방향). approved(확정)면 잡힌 팀의
         // 완장(targetTeam)이 필수이고, rejected(반려)는 사유 없이 상태만 남긴다.
