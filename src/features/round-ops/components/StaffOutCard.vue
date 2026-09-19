@@ -23,9 +23,8 @@ const emit = defineEmits<{
   open: []
 }>()
 
-const caption = computed(
-  () => `생존 ${props.aliveCount} / ${props.teamCount}팀 · 스태프에게 잡힌 팀을 아웃으로 기록해요.`,
-)
+// 한 줄 캡션이라 현황만 — 설명은 행 라벨과 시트가 맡는다(390px에서 긴 문장은 잘렸다)
+const caption = computed(() => `생존 ${props.aliveCount} / ${props.teamCount}팀`)
 </script>
 
 <template>
