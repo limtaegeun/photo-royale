@@ -166,16 +166,28 @@ export async function submitKillshot(code: string, input: KillshotInput): Promis
   })
 }
 
+/** 판정 대기 큐 스냅샷의 신선도 — fromCache는 서버가 아니라 로컬 캐시에서만 나온 데이터임을 뜻한다 */
+export interface PendingQueueMeta {
+  /** true면 이 스냅샷은 서버 확인 없이 로컬 캐시에서 나왔다(오프라인·음영지역) */
+  fromCache: boolean
+}
+
 /**
  * 판정 대기 큐 실시간 구독 — 판정된 문서는 서버 필터로 제외한다(사진이 커서 전체 구독은
  * 판정이 쌓일수록 다운로드가 늘어난다). 정렬은 클라이언트에서 한다 — where + orderBy 조합은
  * 복합 인덱스가 필요해서 fetchMyRooms의 전례(클라 정렬로 인덱스 회피)를 답습한다.
  * 오래 기다린 제출부터 판정하도록 오래된 순(asc), 서버 시각 반영 전(null)은 맨 뒤에 둔다.
+ *
+ * `includeMetadataChanges: true`가 필요한 이유 — 이게 없으면 오프라인(음영지역)에서 캐시로
+ * 서빙되던 스냅샷이 나중에 서버로 확인돼도 데이터가 같으면 onSnapshot이 다시 불리지 않는다.
+ * 즉 "캐시에서만 나온 상태" 플래그가 영원히 안 지워질 수 있다. `snapshot.metadata.fromCache`가
+ * 바로 그 플래그이고, 종료 확인이 큐의 "0건"을 서버가 확인해 준 0건인지 판단하는 근거다
+ * (p06 §7 행사 전 필수 수정 2).
  */
 export function subscribeToPendingSubmissions(
   code: string,
   round: number,
-  onChange: (submissions: Submission[]) => void,
+  onChange: (submissions: Submission[], meta: PendingQueueMeta) => void,
   onError?: (error: Error) => void,
 ): Unsubscribe {
   const pendingQuery = query(
@@ -185,6 +197,7 @@ export function subscribeToPendingSubmissions(
   )
   return onSnapshot(
     pendingQuery,
+    { includeMetadataChanges: true },
     (snapshot) => {
       const submissions = snapshot.docs.flatMap((submissionDoc) => {
         const submission = toPendingSubmission(submissionDoc.id, submissionDoc.data())
@@ -194,7 +207,7 @@ export function subscribeToPendingSubmissions(
         (a, b) =>
           (a.createdAtMs ?? Number.MAX_SAFE_INTEGER) - (b.createdAtMs ?? Number.MAX_SAFE_INTEGER),
       )
-      onChange(submissions)
+      onChange(submissions, { fromCache: snapshot.metadata.fromCache })
     },
     onError,
   )

@@ -31,7 +31,7 @@ const subscribeSubmissionsMock =
     (
       code: string,
       round: number,
-      onChange: (submissions: Submission[]) => void,
+      onChange: (submissions: Submission[], meta: { fromCache: boolean }) => void,
       onError?: (error: Error) => void,
     ) => () => void
   >()
@@ -167,7 +167,7 @@ function captureSnapshotCallbacks() {
   let deliverRoom: (room: RoomInfo | null) => void = () => {}
   let deliverParticipants: (participants: Participant[]) => void = () => {}
   let deliverNotice: (notice: Notice | null) => void = () => {}
-  let deliverSubmissions: (submissions: Submission[]) => void = () => {}
+  let deliverSubmissions: (submissions: Submission[], meta: { fromCache: boolean }) => void = () => {}
   let deliverRecords: (records: SubmissionRecord[]) => void = () => {}
   let failRecords: (error: Error) => void = () => {}
   let deliverLedger: (ledger: RoundLedger | null) => void = () => {}
@@ -202,7 +202,8 @@ function captureSnapshotCallbacks() {
     room: (room: RoomInfo | null) => deliverRoom(room),
     participants: (participants: Participant[]) => deliverParticipants(participants),
     notice: (notice: Notice | null) => deliverNotice(notice),
-    submissions: (submissions: Submission[]) => deliverSubmissions(submissions),
+    submissions: (submissions: Submission[], meta: { fromCache: boolean } = { fromCache: false }) =>
+      deliverSubmissions(submissions, meta),
     records: (records: SubmissionRecord[]) => deliverRecords(records),
     recordsError: (error: Error) => failRecords(error),
     ledger: (ledger: RoundLedger | null) => deliverLedger(ledger),
@@ -1006,6 +1007,49 @@ describe('useRoundOpsStore', () => {
       deliver.submissions([submission])
 
       expect(store.pendingSubmissions).toEqual([submission])
+    })
+  })
+
+  /**
+   * 음영지역(오프라인)에서는 Firestore가 로컬 캐시로만 스냅샷을 서빙한다 — 서버가 확인해 준
+   * 값이 아니라는 뜻이라 종료 확인이 "아는 0건"으로 오인하면 안 된다(p06 §7 필수 수정 2).
+   */
+  describe('판정 큐 캐시 신선도(fromCache)', () => {
+    it('캐시에서만 나온 스냅샷(fromCache=true)이면 isPendingQueueStale이 선다', () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room({ round: RUNNING }))
+
+      deliver.submissions([], { fromCache: true })
+
+      expect(store.isPendingQueueStale).toBe(true)
+    })
+
+    it('이후 서버 스냅샷(fromCache=false)이 오면 다시 내려간다', () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room({ round: RUNNING }))
+
+      deliver.submissions([], { fromCache: true })
+      expect(store.isPendingQueueStale).toBe(true)
+
+      deliver.submissions([], { fromCache: false })
+      expect(store.isPendingQueueStale).toBe(false)
+    })
+
+    it('leave는 캐시 신선도 플래그도 초기화한다', () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room({ round: RUNNING }))
+      deliver.submissions([], { fromCache: true })
+      expect(store.isPendingQueueStale).toBe(true)
+
+      store.leave()
+
+      expect(store.isPendingQueueStale).toBe(false)
     })
   })
 

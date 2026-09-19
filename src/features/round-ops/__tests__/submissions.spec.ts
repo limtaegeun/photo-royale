@@ -14,12 +14,20 @@ const updateDocMock = vi.fn<(ref: FakeRef, data: Record<string, unknown>) => Pro
 const batchUpdateMock = vi.fn<(ref: FakeRef, data: Record<string, unknown>) => void>()
 const batchCommitMock = vi.fn<() => Promise<void>>()
 const getDocFromServerMock = vi.fn<(ref: FakeRef) => Promise<unknown>>()
+/**
+ * 실제 onSnapshot 호출 형태 두 가지를 같은 mock으로 받는다 — subscribeToSubmissionLog는
+ * 기존 (query, onNext, onError) 3인자를, subscribeToPendingSubmissions는 fromCache 판단을
+ * 위해 (query, options, onNext, onError) 4인자를 쓴다(p06 §7 필수 수정 2). 항상
+ * (query, onNext, onError, options) 순서로 정규화해 기존 인덱스 접근(calls[0]![1] 등)을
+ * 깨지 않으면서 options만 4번째 자리에서 새로 검증할 수 있게 한다.
+ */
 const onSnapshotMock =
   vi.fn<
     (
       query: unknown,
       onNext: (snapshot: unknown) => void,
       onError?: (error: Error) => void,
+      options?: { includeMetadataChanges?: boolean },
     ) => () => void
   >()
 
@@ -32,9 +40,25 @@ vi.mock('firebase/firestore', () => ({
   limit: (n: number) => ({ limit: n }),
   onSnapshot: (
     query: unknown,
-    onNext: (snapshot: unknown) => void,
-    onError?: (error: Error) => void,
-  ) => onSnapshotMock(query, onNext, onError),
+    optionsOrNext: { includeMetadataChanges?: boolean } | ((snapshot: unknown) => void),
+    nextOrError?: ((snapshot: unknown) => void) | ((error: Error) => void),
+    maybeError?: (error: Error) => void,
+  ) => {
+    if (typeof optionsOrNext === 'function') {
+      return onSnapshotMock(
+        query,
+        optionsOrNext,
+        nextOrError as ((error: Error) => void) | undefined,
+        undefined,
+      )
+    }
+    return onSnapshotMock(
+      query,
+      nextOrError as (snapshot: unknown) => void,
+      maybeError,
+      optionsOrNext,
+    )
+  },
   serverTimestamp: () => 'server-timestamp',
   addDoc: (ref: FakeRef, data: Record<string, unknown>) => addDocMock(ref, data),
   updateDoc: (ref: FakeRef, data: Record<string, unknown>) => updateDocMock(ref, data),
@@ -110,11 +134,11 @@ describe('subscribeToPendingSubmissions', () => {
   it('pending만 서버 필터로 구독하고 스냅샷을 Submission으로 매핑한다', () => {
     const unsubscribe = vi.fn<() => void>()
     onSnapshotMock.mockReturnValue(unsubscribe)
-    const onChange = vi.fn<(submissions: unknown) => void>()
+    const onChange = vi.fn<(submissions: unknown, meta: unknown) => void>()
 
     const result = subscribeToPendingSubmissions('AB2C', 2, onChange)
 
-    const [pendingQuery, onNext] = onSnapshotMock.mock.calls[0]!
+    const [pendingQuery, onNext, , options] = onSnapshotMock.mock.calls[0]!
     expect(pendingQuery).toEqual({
       source: { path: 'rooms/AB2C/submissions' },
       constraints: [
@@ -122,25 +146,47 @@ describe('subscribeToPendingSubmissions', () => {
         { where: 'round', op: '==', value: 2 },
       ],
     })
+    // includeMetadataChanges 없이는 캐시→서버 전환(데이터 동일)이 onSnapshot을 다시 부르지
+    // 않아 fromCache 플래그가 영원히 안 지워질 수 있다(p06 §7 필수 수정 2)
+    expect(options).toEqual({ includeMetadataChanges: true })
 
-    onNext({ docs: [pendingDoc('s1', { toMillis: () => 1_700_000_000_000 })] })
-    expect(onChange).toHaveBeenCalledWith([
-      {
-        id: 's1',
-        uid: 'player1',
-        team: 'B',
-        round: 2,
-        photo: 'data:image/jpeg;base64,killshot',
-        status: 'pending',
-        createdAtMs: 1_700_000_000_000,
-      },
-    ])
+    onNext({
+      docs: [pendingDoc('s1', { toMillis: () => 1_700_000_000_000 })],
+      metadata: { fromCache: false },
+    })
+    expect(onChange).toHaveBeenCalledWith(
+      [
+        {
+          id: 's1',
+          uid: 'player1',
+          team: 'B',
+          round: 2,
+          photo: 'data:image/jpeg;base64,killshot',
+          status: 'pending',
+          createdAtMs: 1_700_000_000_000,
+        },
+      ],
+      { fromCache: false },
+    )
     expect(result).toBe(unsubscribe)
+  })
+
+  /** 음영지역(오프라인)에서는 로컬 캐시로만 스냅샷이 서빙된다 — 이 값이 종료 확인의 stale 판단 근거다 */
+  it('fromCache가 true면 캐시에서만 나온 스냅샷임을 그대로 전달한다', () => {
+    onSnapshotMock.mockReturnValue(vi.fn<() => void>())
+    const onChange = vi.fn<(submissions: unknown, meta: { fromCache: boolean }) => void>()
+
+    subscribeToPendingSubmissions('AB2C', 2, onChange)
+    const onNext = onSnapshotMock.mock.calls[0]![1]
+
+    onNext({ docs: [], metadata: { fromCache: true } })
+
+    expect(onChange).toHaveBeenCalledWith([], { fromCache: true })
   })
 
   it('오래된 순으로 정렬하고 서버 시각 반영 전(null)은 맨 뒤에 둔다', () => {
     onSnapshotMock.mockReturnValue(vi.fn<() => void>())
-    const onChange = vi.fn<(submissions: Array<{ id: string }>) => void>()
+    const onChange = vi.fn<(submissions: Array<{ id: string }>, meta: { fromCache: boolean }) => void>()
 
     subscribeToPendingSubmissions('AB2C', 2, onChange)
     const onNext = onSnapshotMock.mock.calls[0]![1]
@@ -151,6 +197,7 @@ describe('subscribeToPendingSubmissions', () => {
         pendingDoc('just-sent', null),
         pendingDoc('oldest', { toMillis: () => 1_000 }),
       ],
+      metadata: { fromCache: false },
     })
 
     expect(onChange.mock.calls[0]![0].map((submission) => submission.id)).toEqual([
@@ -162,13 +209,13 @@ describe('subscribeToPendingSubmissions', () => {
 
   it('스키마가 깨진 문서는 타입 단언하지 않고 큐에서 제외한다', () => {
     onSnapshotMock.mockReturnValue(vi.fn<() => void>())
-    const onChange = vi.fn<(submissions: Array<{ id: string }>) => void>()
+    const onChange = vi.fn<(submissions: Array<{ id: string }>, meta: { fromCache: boolean }) => void>()
 
     subscribeToPendingSubmissions('AB2C', 2, onChange)
     const onNext = onSnapshotMock.mock.calls[0]![1]
-    onNext({ docs: [pendingDoc('invalid', null, { photo: 123 })] })
+    onNext({ docs: [pendingDoc('invalid', null, { photo: 123 })], metadata: { fromCache: false } })
 
-    expect(onChange).toHaveBeenCalledWith([])
+    expect(onChange).toHaveBeenCalledWith([], { fromCache: false })
   })
 
   it('영구 Listen 오류 콜백을 Firestore에 전달한다', () => {
