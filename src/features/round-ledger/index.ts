@@ -23,6 +23,7 @@ export {
   rankTiers,
   settleRound,
   teamOutStatus,
+  tierLabel,
 } from './scoring'
 export type { RoundSettlement, Standing, TierGroup } from './scoring'
 export { ROUND_RESULT_KEYS, ROUND_SNAPSHOT_KEYS, ROUND_TALLY_KEYS } from './types'

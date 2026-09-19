@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { aliveTeamCount, computeStandings, groupByTier, pointsForTier, rankTiers, settleRound, teamOutStatus } from '../scoring'
+import { aliveTeamCount, computeStandings, groupByTier, pointsForTier, rankTiers, settleRound, teamOutStatus, tierLabel } from '../scoring'
 import type { RoundLedger } from '../types'
 
 function ledger(overrides: Partial<RoundLedger> = {}): RoundLedger {
@@ -21,6 +21,15 @@ function ledger(overrides: Partial<RoundLedger> = {}): RoundLedger {
 describe('pointsForTier', () => {
   it('등급 표 10/7/5/3, 5등급부터 2, 0등급(원점수 0 이하)은 참가점 1', () => {
     expect([0, 1, 2, 3, 4, 5, 9].map(pointsForTier)).toEqual([1, 10, 7, 5, 3, 2, 2])
+  })
+})
+
+describe('tierLabel', () => {
+  it('등급 라벨 — N등급, 0 이하는 "0점 이하"', () => {
+    expect(tierLabel(1)).toBe('1등급')
+    expect(tierLabel(2)).toBe('2등급')
+    expect(tierLabel(0)).toBe('0점 이하')
+    expect(tierLabel(-1)).toBe('0점 이하')
   })
 })
 

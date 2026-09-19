@@ -19,7 +19,7 @@ describe('RoundSettlementCard', () => {
     expect(items[0]!.text()).toContain('1등급 · 10P')
     expect(items[0]!.text()).toContain('서연, 도윤')
     expect(items[1]!.text()).toContain('2등급 · 7P')
-    expect(items[2]!.text()).toContain('0점 · 1P')
+    expect(items[2]!.text()).toContain('0점 이하 · 1P')
     expect(items[2]!.text()).toContain('준호, 나간 참가자')
     expect(wrapper.text()).toContain('종료하면 확정돼요')
   })

@@ -8,6 +8,7 @@ import { computed } from 'vue'
 import BaseBottomSheet from '@/shared/components/BaseBottomSheet.vue'
 import BaseButton from '@/shared/components/BaseButton.vue'
 import BaseCard from '@/shared/components/BaseCard.vue'
+import { tierLabel } from '@/features/round-ledger'
 import type { Standing } from '@/features/round-ledger'
 
 /** 순위 한 줄 — round-ledger의 Standing에 대기실이 이름·본인 여부를 붙인 것 */
@@ -36,10 +37,10 @@ const myRowBelowTop = computed(() => {
 })
 const hiddenCount = computed(() => Math.max(props.rows.length - TOP_COUNT, 0))
 
-/** 라운드별 내역 한 줄 — "1R 2등급 · 2R 1등급". 등급 없음(0점 이하)은 '0점' */
+/** 라운드별 내역 한 줄 — "1R 2등급 · 2R 1등급". 등급 없음(0점 이하)은 '0점 이하' */
 function formatRounds(row: StandingRow): string {
   return row.rounds
-    .map((entry) => `${entry.roundNo}R ${entry.tier === 0 ? '0점' : `${entry.tier}등급`}`)
+    .map((entry) => `${entry.roundNo}R ${tierLabel(entry.tier)}`)
     .join(' · ')
 }
 </script>
