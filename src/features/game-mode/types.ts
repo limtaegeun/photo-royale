@@ -91,6 +91,11 @@ export interface GameModeDefinition {
   requiresXModule?: boolean
   /** X 겸직 팀의 배정 카드에 보이는 역할 한 줄 — 없으면 X 모듈 기본 문구("X끼리만 서로 사냥") */
   xTeamCaption?: string
+  /**
+   * 참가자가 킬샷을 제출하지 않는 모드의 콕핏 안내(스태프 추격전 — 스태프의 태그는 진행자가 기록한다).
+   * 있으면 콕핏이 셔터를 잠그고 이 문구로 이유를 보인다.
+   */
+  killshotLock?: string
   /** 게임플레이가 구현되어 선택 가능한 모드인지 — 미구현 모드는 선택 시트에서 비활성화된다 */
   available: boolean
 }

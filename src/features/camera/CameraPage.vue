@@ -99,6 +99,8 @@ const isRoundEnded = computed(() => displayState.value === 'ended')
  */
 const isPaused = computed(() => displayState.value === 'paused')
 const currentMode = computed(() => GAME_MODES[room.value?.gameMode ?? 'normal'])
+/** 모드가 킬샷을 쓰지 않으면(스태프 추격전) 콕핏이 셔터를 잠그고 이 문구로 이유를 보인다 */
+const modeKillshotLock = computed(() => currentMode.value.killshotLock ?? null)
 const objective = computed(
   () =>
     currentMode.value.rules.find((rule) => rule.kind === 'static')?.text ??
@@ -240,6 +242,11 @@ async function submitPhoto() {
   // (호스트 재량 모델) 여기가 유일한 잠금이다.
   if (isMyTeamOut.value) {
     toast({ title: '우리 팀은 탈락해서 제출할 수 없어요.', tone: 'danger' })
+    return
+  }
+  // 셔터가 잠겨 보통은 여기 오지 않지만 다른 게이트와 같은 이중 잠금
+  if (modeKillshotLock.value !== null) {
+    toast({ title: modeKillshotLock.value, tone: 'danger' })
     return
   }
   const killshot = photo.value
@@ -397,6 +404,18 @@ function subscribeToCurrentRoundLedger(roundNumber: number) {
           </p>
         </div>
 
+        <!-- 모드가 킬샷을 쓰지 않는 경우(스태프 추격전) — 셔터가 잠긴 이유를 모드 문구로 알린다 -->
+        <div
+          v-if="modeKillshotLock !== null && !isRoundEnded"
+          role="status"
+          class="flex items-center gap-2 rounded-lg border border-stroke bg-scrim-strong p-3"
+        >
+          <BaseBadge tone="info">{{ currentMode.label }}</BaseBadge>
+          <p class="min-w-0 flex-1 text-caption text-pretty break-keep text-content">
+            {{ modeKillshotLock }}
+          </p>
+        </div>
+
         <div class="flex gap-2 text-caption">
           <span
             class="min-w-0 flex-1 truncate rounded-full bg-scrim-strong px-3 py-2"
@@ -520,7 +539,7 @@ function subscribeToCurrentRoundLedger(roundNumber: number) {
             padding="none"
             aria-label="킬샷 촬영"
             class="shutter col-start-2 row-start-1 mb-7 min-h-20 w-20"
-            :disabled="isPaused || isMyTeamOut"
+            :disabled="isPaused || isMyTeamOut || modeKillshotLock !== null"
             @click="shoot"
           >
             <span class="size-14 rounded-full bg-brand"></span>
@@ -569,6 +588,7 @@ function subscribeToCurrentRoundLedger(roundNumber: number) {
         >
           우리 팀은 탈락해서 제출할 수 없어요. 라운드가 끝나면 대기실로 이동해요.
         </p>
+        <p v-else-if="modeKillshotLock !== null" class="text-center text-caption break-keep text-content-secondary">{{ modeKillshotLock }}</p>
         <div class="grid grid-cols-2 gap-3">
           <BaseButton
             variant="ghost"
