@@ -39,6 +39,11 @@ export function pointsForTier(tier: number): number {
   return TIER_POINTS[tier - 1] ?? TIER_FLOOR_POINTS
 }
 
+/** 등급 라벨 — 1 이상은 'N등급', 0(원점수 0 이하 = 등급 없음)은 결정 8의 칸 이름대로 '0점 이하'(음수 원점수도 이 칸이다) */
+export function tierLabel(tier: number): string {
+  return tier <= 0 ? '0점 이하' : `${tier}등급`
+}
+
 /** 종료 시 원장에 쓰는 정산 — RoundResult에서 서버 시각만 뺀 것 */
 export type RoundSettlement = Omit<RoundResult, 'finishedAtMs'>
 

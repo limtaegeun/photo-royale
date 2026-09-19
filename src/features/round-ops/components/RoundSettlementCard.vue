@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import BaseCard from '@/shared/components/BaseCard.vue'
+import { tierLabel } from '@/features/round-ledger'
 import type { TierGroup } from '@/features/round-ledger'
 
 /**
@@ -13,10 +14,6 @@ interface Props {
 }
 
 defineProps<Props>()
-
-function tierLabel(tier: number): string {
-  return tier === 0 ? '0점' : `${tier}등급`
-}
 </script>
 
 <template>
