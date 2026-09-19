@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import BaseBadge from '@/shared/components/BaseBadge.vue'
 import BaseBottomSheet from '@/shared/components/BaseBottomSheet.vue'
 import BaseButton from '@/shared/components/BaseButton.vue'
 import BaseSwitch from '@/shared/components/BaseSwitch.vue'
-import { GROUP_LABELS, TEAM_GROUP_ORDER, type TeamGroup, type TargetRule } from '@/features/game-mode'
-import { displayGroup, groupSolidBgClass, groupTextClass } from '@/features/team-assignment'
-import { isAssignedInRound, type Participant } from '@/features/waiting-room'
+import type { TargetContext, TargetRule } from '@/features/game-mode'
+import type { Participant } from '@/features/waiting-room'
 import type { KillMultiplier, Submission, SubmissionTarget } from '../api/submissions'
-import KillshotPhotoHeader from './KillshotPhotoHeader.vue'
 import { participantName } from '../submissionDisplay'
+import { groupTeamSections, type TeamPickOption, type TeamPickSection, type TeamSectionTeam } from '../teamSections'
+import KillshotPhotoHeader from './KillshotPhotoHeader.vue'
+import TeamPickList from './TeamPickList.vue'
 
 /**
  * 킬샷 판정 시트 — 사진을 크게 확인하고 "사진 속 완장이 어떤 팀·그룹인지"를 선택해 확정하거나,
@@ -75,99 +75,40 @@ watch(
   },
 )
 
-interface TeamOption {
-  armband: string
-  /** 팀원 이름 나열 — 완장만으로는 현장에서 누구인지 떠올리기 어렵다 */
-  memberNames: string
-  /** Rules가 이 참가자 문서로 현재 라운드의 실제 팀인지 검증한다 */
-  participantUid: string
-  /** 제출자 본인 팀 — 자기 팀을 잡았다는 판정은 성립하지 않아 비활성화한다 */
-  isSubmitterTeam: boolean
-  /** 이미 탈락한 팀 — 또 잡은 판정은 성립하지 않아 비활성화한다(P07 M3) */
-  isOut: boolean
-  /** 모드 규칙상 제출 팀이 잡을 수 없는 팀(그룹전의 동맹) — 비활성화하고 이유 배지를 붙인다(P07 M4) */
-  isBlockedTarget: boolean
-}
-
-/** 제출 팀·탈락·모드 제한 중 하나라도 걸리면 선택할 수 없다 */
-function isUnselectable(option: TeamOption): boolean {
-  return option.isSubmitterTeam || option.isOut || option.isBlockedTarget
-}
-
-interface GroupSection {
-  group: TeamGroup
-  label: string
-  /** 그룹 제목 색 — 첫 팀 완장에서 파생(섹션은 팀이 있을 때만 존재한다) */
-  textClass: string
-  teams: TeamOption[]
-}
-
-/** 이번 라운드 배정 팀을 그룹 색 순서(파랑→주황→초록→빨강)로 섹션화한다 */
-const groupSections = computed<GroupSection[]>(() => {
-  const membersByTeam = new Map<string, { names: string[]; participantUid: string }>()
-  for (const participant of props.participants) {
-    if (!isAssignedInRound(participant, props.assignmentRound) || participant.team === null) {
-      continue
-    }
-    const members = membersByTeam.get(participant.team) ?? {
-      names: [],
-      participantUid: participant.id,
-    }
-    members.names.push(participant.name)
-    membersByTeam.set(participant.team, members)
+/**
+ * 팀 하나에 선택 가능 여부·배지를 얹는다 — 제출 팀 > 탈락 > 모드 대상 제한 순으로 확인하고
+ * 먼저 걸리는 사유 하나만 배지로 보인다(오늘까지의 v-if/v-else-if 우선순위와 동일).
+ */
+function decorate(team: TeamSectionTeam, targetContext: TargetContext): TeamPickOption {
+  if (team.armband === props.submission?.team) {
+    return { ...team, disabled: true, badge: { text: '제출 팀', tone: 'neutral' } }
   }
-
-  const targetContext = { teams: [...membersByTeam.keys()], outTeams: props.outTeams }
-
-  return TEAM_GROUP_ORDER.map((group) => {
-    const teams = [...membersByTeam.entries()]
-      .filter(([armband]) => displayGroup(armband) === group)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([armband, members]) => ({
-        armband,
-        memberNames: members.names.join(' · '),
-        participantUid: members.participantUid,
-        isSubmitterTeam: armband === props.submission?.team,
-        isOut: props.outTeams.includes(armband),
-        isBlockedTarget:
-          props.targetRule !== null &&
-          props.submission !== null &&
-          armband !== props.submission.team &&
-          !props.targetRule.canTarget(props.submission.team, armband, targetContext),
-      }))
-    const firstTeam = teams[0]
+  if (props.outTeams.includes(team.armband)) {
+    return { ...team, disabled: true, badge: { text: '탈락', tone: 'danger', appearance: 'outline' } }
+  }
+  const targetRule = props.targetRule
+  if (
+    targetRule !== null &&
+    props.submission !== null &&
+    !targetRule.canTarget(props.submission.team, team.armband, targetContext)
+  ) {
     return {
-      group,
-      label: GROUP_LABELS[group].ko,
-      textClass: firstTeam === undefined ? '' : groupTextClass(firstTeam.armband),
-      teams,
+      ...team,
+      disabled: true,
+      badge: { text: targetRule.blockedBadge, tone: 'neutral', appearance: 'outline' },
     }
-  }).filter((section) => section.teams.length > 0)
+  }
+  return { ...team, disabled: false }
+}
+
+/** 이번 라운드 팀을 그룹 섹션으로 나누고 선택 가능 여부·배지를 얹는다 */
+const sections = computed<TeamPickSection[]>(() => {
+  const base = groupTeamSections(props.participants, props.assignmentRound)
+  const targetContext = { teams: base.flatMap((s) => s.teams.map((t) => t.armband)), outTeams: props.outTeams }
+  return base.map((section) => ({ ...section, teams: section.teams.map((team) => decorate(team, targetContext)) }))
 })
 
 const submitterName = computed(() => participantName(props.participants, props.submission?.uid))
-
-/**
- * 옵션 행 상태별 클래스 — 보더 "폭"은 어느 상태에서도 1px로 고정하고 색만 바꾼다
- * (GameModePicker와 같은 이유: 선택을 옮길 때 행 높이가 흔들리지 않게).
- */
-const OPTION_CLASS = {
-  disabled: 'border border-stroke',
-  selected: 'border border-accent bg-surface',
-  selectable: 'border border-stroke-strong',
-} as const
-
-function optionClass(option: TeamOption): string {
-  if (isUnselectable(option)) return OPTION_CLASS.disabled
-  return selectedTarget.value?.team === option.armband
-    ? OPTION_CLASS.selected
-    : OPTION_CLASS.selectable
-}
-
-function chooseTeam(option: TeamOption) {
-  if (isUnselectable(option) || props.judging) return
-  selectedTarget.value = { team: option.armband, participantUid: option.participantUid }
-}
 
 function handleApprove() {
   if (selectedTarget.value === null) return
@@ -201,63 +142,12 @@ function handleReject() {
           </p>
         </div>
 
-        <section
-          v-for="section in groupSections"
-          :key="section.group"
-          class="flex flex-col gap-2"
-        >
-          <h4 class="text-caption" :class="section.textClass">{{ section.label }} 그룹</h4>
-          <ul class="flex flex-col gap-2">
-            <li v-for="option in section.teams" :key="option.armband">
-              <button
-                type="button"
-                :data-team="option.armband"
-                :aria-pressed="selectedTarget?.team === option.armband"
-                :disabled="isUnselectable(option) || judging"
-                :aria-disabled="isUnselectable(option) || judging"
-                class="flex min-h-(--pr-size-control-md) w-full items-center gap-3 rounded-md
-                       px-4 py-2 text-left transition-colors duration-100 ease-standard
-                       focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand
-                       disabled:cursor-default"
-                :class="optionClass(option)"
-                @click="chooseTeam(option)"
-              >
-                <!-- 그룹 색 표식 — 의미는 옆의 완장·그룹 텍스트가 함께 전달한다 -->
-                <span
-                  aria-hidden="true"
-                  class="size-3 shrink-0 rounded-full"
-                  :class="groupSolidBgClass(option.armband)"
-                ></span>
-                <span
-                  class="shrink-0 text-label"
-                  :class="isUnselectable(option) ? 'text-content-disabled' : 'text-content'"
-                >
-                  팀 {{ option.armband }}
-                </span>
-                <span
-                  class="min-w-0 flex-1 truncate text-caption"
-                  :class="isUnselectable(option) ? 'text-content-disabled' : 'text-content-secondary'"
-                >
-                  {{ option.memberNames }}
-                </span>
-                <BaseBadge v-if="option.isSubmitterTeam" tone="neutral" class="shrink-0">
-                  제출 팀
-                </BaseBadge>
-                <BaseBadge v-else-if="option.isOut" tone="danger" appearance="outline" class="shrink-0">
-                  탈락
-                </BaseBadge>
-                <BaseBadge
-                  v-else-if="option.isBlockedTarget"
-                  tone="neutral"
-                  appearance="outline"
-                  class="shrink-0"
-                >
-                  {{ targetRule?.blockedBadge }}
-                </BaseBadge>
-              </button>
-            </li>
-          </ul>
-        </section>
+        <TeamPickList
+          :sections="sections"
+          :selected="selectedTarget?.team ?? null"
+          :locked="judging"
+          @select="(option) => (selectedTarget = { team: option.armband, participantUid: option.participantUid })"
+        />
       </div>
 
       <!-- 낙오 포착(3배) — 일반전에서만. 보이는 텍스트가 라벨이라 스위치 aria-label도 같은 문구 -->
