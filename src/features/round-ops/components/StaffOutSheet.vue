@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import BaseBadge from '@/shared/components/BaseBadge.vue'
 import BaseBottomSheet from '@/shared/components/BaseBottomSheet.vue'
 import BaseButton from '@/shared/components/BaseButton.vue'
-import { GROUP_LABELS, TEAM_GROUP_ORDER, livesOf, type TeamGroup } from '@/features/game-mode'
-import { displayGroup, groupSolidBgClass, groupTextClass } from '@/features/team-assignment'
-import { isAssignedInRound, type Participant } from '@/features/waiting-room'
+import { livesOf } from '@/features/game-mode'
+import type { Participant } from '@/features/waiting-room'
+import { groupTeamSections, type TeamPickOption, type TeamPickSection, type TeamSectionTeam } from '../teamSections'
+import TeamPickList from './TeamPickList.vue'
 
 /**
  * 스태프 아웃 처리 시트(P07 §4.5) — 스태프에게 잡힌 팀을 진행자가 직접 골라 원장에 기록한다.
@@ -43,77 +43,28 @@ watch(open, (isOpen) => {
   if (!isOpen) selected.value = null
 })
 
-interface TeamOption {
-  armband: string
-  /** 팀원 이름 나열 — 완장만으로는 현장에서 누구인지 떠올리기 어렵다 */
-  memberNames: string
-  /** 이미 탈락한 팀 — 또 아웃 처리할 수 없어 비활성화한다 */
-  isOut: boolean
-  /** 1인 팀 — 목숨이 2라 진행자가 두 번 처리해야 함을 알려준다 */
-  isSolo: boolean
-  /** 남은 목숨 */
-  livesLeft: number
-}
-
-interface GroupSection {
-  group: TeamGroup
-  label: string
-  textClass: string
-  teams: TeamOption[]
-}
-
-/** 이번 라운드 배정 팀을 그룹 색 순서(파랑→주황→초록→빨강)로 섹션화한다 — JudgeSheet과 같은 패턴 */
-const groupSections = computed<GroupSection[]>(() => {
-  const namesByTeam = new Map<string, string[]>()
-  for (const participant of props.participants) {
-    if (!isAssignedInRound(participant, props.assignmentRound) || participant.team === null) {
-      continue
-    }
-    const names = namesByTeam.get(participant.team) ?? []
-    names.push(participant.name)
-    namesByTeam.set(participant.team, names)
-  }
-
-  return TEAM_GROUP_ORDER.map((group) => {
-    const teams = [...namesByTeam.entries()]
-      .filter(([armband]) => displayGroup(armband) === group)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([armband, names]) => ({
-        armband,
-        memberNames: names.join(' · '),
-        isOut: props.outTeams.includes(armband),
-        isSolo: (props.teams[armband]?.length ?? 0) === 1,
-        livesLeft: livesOf(props.teams, armband) - (props.hits[armband] ?? 0),
-      }))
-    const firstTeam = teams[0]
-    return {
-      group,
-      label: GROUP_LABELS[group].ko,
-      textClass: firstTeam === undefined ? '' : groupTextClass(firstTeam.armband),
-      teams,
-    }
-  }).filter((section) => section.teams.length > 0)
-})
-
 /**
- * 옵션 행 상태별 클래스 — 보더 "폭"은 어느 상태에서도 1px로 고정하고 색만 바꾼다
- * (JudgeSheet과 같은 이유: 선택을 옮길 때 행 높이가 흔들리지 않게).
+ * 팀 하나에 탈락 배지·1인 팀 캡션을 얹는다 — 판정 시트와 달리 둘 다 서로 독립이라(한 팀이
+ * 탈락하면서 동시에 1인 팀일 수 있다) 배지·캡션을 각자 조건으로 판단한다.
  */
-const OPTION_CLASS = {
-  disabled: 'border border-stroke',
-  selected: 'border border-accent bg-surface',
-  selectable: 'border border-stroke-strong',
-} as const
-
-function optionClass(option: TeamOption): string {
-  if (option.isOut) return OPTION_CLASS.disabled
-  return selected.value === option.armband ? OPTION_CLASS.selected : OPTION_CLASS.selectable
+function decorate(team: TeamSectionTeam): TeamPickOption {
+  const isOut = props.outTeams.includes(team.armband)
+  const isSolo = (props.teams[team.armband]?.length ?? 0) === 1
+  return {
+    ...team,
+    disabled: isOut,
+    badge: isOut ? { text: '탈락', tone: 'danger', appearance: 'outline' } : undefined,
+    caption: isSolo
+      ? `1인 팀 · 목숨 ${livesOf(props.teams, team.armband) - (props.hits[team.armband] ?? 0)}`
+      : undefined,
+  }
 }
 
-function chooseTeam(option: TeamOption) {
-  if (option.isOut || props.marking) return
-  selected.value = option.armband
-}
+/** 이번 라운드 팀을 그룹 섹션으로 나누고 선택 가능 여부·배지를 얹는다 */
+const sections = computed<TeamPickSection[]>(() => {
+  const base = groupTeamSections(props.participants, props.assignmentRound)
+  return base.map((section) => ({ ...section, teams: section.teams.map((team) => decorate(team)) }))
+})
 </script>
 
 <template>
@@ -127,58 +78,12 @@ function chooseTeam(option: TeamOption) {
           </p>
         </div>
 
-        <section
-          v-for="section in groupSections"
-          :key="section.group"
-          class="flex flex-col gap-2"
-        >
-          <h4 class="text-caption" :class="section.textClass">{{ section.label }} 그룹</h4>
-          <ul class="flex flex-col gap-2">
-            <li v-for="option in section.teams" :key="option.armband">
-              <button
-                type="button"
-                :data-team="option.armband"
-                :aria-pressed="selected === option.armband"
-                :disabled="option.isOut || marking"
-                :aria-disabled="option.isOut || marking"
-                class="flex min-h-(--pr-size-control-md) w-full items-center gap-3 rounded-md
-                       px-4 py-2 text-left transition-colors duration-100 ease-standard
-                       focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand
-                       disabled:cursor-default"
-                :class="optionClass(option)"
-                @click="chooseTeam(option)"
-              >
-                <!-- 그룹 색 표식 — 의미는 옆의 완장·그룹 텍스트가 함께 전달한다 -->
-                <span
-                  aria-hidden="true"
-                  class="size-3 shrink-0 rounded-full"
-                  :class="groupSolidBgClass(option.armband)"
-                ></span>
-                <span
-                  class="shrink-0 text-label"
-                  :class="option.isOut ? 'text-content-disabled' : 'text-content'"
-                >
-                  팀 {{ option.armband }}
-                </span>
-                <span
-                  class="min-w-0 flex-1 truncate text-caption"
-                  :class="option.isOut ? 'text-content-disabled' : 'text-content-secondary'"
-                >
-                  {{ option.memberNames }}
-                </span>
-                <span
-                  v-if="option.isSolo"
-                  class="shrink-0 text-caption text-content-secondary"
-                >
-                  1인 팀 · 목숨 {{ option.livesLeft }}
-                </span>
-                <BaseBadge v-if="option.isOut" tone="danger" appearance="outline" class="shrink-0">
-                  탈락
-                </BaseBadge>
-              </button>
-            </li>
-          </ul>
-        </section>
+        <TeamPickList
+          :sections="sections"
+          :selected="selected"
+          :locked="marking"
+          @select="(option) => (selected = option.armband)"
+        />
       </div>
 
       <BaseButton
