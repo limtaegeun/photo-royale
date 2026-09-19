@@ -600,6 +600,33 @@ describe('CameraPage 탈락 게이트 (P07 M3)', () => {
   })
 })
 
+/**
+ * 스태프 추격전은 참가자가 킬샷을 제출하지 않는 모드다(P07 §4.5 후속) — 진행자가 스태프 태그를
+ * 수동으로 기록하므로, 콕핏은 셔터를 잠그고 모드 정의가 소유한 문구로 이유를 보여준다.
+ */
+describe('CameraPage 모드 킬샷 잠금 (스태프 추격전)', () => {
+  it('스태프 추격전 방은 셔터를 잠그고 모드 문구로 이유를 보여준다', async () => {
+    const deliverRoom = captureRoomSnapshot()
+    const wrapper = await mountWithActiveCamera()
+    deliverRoom(playingRoom({ gameMode: 'staff-chase' }))
+    await flushPromises()
+
+    expect(findShutter(wrapper).attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('스태프 추격전')
+    expect(wrapper.text()).toContain('이 모드에서는 킬샷을 찍지 않아요.')
+  })
+
+  it('일반전은 셔터가 잠기지 않고 킬샷 잠금 문구도 뜨지 않는다', async () => {
+    const deliverRoom = captureRoomSnapshot()
+    const wrapper = await mountWithActiveCamera()
+    deliverRoom(playingRoom())
+    await flushPromises()
+
+    expect(findShutter(wrapper).attributes('disabled')).toBeUndefined()
+    expect(wrapper.text()).not.toContain('킬샷을 찍지 않아요')
+  })
+})
+
 describe('CameraPage 일시정지 게이트', () => {
   it('라운드가 일시정지되면 셔터가 비활성화되고 목표는 그대로 둔 채 일시정지 안내를 따로 보여준다', async () => {
     mockDisplayState.value = 'paused'

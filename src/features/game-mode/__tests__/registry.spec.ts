@@ -100,6 +100,13 @@ describe('game-mode registry', () => {
     }
   })
 
+  it('스태프 추격전만 콕핏 킬샷 잠금 문구를 가진다 — 참가자는 킬샷을 제출하지 않는 모드', () => {
+    expect(GAME_MODES['staff-chase'].killshotLock?.length).toBeGreaterThan(0)
+    for (const id of GAME_MODE_IDS.filter((id) => id !== 'staff-chase')) {
+      expect(GAME_MODES[id].killshotLock).toBeUndefined()
+    }
+  })
+
   /**
    * firestore.rules의 gameMode 허용 리스트는 클라 코드를 import할 수 없어 이중화되어 있다.
    * 불일치 상태로 배포되면 새 모드 확정이 전부 permission-denied로 거부되므로,
