@@ -40,10 +40,12 @@ const subscribeMySubmissionsMock =
 const mockDisplayState = ref<'idle' | 'running' | 'paused' | 'ended'>('running')
 
 vi.mock('@/features/round-ops', async () => {
-  const { computed } = await import('vue')
+  const { computed, ref } = await import('vue')
   return {
     SUBMISSION_PHOTO_PREFIX: 'data:image/jpeg;base64,',
     SUBMISSION_PHOTO_MAX_LENGTH: 900000,
+    // 기록 시트의 제출 시각 표기 — 이 파일은 시트 내용을 검증하지 않으므로(별도 CockpitRecordSheet.spec) 고정 문구
+    formatRelativeTime: () => '방금',
     submitKillshot: (code: string, input: Record<string, unknown>) =>
       submitKillshotMock(code, input),
     subscribeToMySubmissions: (
@@ -59,6 +61,7 @@ vi.mock('@/features/round-ops', async () => {
       onError?: (error: Error) => void,
     ) => subscribeNoticeMock(code, onChange, onError),
     useRoundTimer: () => ({
+      nowMs: ref(Date.now()),
       formatted: computed(() => '20:00'),
       displayState: mockDisplayState,
     }),
@@ -122,6 +125,16 @@ const subscribeLedgerMock =
       onError?: (error: Error) => void,
     ) => () => void
   >()
+/** 지난 라운드 원장 목록(기록 시트의 누적 순위 근거) — 콕핏이 열고 닫는지만 본다 */
+const unsubscribeLedgersMock = vi.fn<() => void>()
+const subscribeLedgersMock =
+  vi.fn<
+    (
+      code: string,
+      onChange: (ledgers: RoundLedger[]) => void,
+      onError?: (error: Error) => void,
+    ) => () => void
+  >()
 vi.mock('@/features/round-ledger', async (importOriginal) => ({
   // 탈락 판정·생존 수는 순수 함수라 실제 구현을 쓴다
   ...(await importOriginal<typeof import('@/features/round-ledger')>()),
@@ -131,6 +144,11 @@ vi.mock('@/features/round-ledger', async (importOriginal) => ({
     onChange: (ledger: RoundLedger | null) => void,
     onError?: (error: Error) => void,
   ) => subscribeLedgerMock(code, round, onChange, onError),
+  subscribeToRoundLedgers: (
+    code: string,
+    onChange: (ledgers: RoundLedger[]) => void,
+    onError?: (error: Error) => void,
+  ) => subscribeLedgersMock(code, onChange, onError),
 }))
 
 import CameraPage from '../CameraPage.vue'
@@ -298,6 +316,8 @@ beforeEach(() => {
   subscribeRoomMock.mockReset().mockReturnValue(unsubscribeRoomMock)
   subscribeLedgerMock.mockReset().mockReturnValue(unsubscribeLedgerMock)
   unsubscribeLedgerMock.mockReset()
+  subscribeLedgersMock.mockReset().mockReturnValue(unsubscribeLedgersMock)
+  unsubscribeLedgersMock.mockReset()
   unsubscribeParticipantsMock.mockReset()
   subscribeParticipantsMock.mockReset().mockReturnValue(unsubscribeParticipantsMock)
   unsubscribeNoticeMock.mockReset()
@@ -315,6 +335,8 @@ afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   Reflect.deleteProperty(navigator, 'mediaDevices')
+  // 기록 시트는 포털로 body에 렌더된다 — 다음 테스트로 새지 않게 비운다
+  document.body.innerHTML = ''
 })
 
 /**
@@ -531,7 +553,7 @@ describe('CameraPage 미배정 게스트 리다이렉트 (D-5)', () => {
  */
 describe('CameraPage 라운드 종료 게이트', () => {
   /**
-   * 종료되면 셔터·아이템이 전부 잠긴 채 남는 대신 출구 하나로 바뀐다 — 잠긴 버튼만 남기면
+   * 종료되면 셔터가 잠긴 채 남는 대신 출구 하나로 바뀐다 — 잠긴 버튼만 남기면
    * 호스트가 게임을 종료할 때까지 플레이어가 누를 것이 없는 화면에 갇힌다(A-4).
    */
   it('라운드가 종료되면 셔터 대신 대기실 출구가 자리를 넘겨받는다', async () => {
@@ -862,7 +884,7 @@ describe('CameraPage', () => {
     expect(findShutter(wrapper).exists()).toBe(true)
   })
 
-  it('목표·남은 시간·팀 편성과 준비 중 슬롯을 HUD에 표시한다', async () => {
+  it('목표·남은 시간·팀 편성과 기록 슬롯을 HUD에 표시한다', async () => {
     subscribeParticipantsMock.mockImplementation((_code, onChange) => {
       onChange([
         {
@@ -910,9 +932,61 @@ describe('CameraPage', () => {
     expect(wrapper.text()).toContain('20:00')
     expect(wrapper.text()).toContain('팀 A · 하린')
     expect(wrapper.text()).toContain('2팀 참가')
-    expect(wrapper.text()).toContain('아이템')
-    expect(wrapper.text()).toContain('지도')
     expect(wrapper.text()).toContain('기록')
+  })
+
+  /**
+   * P08 §2.5 — 아이템 2칸은 MVP 제외(2026-09-20), 지도는 방에 mapImageUrl이 등록된 뒤에만 열린다.
+   * 기능 없는 버튼을 자리만 남기지 않으므로 지금 하단 격자는 셔터 + 기록 한 칸이다.
+   */
+  it('아이템·지도 슬롯 없이 셔터와 기록 버튼만 둔다', async () => {
+    const wrapper = await mountWithActiveCamera()
+
+    expect(wrapper.text()).not.toContain('아이템')
+    expect(wrapper.text()).not.toContain('지도')
+    expect(wrapper.findAll('button[data-variant="hud"][disabled]')).toHaveLength(0)
+    const recordButton = wrapper.find('button[aria-label="내 기록 열기"]')
+    expect(recordButton.exists()).toBe(true)
+    expect(recordButton.attributes('disabled')).toBeUndefined()
+    expect(recordButton.text()).toContain('기록')
+  })
+
+  it('기록 버튼을 누르면 내 기록 시트가 열린다', async () => {
+    const wrapper = await mountWithActiveCamera()
+    expect(document.body.textContent).not.toContain('이번 라운드 내 킬샷')
+
+    await wrapper.find('button[aria-label="내 기록 열기"]').trigger('click')
+    await flushPromises()
+
+    const text = document.body.textContent ?? ''
+    expect(text).toContain('내 기록')
+    expect(text).toContain('이번 라운드 내 킬샷')
+    expect(text).toContain('우리 팀 이번 라운드')
+    expect(text).toContain('지난 라운드')
+    wrapper.unmount()
+  })
+
+  it('셔터가 잠겨도(일시정지) 기록 시트는 열 수 있다', async () => {
+    mockDisplayState.value = 'paused'
+    const wrapper = await mountWithActiveCamera()
+    expect(findShutter(wrapper).attributes('disabled')).toBeDefined()
+
+    const recordButton = wrapper.find('button[aria-label="내 기록 열기"]')
+    expect(recordButton.attributes('disabled')).toBeUndefined()
+    await recordButton.trigger('click')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('이번 라운드 내 킬샷')
+    wrapper.unmount()
+  })
+
+  it('지난 라운드 원장 목록을 구독하고 언마운트 시 해제한다', async () => {
+    const wrapper = await mountWithActiveCamera()
+
+    expect(subscribeLedgersMock).toHaveBeenCalledWith('AB2C', expect.any(Function), expect.any(Function))
+
+    wrapper.unmount()
+    expect(unsubscribeLedgersMock).toHaveBeenCalledTimes(1)
   })
 
   it('넘치는 공지만 애니메이션하고 펼치면 전체 내용을 줄바꿈한다', async () => {
@@ -985,13 +1059,13 @@ describe('CameraPage', () => {
     const wrapper = await mountWithActiveCamera()
     const noticeButton = wrapper.find('button[aria-controls="cockpit-notice"]')
     const shutter = findShutter(wrapper)
-    const slots = wrapper.findAll('button[data-variant="hud"][disabled]')
+    const recordButton = wrapper.find('button[aria-label="내 기록 열기"]')
 
     expect(noticeButton.attributes('data-padding')).toBe('compact')
     expect(shutter.attributes('data-variant')).toBe('shutter')
     expect(shutter.attributes('data-padding')).toBe('none')
-    expect(slots).toHaveLength(4)
-    expect(slots.every((slot) => slot.attributes('data-padding') === 'none')).toBe(true)
+    expect(recordButton.attributes('data-variant')).toBe('hud')
+    expect(recordButton.attributes('data-padding')).toBe('none')
   })
 
   it('촬영 버튼을 누르면 현재 프레임을 캡처해 미리보기를 보여준다', async () => {
