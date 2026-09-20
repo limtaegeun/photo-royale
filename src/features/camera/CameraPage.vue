@@ -23,6 +23,7 @@ import {
   type RoundLedger,
 } from '@/features/round-ledger'
 import { useCameraStream } from './composables/useCameraStream'
+import { useJudgmentFeedback } from './composables/useJudgmentFeedback'
 import { useKillshotSubmit } from './composables/useKillshotSubmit'
 import { usePhotoCapture } from './composables/usePhotoCapture'
 
@@ -147,6 +148,17 @@ const teamLabel = computed(() => {
   if (me.value?.team === null || me.value === null) return '팀 확인 중'
   const partnerNames = teammates.value.map((participant) => participant.name).join(' · ')
   return partnerNames ? `팀 ${me.value.team} · ${partnerNames}` : `팀 ${me.value.team} · 1인 팀`
+})
+
+/**
+ * 판정 결과 토스트(로드맵 D-3) — 내가 이번 라운드에 올린 킬샷이 확정/반려로 바뀌면 알려준다.
+ * 지금까지는 호스트가 판정해도 게스트에게 전달할 채널이 없었다.
+ */
+useJudgmentFeedback({
+  roomCode: computed(() => roomCode),
+  uid: computed(() => me.value?.id ?? null),
+  round: computed(() => room.value?.assignmentRound ?? null),
+  toast,
 })
 
 function leaveCockpit(nextRoom: RoomInfo | null) {

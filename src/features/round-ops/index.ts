@@ -5,7 +5,9 @@ export {
   SUBMISSION_PHOTO_MAX_LENGTH,
   SUBMISSION_PHOTO_PREFIX,
   submitKillshot,
+  subscribeToMySubmissions,
   type KillshotInput,
   type Submission,
+  type SubmissionRecord,
 } from './api/submissions'
 export { useRoundTimer } from './composables/useRoundTimer'

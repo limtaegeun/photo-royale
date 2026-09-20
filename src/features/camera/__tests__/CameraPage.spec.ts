@@ -23,6 +23,19 @@ const subscribeNoticeMock =
     ) => () => void
   >()
 const submitKillshotMock = vi.fn<(code: string, input: Record<string, unknown>) => Promise<void>>()
+/** 판정 결과 토스트(useJudgmentFeedback)가 구독하는 대상 — 이 파일의 테스트는 그 동작 자체를
+ * 검증하지 않으므로(별도 useJudgmentFeedback.spec.ts) 크래시만 나지 않게 최소한으로 스텁한다 */
+const unsubscribeMySubmissionsMock = vi.fn<() => void>()
+const subscribeMySubmissionsMock =
+  vi.fn<
+    (
+      code: string,
+      uid: string,
+      round: number,
+      onChange: (records: unknown[]) => void,
+      onError?: (error: Error) => void,
+    ) => () => void
+  >()
 /** 라운드 종료 게이트 테스트가 마운트 중간에 바꿔 끼울 수 있도록 실제 ref로 둔다 */
 const mockDisplayState = ref<'idle' | 'running' | 'paused' | 'ended'>('running')
 
@@ -33,6 +46,13 @@ vi.mock('@/features/round-ops', async () => {
     SUBMISSION_PHOTO_MAX_LENGTH: 900000,
     submitKillshot: (code: string, input: Record<string, unknown>) =>
       submitKillshotMock(code, input),
+    subscribeToMySubmissions: (
+      code: string,
+      uid: string,
+      round: number,
+      onChange: (records: unknown[]) => void,
+      onError?: (error: Error) => void,
+    ) => subscribeMySubmissionsMock(code, uid, round, onChange, onError),
     subscribeToLatestNotice: (
       code: string,
       onChange: (notice: { id: string; text: string; createdAtMs: number | null } | null) => void,
@@ -285,6 +305,8 @@ beforeEach(() => {
     onChange(null)
     return unsubscribeNoticeMock
   })
+  unsubscribeMySubmissionsMock.mockReset()
+  subscribeMySubmissionsMock.mockReset().mockReturnValue(unsubscribeMySubmissionsMock)
   submitKillshotMock.mockReset().mockResolvedValue(undefined)
   mockDisplayState.value = 'running'
 })
