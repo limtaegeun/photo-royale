@@ -51,6 +51,25 @@ describe('SignupForm', () => {
     expect(signupMock).not.toHaveBeenCalled()
   })
 
+  it('이메일 오류는 role=alert로 낭독되고 입력과 aria-describedby로 연결된다', async () => {
+    const wrapper = mount(SignupForm)
+
+    const email = wrapper.find('#signup-email')
+    await email.setValue('not-an-email')
+    await email.trigger('blur')
+
+    const error = wrapper.find('#signup-email-error')
+    expect(error.exists()).toBe(true)
+    expect(error.attributes('role')).toBe('alert')
+    expect(email.attributes('aria-describedby')).toBe('signup-email-error')
+
+    await email.setValue('a@b.com')
+    await email.trigger('blur')
+
+    expect(wrapper.find('#signup-email-error').exists()).toBe(false)
+    expect(email.attributes('aria-describedby')).toBeUndefined()
+  })
+
   it('폼을 채워 제출하면 signup 성공 시 success 이벤트를 emit한다', async () => {
     signupMock.mockResolvedValue(PROFILE)
     const wrapper = mount(SignupForm)

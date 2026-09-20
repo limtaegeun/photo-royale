@@ -33,9 +33,12 @@ async function onSubmit() {
         inputmode="email"
         placeholder="이메일"
         :aria-invalid="!!fieldErrors.email"
+        :aria-describedby="fieldErrors.email ? 'signup-email-error' : undefined"
         @blur="validateEmail"
       />
-      <p v-if="fieldErrors.email" class="text-caption text-danger">{{ fieldErrors.email }}</p>
+      <p v-if="fieldErrors.email" id="signup-email-error" class="text-caption text-danger" role="alert">
+        {{ fieldErrors.email }}
+      </p>
     </div>
 
     <div class="space-y-2">
@@ -46,8 +49,11 @@ async function onSubmit() {
         autocomplete="new-password"
         placeholder="비밀번호 (6자 이상)"
         :aria-invalid="!!fieldErrors.password"
+        :aria-describedby="fieldErrors.password ? 'signup-password-error' : undefined"
       />
-      <p v-if="fieldErrors.password" class="text-caption text-danger">{{ fieldErrors.password }}</p>
+      <p v-if="fieldErrors.password" id="signup-password-error" class="text-caption text-danger" role="alert">
+        {{ fieldErrors.password }}
+      </p>
     </div>
 
     <div class="space-y-2">
@@ -58,14 +64,21 @@ async function onSubmit() {
         autocomplete="nickname"
         placeholder="닉네임 (게임에서 보일 이름)"
         :aria-invalid="!!fieldErrors.nickname"
+        :aria-describedby="fieldErrors.nickname ? 'signup-nickname-error' : undefined"
       />
-      <p v-if="fieldErrors.nickname" class="text-caption text-danger">{{ fieldErrors.nickname }}</p>
+      <p v-if="fieldErrors.nickname" id="signup-nickname-error" class="text-caption text-danger" role="alert">
+        {{ fieldErrors.nickname }}
+      </p>
     </div>
 
     <div class="rounded-lg border border-stroke bg-surface p-4">
       <p class="text-caption text-content-secondary">성별</p>
       <BaseSegmented v-model="form.gender" :options="genderOptions" class="mt-2" />
-      <p v-if="fieldErrors.gender" class="mt-2 text-caption text-danger">{{ fieldErrors.gender }}</p>
+      <!-- BaseSegmented(Reka RadioGroup) 루트에 aria-describedby를 전달할 확실한 경로가 없어
+           그룹 연결은 생략하고, 오류를 role="alert"로만 낭독기에 알린다 -->
+      <p v-if="fieldErrors.gender" id="signup-gender-error" class="mt-2 text-caption text-danger" role="alert">
+        {{ fieldErrors.gender }}
+      </p>
     </div>
 
     <p v-if="submitError" class="text-caption text-danger" role="alert">{{ submitError }}</p>

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import {
   createRoundAnchorObserver,
   resetServerClock,
@@ -21,11 +21,19 @@ beforeEach(() => {
 
 describe('observeRoundAnchor', () => {
   it('구독의 첫 스냅샷은 샘플로 쓰지 않는다 — 진행 중인 라운드에 합류하면 앵커가 과거다', () => {
-    // 21분 전에 시작된 라운드에 지금 합류했다. 이걸 샘플로 쓰면 기기가 21분 빠른 것으로 오판한다
-    observeRoundAnchor(DEVICE_NOW - 21 * MINUTE, false, DEVICE_NOW)
+    // Date.now()를 두 번 따로 읽으면(serverNow() 내부 1회 + 검증 1회) 부하 상황에서 1ms
+    // 어긋나 flaky해진다. 시계를 고정해 두 호출이 항상 같은 값을 읽게 한다
+    vi.useFakeTimers()
+    vi.setSystemTime(DEVICE_NOW)
+    try {
+      // 21분 전에 시작된 라운드에 지금 합류했다. 이걸 샘플로 쓰면 기기가 21분 빠른 것으로 오판한다
+      observeRoundAnchor(DEVICE_NOW - 21 * MINUTE, false, DEVICE_NOW)
 
-    expect(serverClockOffsetMs()).toBeNull()
-    expect(serverNow()).toBe(Date.now())
+      expect(serverClockOffsetMs()).toBeNull()
+      expect(serverNow()).toBe(Date.now())
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('앵커가 바뀐 순간을 서버 시각으로 삼아 기기 시계와의 차를 잰다', () => {
