@@ -19,9 +19,11 @@ import { subscribeToLatestNotice, type Notice, useRoundTimer } from '@/features/
 import {
   aliveTeamCount,
   subscribeToRoundLedger,
+  subscribeToRoundLedgers,
   teamOutStatus,
   type RoundLedger,
 } from '@/features/round-ledger'
+import CockpitRecordSheet from './components/CockpitRecordSheet.vue'
 import { useCameraStream } from './composables/useCameraStream'
 import { useJudgmentFeedback } from './composables/useJudgmentFeedback'
 import { useKillshotSubmit } from './composables/useKillshotSubmit'
@@ -59,16 +61,17 @@ const noticeMarqueeStyle = computed(() => ({
   // 게임 중 곁눈질로도 읽을 수 있게 약 24px/s로 이동하고 양 끝에 머무는 시간을 둔다.
   '--notice-marquee-duration': `${Math.max(16, noticeOverflowDistance.value / 24 + 4)}s`,
 }))
-const controlColumns = [
-  [
-    { n: 1, label: '아이템' },
-    { n: 3, label: '지도' },
-  ],
-  [
-    { n: 2, label: '아이템' },
-    { n: 4, label: '기록' },
-  ],
-] as const
+// 하단 컨트롤 슬롯(P08) — 아이템 2칸은 MVP 제외 결정(2026-09-20)으로 지웠고, 지도(3)는 방에
+// mapImageUrl이 등록된 뒤 왼쪽 칸에 열린다(다음 단계). 기능 없는 버튼을 자리만 남기지 않으므로
+// 지금 격자는 왼쪽 빈 칸 · 셔터 · 오른쪽 기록(4) 한 칸이다.
+/** 기록 시트(슬롯 4) 열림 — 읽기 전용 시트라 라운드 상태(일시정지·탈락·모드 잠금)와 무관하게 연다 */
+const isRecordSheetOpen = ref(false)
+/**
+ * 정산이 끝난 지난 라운드 원장 — 기록 시트의 "지난 라운드"(누적 순위·등급) 근거. 대기실 순위와
+ * 같은 계산(computeStandings)을 쓰려고 원장 목록을 그대로 구독하고 result 있는 것만 남긴다.
+ * 구독 오류는 빈 목록과 같게 둔다 — 촬영을 막을 근거가 아니다.
+ */
+const pastLedgers = ref<RoundLedger[]>([])
 
 /** 콕핏은 방에 매여 있다 — 경로의 코드가 어느 방의 라운드를 뛰는 중인지 가리킨다 */
 const roomCode = normalizeRoomCode(String(route.params.roomCode))
@@ -83,6 +86,7 @@ let unsubscribeRoom: (() => void) | null = null
 let unsubscribeParticipants: (() => void) | null = null
 let unsubscribeNotice: (() => void) | null = null
 let unsubscribeLedger: (() => void) | null = null
+let unsubscribeLedgers: (() => void) | null = null
 /** 원장 구독이 따라가는 차수 — 방 스냅샷마다 차수가 같으면 다시 구독하지 않는다 */
 let subscribedLedgerRound: number | null = null
 let subscriptionFailed = false
@@ -91,7 +95,7 @@ let unassignedRedirectSent = false
 let noticeResizeObserver: ResizeObserver | null = null
 
 const round = computed(() => room.value?.round ?? null)
-const { formatted: remainingTime, displayState } = useRoundTimer(round)
+const { nowMs, formatted: remainingTime, displayState } = useRoundTimer(round)
 /**
  * 타이머가 0에 닿은 상태 — 확정 스펙(라운드당 20분)이 표시로만 존재하지 않도록 셔터·제출을
  * 여기서 잠근다(RoundOpsPage의 동일 이름 파생값과 같은 뜻: displayState === 'ended').
@@ -158,7 +162,7 @@ const teamLabel = computed(() => {
  * 판정 결과 토스트(로드맵 D-3) — 내가 이번 라운드에 올린 킬샷이 확정/반려로 바뀌면 알려준다.
  * 지금까지는 호스트가 판정해도 게스트에게 전달할 채널이 없었다.
  */
-useJudgmentFeedback({
+const { mySubmissions } = useJudgmentFeedback({
   roomCode: computed(() => roomCode),
   uid: computed(() => me.value?.id ?? null),
   round: computed(() => room.value?.assignmentRound ?? null),
@@ -340,6 +344,15 @@ onMounted(() => {
     },
     handleSubscriptionError,
   )
+  unsubscribeLedgers = subscribeToRoundLedgers(
+    roomCode,
+    (ledgers) => {
+      pastLedgers.value = ledgers.filter((ledger) => ledger.result !== null)
+    },
+    () => {
+      pastLedgers.value = []
+    },
+  )
 })
 onUnmounted(() => {
   noticeResizeObserver?.disconnect()
@@ -349,10 +362,12 @@ onUnmounted(() => {
   unsubscribeParticipants?.()
   unsubscribeNotice?.()
   unsubscribeLedger?.()
+  unsubscribeLedgers?.()
   unsubscribeRoom = null
   unsubscribeParticipants = null
   unsubscribeNotice = null
   unsubscribeLedger = null
+  unsubscribeLedgers = null
   subscribedLedgerRound = null
 })
 
@@ -540,7 +555,7 @@ function subscribeToCurrentRoundLedger(roundNumber: number) {
           촬영에 실패했습니다. 다시 시도해주세요
         </p>
         <!--
-          라운드가 끝나면 컨트롤 자리를 출구 하나로 바꾼다 — 셔터·아이템이 전부 잠긴 채 남아 있으면
+          라운드가 끝나면 컨트롤 자리를 출구 하나로 바꾼다 — 셔터가 잠긴 채 남아 있으면
           플레이어는 누를 것이 없는 화면에 갇힌다(호스트가 게임을 종료해야 스스로 빠져나간다).
           자동으로 내보내지는 않는다: 확인 화면에 들고 있던 사진이 사라지고, 종료 판정이 기기
           시계 기준이라 시계가 앞선 기기만 혼자 빠져나가기 때문이다. 나갈지는 플레이어가 정한다.
@@ -550,26 +565,24 @@ function subscribeToCurrentRoundLedger(roundNumber: number) {
             대기실로 돌아가기
           </BaseButton>
         </div>
+        <!--
+          셔터 좌우 한 칸씩(P08 §2.5). 왼쪽 칸은 지도(mapImageUrl 등록 뒤)가 들어올 자리라 비워 두고
+          셔터가 가운데를 지킨다. 오른쪽은 기록 시트 — 라운드 상태(일시정지·탈락·모드 잠금)와 무관하게
+          언제든 열 수 있다. 읽기만 하는 시트라 셔터·제출 게이트에 끼지 않는다.
+        -->
         <div v-else class="grid grid-cols-[1fr_auto_1fr] items-end gap-5 px-6 pb-5">
-          <div
-            v-for="(slots, columnIndex) in controlColumns"
-            :key="columnIndex"
-            class="flex flex-col items-center gap-3"
-            :class="columnIndex === 1 && 'col-start-3'"
-          >
+          <div class="col-start-3 flex flex-col items-center gap-3">
             <BaseButton
-              v-for="slot in slots"
-              :key="slot.n"
               variant="hud"
               size="md"
               shape="circle"
               padding="none"
-              disabled
+              aria-label="내 기록 열기"
               class="min-h-16 w-16 text-caption"
+              @click="isRecordSheetOpen = true"
             >
               <span class="flex flex-col items-center leading-tight">
-                <span class="font-semibold">{{ slot.n }}</span
-                ><span>{{ slot.label }}</span>
+                <span class="font-semibold">4</span><span>기록</span>
               </span>
             </BaseButton>
           </div>
@@ -680,6 +693,19 @@ function subscribeToCurrentRoundLedger(roundNumber: number) {
         <BaseButton variant="primary" size="md" @click="start">다시 시도</BaseButton>
       </template>
     </div>
+
+    <!-- 기록 시트(P08 슬롯 4) — 뷰파인더 블록 밖에 두어 확인 화면·라운드 종료로 컨트롤이 바뀌어도
+         열려 있던 시트가 끊기지 않는다. 포털로 body에 렌더된다 -->
+    <CockpitRecordSheet
+      v-model:open="isRecordSheetOpen"
+      :my-submissions="mySubmissions"
+      :ledger="ledger"
+      :my-team="me?.team ?? null"
+      :my-uid="authStore.user?.uid ?? null"
+      :past-ledgers="pastLedgers"
+      :now-ms="nowMs"
+      :killshots-disabled="modeKillshotLock !== null"
+    />
   </section>
 </template>
 

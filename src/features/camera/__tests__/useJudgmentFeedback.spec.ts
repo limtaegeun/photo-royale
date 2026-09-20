@@ -49,10 +49,8 @@ function setupInScope() {
   const round = ref<number | null>(2)
   const toast = vi.fn<(t: { title: string; description?: string; tone: string }) => void>()
   const scope = effectScope()
-  scope.run(() => {
-    useJudgmentFeedback({ roomCode, uid, round, toast })
-  })
-  return { scope, roomCode, uid, round, toast }
+  const result = scope.run(() => useJudgmentFeedback({ roomCode, uid, round, toast }))!
+  return { scope, roomCode, uid, round, toast, mySubmissions: result.mySubmissions }
 }
 
 beforeEach(() => {
@@ -142,6 +140,59 @@ describe('useJudgmentFeedback', () => {
     scope.stop()
 
     expect(unsubscribeMock).toHaveBeenCalledTimes(1)
+  })
+
+  /**
+   * 기록 시트(P08)가 같은 구독에서 내 제출 목록을 읽는다 — 사진이 실린 무거운 구독을 두 번 열지
+   * 않으려고 토스트와 목록이 한 구독을 나눠 쓴다.
+   */
+  describe('mySubmissions', () => {
+    it('첫 스냅샷부터 내 제출 목록을 그대로 내보낸다', () => {
+      const { mySubmissions } = setupInScope()
+      const onChange = subscribeToMySubmissionsMock.mock.calls[0]![3]
+      expect(mySubmissions.value).toEqual([])
+
+      const records = [record({ id: 's1' }), record({ id: 's2', status: 'approved', targetTeam: 'A' })]
+      onChange(records)
+
+      expect(mySubmissions.value).toEqual(records)
+    })
+
+    it('판정으로 바뀐 스냅샷도 목록에 반영한다', () => {
+      const { mySubmissions } = setupInScope()
+      const onChange = subscribeToMySubmissionsMock.mock.calls[0]![3]
+
+      onChange([record({ status: 'pending' })])
+      onChange([record({ status: 'rejected' })])
+
+      expect(mySubmissions.value).toHaveLength(1)
+      expect(mySubmissions.value[0]!.status).toBe('rejected')
+    })
+
+    it('라운드가 바뀌면 지난 라운드 제출을 비우고 새 구독을 기다린다', async () => {
+      const { round, mySubmissions } = setupInScope()
+      subscribeToMySubmissionsMock.mock.calls[0]![3]([record({ id: 'r2' })])
+      expect(mySubmissions.value).toHaveLength(1)
+
+      round.value = 3
+      await nextTick()
+
+      expect(mySubmissions.value).toEqual([])
+      subscribeToMySubmissionsMock.mock.calls[1]![3]([record({ id: 'r3', round: 3 })])
+      expect(mySubmissions.value.map((item) => item.id)).toEqual(['r3'])
+    })
+
+    it('구독 조건이 없으면(미배정) 빈 목록이다', () => {
+      const roomCode = ref<string | null>('AB2C')
+      const uid = ref<string | null>(null)
+      const round = ref<number | null>(2)
+      const toast = vi.fn<(t: { title: string; description?: string; tone: string }) => void>()
+      const scope = effectScope()
+
+      const result = scope.run(() => useJudgmentFeedback({ roomCode, uid, round, toast }))!
+
+      expect(result.mySubmissions.value).toEqual([])
+    })
   })
 
   it('uid가 없으면(미배정) 구독하지 않는다', () => {
