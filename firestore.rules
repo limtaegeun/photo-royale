@@ -114,7 +114,7 @@ service cloud.firestore {
         && request.resource.data.status == 'waiting'
         && request.resource.data.createdAt == request.time;
 
-      // 호스트 본인만. 두 갈래로 나뉜다.
+      // 호스트 본인만. 다섯 갈래로 나뉜다.
       allow update: if request.auth != null
         && request.auth.uid == resource.data.hostUid
         && (
@@ -162,6 +162,15 @@ service cloud.firestore {
             && resource.data.status == 'playing'
             && request.resource.data.status == 'waiting'
             && !('round' in request.resource.data))
+          // 5) 행사장 지도(P08 §2.2) — 운영자가 URL 하나를 등록한다. 이미지는 hosting 자산이나
+          //    외부 URL이고 Storage는 쓰지 않는다. 방 상태와 무관하게 바꿀 수 있다(게임 중에도
+          //    참가자 콕핏이 방 문서 구독으로 새 지도를 바로 받는다). 상한 2048은 클라
+          //    MAP_IMAGE_URL_MAX_LENGTH와 같아야 한다(rooms.spec이 대조 검증). 삭제는 허용하지 않는다.
+          || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['mapImageUrl'])
+            && request.resource.data.mapImageUrl is string
+            && request.resource.data.mapImageUrl.size() >= 8
+            && request.resource.data.mapImageUrl.size() <= 2048
+            && request.resource.data.mapImageUrl.matches('^https://.*'))
         );
 
       // 방 정리(삭제) 플로우 도입 전까지 불변이다.

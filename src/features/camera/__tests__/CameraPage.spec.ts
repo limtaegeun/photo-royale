@@ -199,6 +199,7 @@ function playingRoom(overrides: Partial<RoomInfo> = {}): RoomInfo {
     gameMode: 'normal',
     roundModes: {},
     round: RUNNING_ROUND,
+    mapImageUrl: null,
     ...overrides,
   }
 }
@@ -937,18 +938,79 @@ describe('CameraPage', () => {
 
   /**
    * P08 §2.5 — 아이템 2칸은 MVP 제외(2026-09-20), 지도는 방에 mapImageUrl이 등록된 뒤에만 열린다.
-   * 기능 없는 버튼을 자리만 남기지 않으므로 지금 하단 격자는 셔터 + 기록 한 칸이다.
+   * 기능 없는 버튼을 자리만 남기지 않으므로 지도가 없는 방의 하단 격자는 셔터 + 기록 한 칸이다.
    */
-  it('아이템·지도 슬롯 없이 셔터와 기록 버튼만 둔다', async () => {
+  it('지도가 등록되지 않은 방은 아이템·지도 슬롯 없이 셔터와 기록 버튼만 둔다', async () => {
+    const deliverRoom = captureRoomSnapshot()
     const wrapper = await mountWithActiveCamera()
+    deliverRoom(playingRoom({ mapImageUrl: null }))
+    await flushPromises()
 
     expect(wrapper.text()).not.toContain('아이템')
     expect(wrapper.text()).not.toContain('지도')
+    expect(wrapper.find('button[aria-label="행사장 지도 열기"]').exists()).toBe(false)
     expect(wrapper.findAll('button[data-variant="hud"][disabled]')).toHaveLength(0)
     const recordButton = wrapper.find('button[aria-label="내 기록 열기"]')
     expect(recordButton.exists()).toBe(true)
     expect(recordButton.attributes('disabled')).toBeUndefined()
     expect(recordButton.text()).toContain('기록')
+  })
+
+  /** P08 §2.2 단계 1 — 운영자가 등록한 지도 URL이 있으면 왼쪽 칸에 지도 슬롯이 열린다 */
+  describe('지도 슬롯(3)', () => {
+    const MAP_URL = 'https://cdn.example.com/venue/map.png'
+
+    it('방에 mapImageUrl이 있으면 왼쪽 칸에 지도 버튼이 나타나고, 지워지면 다시 숨는다', async () => {
+      const deliverRoom = captureRoomSnapshot()
+      const wrapper = await mountWithActiveCamera()
+      deliverRoom(playingRoom({ mapImageUrl: MAP_URL }))
+      await flushPromises()
+
+      const mapButton = wrapper.find('button[aria-label="행사장 지도 열기"]')
+      expect(mapButton.exists()).toBe(true)
+      expect(mapButton.attributes('disabled')).toBeUndefined()
+      expect(mapButton.text()).toContain('3')
+      expect(mapButton.text()).toContain('지도')
+      // 기록 슬롯은 그대로 오른쪽에 남는다
+      expect(wrapper.find('button[aria-label="내 기록 열기"]').exists()).toBe(true)
+
+      deliverRoom(playingRoom({ mapImageUrl: null }))
+      await flushPromises()
+      expect(wrapper.find('button[aria-label="행사장 지도 열기"]').exists()).toBe(false)
+    })
+
+    it('지도 버튼을 누르면 등록된 이미지를 담은 행사장 지도 시트가 열린다', async () => {
+      const deliverRoom = captureRoomSnapshot()
+      const wrapper = await mountWithActiveCamera()
+      deliverRoom(playingRoom({ mapImageUrl: MAP_URL }))
+      await flushPromises()
+      expect(document.body.querySelector('img[alt="행사장 지도"]')).toBeNull()
+
+      await wrapper.find('button[aria-label="행사장 지도 열기"]').trigger('click')
+      await flushPromises()
+
+      expect(document.body.textContent).toContain('행사장 지도')
+      const image = document.body.querySelector<HTMLImageElement>('img[alt="행사장 지도"]')
+      expect(image?.getAttribute('src')).toBe(MAP_URL)
+      wrapper.unmount()
+    })
+
+    it('셔터가 잠겨도(일시정지) 지도 시트는 열 수 있다', async () => {
+      mockDisplayState.value = 'paused'
+      const deliverRoom = captureRoomSnapshot()
+      const wrapper = await mountWithActiveCamera()
+      deliverRoom(playingRoom({ mapImageUrl: MAP_URL }))
+      await flushPromises()
+      expect(findShutter(wrapper).attributes('disabled')).toBeDefined()
+
+      const mapButton = wrapper.find('button[aria-label="행사장 지도 열기"]')
+      expect(mapButton.attributes('disabled')).toBeUndefined()
+      await mapButton.trigger('click')
+      await flushPromises()
+
+      expect(document.body.querySelector('img[alt="행사장 지도"]')?.getAttribute('src')).toBe(MAP_URL)
+      wrapper.unmount()
+    })
   })
 
   it('기록 버튼을 누르면 내 기록 시트가 열린다', async () => {

@@ -243,6 +243,7 @@ function room(overrides: Partial<RoomInfo> = {}): RoomInfo {
     gameMode: 'normal',
     roundModes: {},
     round: null,
+    mapImageUrl: null,
     ...overrides,
   }
 }

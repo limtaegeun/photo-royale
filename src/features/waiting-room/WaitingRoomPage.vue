@@ -6,6 +6,7 @@ import BaseBadge from '@/shared/components/BaseBadge.vue'
 import BaseButton from '@/shared/components/BaseButton.vue'
 import BaseCard from '@/shared/components/BaseCard.vue'
 import BaseDialog from '@/shared/components/BaseDialog.vue'
+import BaseListRow from '@/shared/components/BaseListRow.vue'
 import BaseSectionHeader from '@/shared/components/BaseSectionHeader.vue'
 import PlayerChip from '@/shared/components/PlayerChip.vue'
 import { DEFAULT_GAME_MODE, GAME_MODES } from '@/features/game-mode'
@@ -19,8 +20,10 @@ import {
 import { useToast } from '@/shared/composables/useToast'
 import { useAppHeader } from '@/shared/composables/useAppHeader'
 import KickableRosterChip from './components/KickableRosterChip.vue'
+import MapImageUrlSheet from './components/MapImageUrlSheet.vue'
 import StandingsCard from './components/StandingsCard.vue'
 import { normalizeRoomCode, type Participant } from './api/rooms'
+import { parseMapImageUrl } from './mapImageUrl'
 import { hasPlayedRound } from './roundPlayMarker'
 import { useWaitingRoomStore } from './stores/useWaitingRoomStore'
 
@@ -53,6 +56,8 @@ const {
   isRoundOver,
   settledRoundCount,
   standings,
+  isSavingMapImage,
+  mapImageError,
 } = storeToRefs(store)
 
 /**
@@ -314,6 +319,33 @@ function viewPastRecords() {
   router.push({ name: 'round-ops', params: { roomCode: roomCode.value }, query: { tab: 'log' } })
 }
 
+// 행사장 지도(P08 §2.2 단계 1) — 호스트가 이미지 URL 하나를 방 문서에 붙이면 참가자 콕핏의 지도 슬롯이 열린다
+const isMapImageSheetOpen = ref(false)
+const mapImageUrl = computed(() => room.value?.mapImageUrl ?? null)
+/**
+ * 지도 행 캡션 — 등록됐으면 URL 전체 대신 host만 보인다(긴 경로가 한 줄 캡션을 잘라먹지 않게).
+ * rules가 https 문자열만 받지만 파싱 실패까지 방어한다(오염된 값이면 등록됨만 표기).
+ */
+const mapImageCaption = computed(() => {
+  if (mapImageUrl.value === null) return '아직 등록하지 않았어요.'
+  const host = parseMapImageUrl(mapImageUrl.value)?.host
+  return host === undefined ? '등록됨' : `등록됨 · ${host}`
+})
+
+/** 지도 시트 열기 — 지난번 실패 안내가 남아 있으면 지우고 깨끗한 입력으로 시작한다 */
+function openMapImageSheet() {
+  mapImageError.value = null
+  isMapImageSheetOpen.value = true
+}
+
+/** 저장에 성공했을 때만 시트를 닫는다 — 실패하면 입력을 남겨 둔 채 안내를 보이고 재시도할 수 있어야 한다 */
+async function saveMapImageUrl(url: string) {
+  const saved = await store.setMapImageUrl(url)
+  if (!saved) return
+  isMapImageSheetOpen.value = false
+  toast({ title: '행사장 지도를 등록했어요.', tone: 'success' })
+}
+
 /** 초대는 링크 복사 단일 채널 — 링크의 ?code=가 입장 화면의 자동 입장으로 이어진다 */
 async function copyInviteLink() {
   if (!roomCode.value) return
@@ -424,6 +456,18 @@ async function copyInviteLink() {
                 초대 링크 복사
               </BaseButton>
             </div>
+          </BaseCard>
+
+          <!-- 행사장 지도(P08 §2.2) — 호스트만. 등록하면 참가자 콕핏 왼쪽 칸에 지도 버튼이 열린다.
+               행이 자체 패딩을 갖는 리스트 카드라 padding="none" -->
+          <BaseCard v-if="isHost" padding="none">
+            <BaseListRow label="행사장 지도" :caption="mapImageCaption">
+              <template #control>
+                <BaseButton variant="ghost" size="sm" @click="openMapImageSheet">
+                  {{ mapImageUrl === null ? '지도 등록' : '바꾸기' }}
+                </BaseButton>
+              </template>
+            </BaseListRow>
           </BaseCard>
 
           <!-- 입장 명단 -->
@@ -620,5 +664,15 @@ async function copyInviteLink() {
         </div>
       </div>
     </BaseDialog>
+
+    <!-- 행사장 지도 등록 시트(호스트) — 성공했을 때만 saveMapImageUrl이 닫는다 -->
+    <MapImageUrlSheet
+      v-if="isHost"
+      v-model:open="isMapImageSheetOpen"
+      :current-url="mapImageUrl"
+      :saving="isSavingMapImage"
+      :error="mapImageError"
+      @save="saveMapImageUrl"
+    />
   </section>
 </template>

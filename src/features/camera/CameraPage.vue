@@ -23,6 +23,7 @@ import {
   teamOutStatus,
   type RoundLedger,
 } from '@/features/round-ledger'
+import CockpitMapSheet from './components/CockpitMapSheet.vue'
 import CockpitRecordSheet from './components/CockpitRecordSheet.vue'
 import { useCameraStream } from './composables/useCameraStream'
 import { useJudgmentFeedback } from './composables/useJudgmentFeedback'
@@ -61,11 +62,15 @@ const noticeMarqueeStyle = computed(() => ({
   // 게임 중 곁눈질로도 읽을 수 있게 약 24px/s로 이동하고 양 끝에 머무는 시간을 둔다.
   '--notice-marquee-duration': `${Math.max(16, noticeOverflowDistance.value / 24 + 4)}s`,
 }))
-// 하단 컨트롤 슬롯(P08) — 아이템 2칸은 MVP 제외 결정(2026-09-20)으로 지웠고, 지도(3)는 방에
-// mapImageUrl이 등록된 뒤 왼쪽 칸에 열린다(다음 단계). 기능 없는 버튼을 자리만 남기지 않으므로
-// 지금 격자는 왼쪽 빈 칸 · 셔터 · 오른쪽 기록(4) 한 칸이다.
+// 하단 컨트롤 슬롯(P08) — 아이템 2칸은 MVP 제외 결정(2026-09-20)으로 지웠다. 격자는 왼쪽 지도(3) ·
+// 셔터 · 오른쪽 기록(4)이고, 지도는 방에 mapImageUrl이 등록된 방에서만 열린다(§2.5 — 없으면 숨김).
+// 기능 없는 버튼을 자리만 남기지 않는다.
 /** 기록 시트(슬롯 4) 열림 — 읽기 전용 시트라 라운드 상태(일시정지·탈락·모드 잠금)와 무관하게 연다 */
 const isRecordSheetOpen = ref(false)
+/** 지도 시트(슬롯 3) 열림 — 기록과 같은 읽기 전용 시트라 라운드 상태와 무관하게 연다 */
+const isMapSheetOpen = ref(false)
+/** 방에 등록된 행사장 지도 URL — null이면 지도 슬롯을 숨긴다(P08 §2.2 단계 1) */
+const mapImageUrl = computed(() => room.value?.mapImageUrl ?? null)
 /**
  * 정산이 끝난 지난 라운드 원장 — 기록 시트의 "지난 라운드"(누적 순위·등급) 근거. 대기실 순위와
  * 같은 계산(computeStandings)을 쓰려고 원장 목록을 그대로 구독하고 result 있는 것만 남긴다.
@@ -566,12 +571,27 @@ function subscribeToCurrentRoundLedger(roundNumber: number) {
           </BaseButton>
         </div>
         <!--
-          셔터 좌우 한 칸씩(P08 §2.5). 왼쪽 칸은 지도(mapImageUrl 등록 뒤)가 들어올 자리라 비워 두고
-          셔터가 가운데를 지킨다. 오른쪽은 기록 시트 — 라운드 상태(일시정지·탈락·모드 잠금)와 무관하게
-          언제든 열 수 있다. 읽기만 하는 시트라 셔터·제출 게이트에 끼지 않는다.
+          셔터 좌우 한 칸씩(P08 §2.5). 왼쪽은 지도 — 방에 mapImageUrl이 등록된 뒤에만 나타나고, 없으면
+          칸을 비워 셔터가 가운데를 지킨다. 오른쪽은 기록 시트. 둘 다 읽기만 하는 시트라 라운드 상태
+          (일시정지·탈락·모드 잠금)와 무관하게 언제든 열 수 있고 셔터·제출 게이트에 끼지 않는다.
         -->
         <div v-else class="grid grid-cols-[1fr_auto_1fr] items-end gap-5 px-6 pb-5">
-          <div class="col-start-3 flex flex-col items-center gap-3">
+          <div v-if="mapImageUrl !== null" class="col-start-1 row-start-1 flex flex-col items-center gap-3">
+            <BaseButton
+              variant="hud"
+              size="md"
+              shape="circle"
+              padding="none"
+              aria-label="행사장 지도 열기"
+              class="min-h-16 w-16 text-caption"
+              @click="isMapSheetOpen = true"
+            >
+              <span class="flex flex-col items-center leading-tight">
+                <span class="font-semibold">3</span><span>지도</span>
+              </span>
+            </BaseButton>
+          </div>
+          <div class="col-start-3 row-start-1 flex flex-col items-center gap-3">
             <BaseButton
               variant="hud"
               size="md"
@@ -693,6 +713,14 @@ function subscribeToCurrentRoundLedger(roundNumber: number) {
         <BaseButton variant="primary" size="md" @click="start">다시 시도</BaseButton>
       </template>
     </div>
+
+    <!-- 지도 시트(P08 슬롯 3) — 기록 시트와 같은 이유로 뷰파인더 블록 밖에 둔다. 지도가 등록된 방에서만
+         마운트되고, 게임 중 운영자가 지도를 바꾸면 방 구독으로 src가 바로 갱신된다 -->
+    <CockpitMapSheet
+      v-if="mapImageUrl !== null"
+      v-model:open="isMapSheetOpen"
+      :map-image-url="mapImageUrl"
+    />
 
     <!-- 기록 시트(P08 슬롯 4) — 뷰파인더 블록 밖에 두어 확인 화면·라운드 종료로 컨트롤이 바뀌어도
          열려 있던 시트가 끊기지 않는다. 포털로 body에 렌더된다 -->
