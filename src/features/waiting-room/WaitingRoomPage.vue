@@ -98,6 +98,14 @@ function toDraftMember(participant: Participant): DraftMember {
  */
 const showGuestAssignment = computed(() => !isHost.value && myAssignment.value !== null)
 /**
+ * 게스트가 게임 중인데 이번 라운드에는 배정되지 않은 상태 — 배정 확정 후 늦게 합류했거나
+ * 이번 배정에서 제외됐다. 콕핏으로 보낼 대상이 아니므로 대기실에 붙잡아 두고 이유를 알린다.
+ * 레디 CTA도 이 상태에서는 함께 숨긴다(레디는 배정 카드가 있을 때의 행동이라 대상이 없다, D-5).
+ */
+const showUnassignedNotice = computed(
+  () => !isHost.value && gameStatus.value === 'playing' && myAssignment.value === null,
+)
+/**
  * 게스트가 "라운드는 끝났지만 게임은 아직 안 끝난" 구간에 대기실로 나와 있는 상태.
  * 호스트는 playing이면 라운드 운영 화면으로 가므로 이 조건에 걸리지 않는다.
  *
@@ -280,7 +288,7 @@ watch(myId, (id) => {
   router.replace({ name: 'login', query: { redirect: route.fullPath } })
 })
 
-watch([gameStatus, isRoundLive], ([status, roundLive]) => {
+watch([gameStatus, isRoundLive, myAssignment], ([status, roundLive]) => {
   // 세션이 사라진 순간과 전이가 같은 tick에 겹치면, 위의 로그인 이동을 이 replace가 덮어쓴다.
   // 그러면 돌아올 목적지(redirect)를 잃어 참가자가 방 코드를 다시 넣어야 한다 —
   // 라운드 운영이 한 watch 안에서 myId를 먼저 보는 것과 같은 기준으로 여기서도 먼저 걸러낸다.
@@ -290,7 +298,8 @@ watch([gameStatus, isRoundLive], ([status, roundLive]) => {
     router.replace({ name: 'round-ops', params: { roomCode: roomCode.value } })
     return
   }
-  if (roundLive) {
+  // 이번 라운드에 배정되지 않은 게스트는 콕핏에 할 일이 없다 — 대기실에서 다음 배정을 기다린다.
+  if (roundLive && myAssignment.value !== null) {
     router.replace({ name: 'camera', params: { roomCode: roomCode.value } })
   }
 })
@@ -341,6 +350,15 @@ async function copyInviteLink() {
               열려요.
             </p>
           </div>
+        </BaseCard>
+
+        <!-- 이번 라운드 미배정 안내 — 배정 확정 후 늦게 합류했거나 이번 배정에서 빠진 게스트다.
+             콕핏으로 보낼 수 없으므로 대기실에 붙잡아 두고 이유를 알린다(로드맵 D-5). -->
+        <BaseCard v-if="showUnassignedNotice" role="status">
+          <h2 class="text-label text-content">이번 라운드에는 배정되지 않았어요</h2>
+          <p class="mt-2 text-caption text-content-secondary">
+            진행자가 다음 라운드를 배정하면 자동으로 참가해요. 이 화면을 열어 두세요.
+          </p>
         </BaseCard>
 
         <!-- 누적 순위(P07) — 정산이 끝난 라운드가 하나라도 있으면 전원에게 보인다. 배정 카드가
@@ -544,7 +562,8 @@ async function copyInviteLink() {
         </BaseButton>
       </template>
 
-      <template v-else>
+      <!-- 이번 라운드 미배정 게스트는 레디 CTA가 없다 — 배정 카드가 있을 때의 행동이라 대상이 없다 -->
+      <template v-else-if="!showUnassignedNotice">
         <p v-if="readyError" class="text-caption text-danger" role="alert">
           {{ readyError }}
         </p>

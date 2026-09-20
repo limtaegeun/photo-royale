@@ -431,6 +431,101 @@ describe('CameraPage 방 구독', () => {
 })
 
 /**
+ * 배정 확정 후 늦게 합류했거나 이번 배정에서 빠진 게스트가 딥링크·옛 탭으로 콕핏에 들어오면
+ * 대기실로 되돌린다(로드맵 D-5). 대기실(WaitingRoomPage)이 더는 이런 게스트를 콕핏으로 보내지
+ * 않지만, 이미 콕핏에 있던 탭·딥링크로 들어온 경우까지는 막지 못하므로 콕핏 자체에도 출구가 필요하다.
+ */
+describe('CameraPage 미배정 게스트 리다이렉트 (D-5)', () => {
+  it('참가자 문서는 있지만 이번 라운드 배정이 아니면(옛 차수 완장) 대기실로 돌려보내고 안내한다', async () => {
+    subscribeParticipantsMock.mockImplementation((_code, onChange) => {
+      onChange([
+        {
+          id: 'player1',
+          name: '민우',
+          team: 'A',
+          assignedRound: 1,
+          gender: 'male',
+          isXTeam: false,
+          sameGenderStreak: 0,
+          previousPartnerIds: [],
+          isReady: true,
+        },
+      ])
+      return unsubscribeParticipantsMock
+    })
+    const deliverRoom = captureRoomSnapshot()
+    stubGetUserMedia(() => Promise.resolve(createFakeStream()))
+    mount(CameraPage)
+    await flushPromises()
+
+    // 2차가 확정됐지만 이 참가자의 완장은 1차에 머물러 있다 — 이번 배정에서 빠졌다
+    deliverRoom(playingRoom({ assignmentRound: 2 }))
+    await flushPromises()
+
+    expect(replaceMock).toHaveBeenCalledWith({
+      name: 'waiting-room',
+      params: { roomCode: 'AB2C' },
+    })
+    expect(toastMock).toHaveBeenCalledWith({
+      title: '이번 라운드에는 배정되지 않았어요.',
+      tone: 'neutral',
+    })
+  })
+
+  it('이번 라운드에 배정됐으면 대기실로 돌려보내지 않는다', async () => {
+    deliverAssignedParticipants()
+    const deliverRoom = captureRoomSnapshot()
+    stubGetUserMedia(() => Promise.resolve(createFakeStream()))
+    mount(CameraPage)
+    await flushPromises()
+
+    deliverRoom(playingRoom())
+    await flushPromises()
+
+    expect(replaceMock).not.toHaveBeenCalledWith({
+      name: 'waiting-room',
+      params: { roomCode: 'AB2C' },
+    })
+    expect(toastMock).not.toHaveBeenCalledWith({
+      title: '이번 라운드에는 배정되지 않았어요.',
+      tone: 'neutral',
+    })
+  })
+
+  it('참가자 문서 자체가 없으면(강퇴·미입장) 미배정 리다이렉트를 하지 않는다', async () => {
+    // 명단엔 다른 사람만 있고 내(player1) 참가자 문서는 없다 — 기존 동작을 그대로 둔다
+    subscribeParticipantsMock.mockImplementation((_code, onChange) => {
+      onChange([
+        {
+          id: 'someoneElse',
+          name: '하린',
+          team: 'A',
+          assignedRound: 1,
+          gender: 'female',
+          isXTeam: false,
+          sameGenderStreak: 0,
+          previousPartnerIds: [],
+          isReady: true,
+        },
+      ])
+      return unsubscribeParticipantsMock
+    })
+    const deliverRoom = captureRoomSnapshot()
+    stubGetUserMedia(() => Promise.resolve(createFakeStream()))
+    mount(CameraPage)
+    await flushPromises()
+
+    deliverRoom(playingRoom())
+    await flushPromises()
+
+    expect(replaceMock).not.toHaveBeenCalledWith({
+      name: 'waiting-room',
+      params: { roomCode: 'AB2C' },
+    })
+  })
+})
+
+/**
  * 타이머가 00:00(ended)에 닿아도 셔터·제출이 계속 살아 있으면 게스트가 종료를 인지할 방법이
  * 없다. 확정 스펙(라운드당 20분)이 표시로만 존재하지 않도록 두 진입점을 모두 고정해 둔다.
  */
