@@ -29,9 +29,10 @@ button:not(:disabled),
   cursor: pointer;
 }
 
-/* 야외에서 뛰며 조작 — 시스템 애니메이션 감소 설정 존중 */
+/* 야외에서 뛰며 조작 — 시스템 애니메이션 감소 설정 존중.
+   단, 로딩 스피너의 맥동(opacity)만 예외 — 움직임 감소 설정에서도 "처리 중" 신호는 남겨야 한다(F-04). */
 @media (prefers-reduced-motion: reduce) {
-  *,
+  *:not([data-spinner]),
   *::before,
   *::after {
     animation-duration: 0.01ms !important;

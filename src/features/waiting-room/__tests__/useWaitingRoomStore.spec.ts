@@ -341,6 +341,30 @@ describe('useWaitingRoomStore', () => {
     expect(setReadyMock).toHaveBeenCalledTimes(2)
   })
 
+  it('confirmReady가 8초 안에 끝나지 않으면(오프라인) 불안정 안내로 전환하고 재시도 가능 상태로 되돌린다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    const store = useWaitingRoomStore()
+    await store.enter('AB2C')
+    deliver.participants([ME_WAITING])
+
+    vi.useFakeTimers()
+    try {
+      // Firestore 오프라인 쓰기 — 서버 ack가 없어 영원히 resolve되지 않는 promise를 흉내낸다
+      setReadyMock.mockReturnValueOnce(new Promise<void>(() => {}))
+      const confirming = store.confirmReady()
+
+      vi.advanceTimersByTime(8000)
+      await confirming
+
+      expect(store.isConfirmingReady).toBe(false)
+      expect(store.readyError).toBe(
+        '연결이 불안정해 준비 완료를 확인하지 못했어요. 연결되면 자동으로 반영돼요.',
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('leave는 모든 구독을 해제하고 상태를 초기화한다', async () => {
     captureSnapshotCallbacks()
     const store = useWaitingRoomStore()

@@ -111,15 +111,23 @@ const isBlocked = computed(() => props.disabled || props.loading)
     class="relative inline-flex shrink-0 items-center justify-center gap-2 font-semibold whitespace-nowrap transition-colors duration-100 ease-standard select-none touch-manipulation disabled:cursor-default"
     :class="buttonClass"
   >
-    <!-- 라벨은 자리(폭)를 유지한 채 시각적으로만 숨긴다 — 로딩 중 버튼 폭이 흔들리지 않게 -->
-    <span class="inline-flex min-w-0 max-w-full items-center gap-2" :class="{ invisible: loading }">
+    <!-- 라벨은 opacity-0로 숨겨 자리(폭·높이)와 접근성 이름을 유지한다 —
+         visibility:hidden(invisible)은 낭독기에서 이름을 지우므로 쓰지 않는다(QA F-05) -->
+    <span
+      class="inline-flex min-w-0 max-w-full items-center gap-2"
+      :class="{ 'opacity-0': loading }"
+    >
       <slot />
     </span>
-    <!-- 스피너 — currentColor 상속(variant/disabled 색 자동 반영), 절대배치로 라벨 위에 중앙 겹침 -->
+    <!-- 스피너 — color를 상속하지 않고 border-content-secondary로 명시 고정한다. disabled 배경 위에서
+         currentColor(text-content-disabled)는 대비 2.02:1로 3:1 미달이었고, content-secondary는
+         다크 기준 약 7.6:1이다(QA F-01). data-spinner는 base.css의 reduced-motion 전역 규칙에서
+         이 스피너만 제외하는 훅이다(QA F-04). 절대배치로 라벨 위에 중앙 겹침 -->
     <span
       v-if="loading"
       aria-hidden="true"
-      class="absolute inset-0 m-auto size-[1em] animate-spin rounded-full border-2 border-current border-t-transparent motion-reduce:animate-pulse"
+      data-spinner
+      class="absolute inset-0 m-auto size-[1em] animate-spin rounded-full border-2 border-content-secondary border-t-transparent motion-reduce:animate-pulse"
     />
   </Primitive>
 </template>
