@@ -25,9 +25,12 @@ async function onSubmit() {
         inputmode="email"
         placeholder="이메일"
         :aria-invalid="!!fieldErrors.email"
+        :aria-describedby="fieldErrors.email ? 'login-email-error' : undefined"
         @blur="validateEmail"
       />
-      <p v-if="fieldErrors.email" class="text-caption text-danger">{{ fieldErrors.email }}</p>
+      <p v-if="fieldErrors.email" id="login-email-error" class="text-caption text-danger" role="alert">
+        {{ fieldErrors.email }}
+      </p>
     </div>
 
     <div class="space-y-2">
@@ -38,8 +41,11 @@ async function onSubmit() {
         autocomplete="current-password"
         placeholder="비밀번호"
         :aria-invalid="!!fieldErrors.password"
+        :aria-describedby="fieldErrors.password ? 'login-password-error' : undefined"
       />
-      <p v-if="fieldErrors.password" class="text-caption text-danger">{{ fieldErrors.password }}</p>
+      <p v-if="fieldErrors.password" id="login-password-error" class="text-caption text-danger" role="alert">
+        {{ fieldErrors.password }}
+      </p>
     </div>
 
     <p v-if="submitError" class="text-caption text-danger" role="alert">{{ submitError }}</p>
