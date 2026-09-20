@@ -258,6 +258,40 @@ export function subscribeToSubmissionLog(
   )
 }
 
+/**
+ * 내 킬샷 구독(게스트) — 이번 라운드에 내가 올린 제출만. 판정 결과 알림(D-3)의 근거다.
+ * uid·round 두 등호 필터라 복합 인덱스 없이 단일 필드 인덱스 병합으로 실행된다. 사진이 실려 무겁지만
+ * 한 사람의 한 라운드 제출은 몇 건이라 콕핏이 상시 구독해도 된다. rules read는 참가자 본인에게 열려 있다.
+ */
+export function subscribeToMySubmissions(
+  code: string,
+  uid: string,
+  round: number,
+  onChange: (records: SubmissionRecord[]) => void,
+  onError?: (error: Error) => void,
+): Unsubscribe {
+  const myQuery = query(
+    collection(db, 'rooms', code, 'submissions'),
+    where('uid', '==', uid),
+    where('round', '==', round),
+  )
+  return onSnapshot(
+    myQuery,
+    (snapshot) => {
+      const records = snapshot.docs.flatMap((submissionDoc) => {
+        const record = toSubmissionRecord(submissionDoc.id, submissionDoc.data())
+        return record === null ? [] : [record]
+      })
+      records.sort(
+        (a, b) =>
+          (a.createdAtMs ?? Number.MAX_SAFE_INTEGER) - (b.createdAtMs ?? Number.MAX_SAFE_INTEGER),
+      )
+      onChange(records)
+    },
+    onError,
+  )
+}
+
 /** 판정 확정과 함께 올릴 라운드 원장 집계 — 원장 문서가 있는 라운드에서만 넘긴다 */
 export interface ApprovalTally {
   /** 원장 문서 ID = 킬샷의 round */
