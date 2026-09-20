@@ -56,8 +56,9 @@ export function distributeToPlayers(
 
 /**
  * 1인 팀 보정 — 규칙서(앱 규칙 카드 "1인 팀은 목숨과 포인트가 2배")대로 1인 팀의 라운드 원점수는
- * 2배다(기획자 확정 2026-09-16). 라이프 2배는 livesOf가 맡는다. 모드와 무관한 편성 규칙이라
- * 모든 모드 규칙이 마지막에 이 보정을 거친다.
+ * 2배다(기획자 확정 2026-09-16). 단 2배는 혼자 뛰는 불리함의 보상이라 양수 원점수에만 적용하고,
+ * 왕 아웃 같은 그룹 감점은 본인 잘못이 아니라 1배 그대로다(기획자 확정 2026-09-20). 라이프 2배는
+ * livesOf가 맡는다. 모드와 무관한 편성 규칙이라 모든 모드 규칙이 마지막에 이 보정을 거친다.
  */
 export const SOLO_TEAM_SCALE = 2
 
@@ -66,14 +67,19 @@ export function teamScaleOf(teams: ModeScoringInput['teams'], armband: string): 
   return (teams[armband]?.length ?? 0) === 1 ? SOLO_TEAM_SCALE : 1
 }
 
-/** 팀별 원점수에 1인 팀 배율을 적용한다 — 모드 규칙의 마지막 단계 */
+/** 원점수 1개에 1인 팀 배율을 적용한다 — 양수일 때만(감점은 1배, 기획자 확정 2026-09-20) */
+export function scaleTeamScore(teams: ModeScoringInput['teams'], armband: string, score: number): number {
+  return score > 0 ? score * teamScaleOf(teams, armband) : score
+}
+
+/** 팀별 원점수에 1인 팀 배율을 적용한다 — 모드 규칙의 마지막 단계. 양수 원점수만 2배(감점은 1배) */
 export function applyTeamScale(
   teams: ModeScoringInput['teams'],
   teamScores: Record<string, number>,
 ): Record<string, number> {
   const scaled: Record<string, number> = {}
   for (const [armband, score] of Object.entries(teamScores)) {
-    scaled[armband] = score * teamScaleOf(teams, armband)
+    scaled[armband] = scaleTeamScore(teams, armband, score)
   }
   return scaled
 }
@@ -177,9 +183,9 @@ export function tailChaseScoring(input: ModeScoringInput): ModeScoringOutput {
   const playerScores: Record<string, number> = {}
   for (const [armband, memberIds] of Object.entries(input.teams)) {
     const survival = survivalScoreOf(input, armband)
-    const scale = teamScaleOf(input.teams, armband)
     for (const uid of memberIds) {
-      playerScores[uid] = ((credits[uid] ?? 0) * KILL_POINTS + survival) * scale
+      const creditRaw = (credits[uid] ?? 0) * KILL_POINTS + survival
+      playerScores[uid] = scaleTeamScore(input.teams, armband, creditRaw)
     }
   }
   return { teamScores, playerScores }
@@ -245,14 +251,16 @@ export const STAFF_OUT_POINTS = 5
 
 /**
  * 스태프 추격전(P07 §4.5) — 생존 15 · 아웃 5, 팀원 각자에게. 킬은 없다(참가자 전원이 동맹이고
- * 스태프의 태그는 호스트의 수동 아웃 처리 = hits로만 들어온다). 1인 팀 2배 보정은 **하지 않는다** —
- * 결정 4가 정한 것은 순서(생존자 위·아웃자 아래) 하나뿐이라, 2배를 주면 1인 생존자가 별도 1등급이 되어
- * 두 등급 설계가 깨진다(규칙서에도 composition 항목이 없어 2배 안내가 없다). 라이프 2배(livesOf)는 그대로다.
+ * 스태프의 태그는 호스트의 수동 아웃 처리 = hits로만 들어온다). 결정 7(모든 모드 마지막 단계 ×2)과
+ * 배정 카드 문구 "1인 팀 · 목숨과 포인트 2배"를 따라 1인 팀 2배를 적용한다 — 등급은 1인 생존 30 ·
+ * 생존 15 · 1인 아웃 10 · 아웃 5로 넷이 될 수 있지만 "생존자 위·아웃자 아래"(결정 4)는 유지된다
+ * (기획자 확정 2026-09-20, #45의 예외를 되돌림).
  */
 export function staffChaseScoring(input: ModeScoringInput): ModeScoringOutput {
-  const teamScores: Record<string, number> = {}
+  const raw: Record<string, number> = {}
   for (const armband of Object.keys(input.teams)) {
-    teamScores[armband] = isTeamOut(input, armband) ? STAFF_OUT_POINTS : STAFF_SURVIVAL_POINTS
+    raw[armband] = isTeamOut(input, armband) ? STAFF_OUT_POINTS : STAFF_SURVIVAL_POINTS
   }
+  const teamScores = applyTeamScale(input.teams, raw)
   return { teamScores, playerScores: distributeToPlayers(input.teams, teamScores) }
 }

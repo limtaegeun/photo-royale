@@ -104,6 +104,14 @@ describe('1인 팀 보정 (규칙서: 목숨과 포인트가 2배)', () => {
     expect(output.teamScores.B).toBe(80)
     expect(output.playerScores.준호).toBe(80)
   })
+
+  it('감점은 2배로 불리지 않는다 — 음수·0 원점수는 그대로', () => {
+    const teams = { A: ['u1'], B: ['u2', 'u3'] }
+
+    expect(applyTeamScale(teams, { A: -20, B: -20 })).toEqual({ A: -20, B: -20 })
+    expect(applyTeamScale(teams, { A: 0 })).toEqual({ A: 0 })
+    expect(applyTeamScale(teams, { A: 5 })).toEqual({ A: 10 })
+  })
 })
 
 describe('꼬리잡기 (P07 §4.2)', () => {
@@ -289,13 +297,13 @@ describe('왕잡기 (P07 §4.4)', () => {
 
     expect(output.teamScores).toEqual({
       A: 0, // 왕의 킬 20 − 왕 아웃 20
-      E: -30, // 동료(A) 킬 1 × 5 − 20 = −15, 1인 팀 2배
+      E: -15, // 동료(A) 킬 1 × 5 − 20 = −15 — 순 원점수가 음수라 1인 팀이어도 2배 안 됨(결정 13)
       B: 30, // 왕 사냥 30 — 잡혔지만 왕이 아니라 감점 없음
-      F: 10, // 동료(B) 킬 1 × 5, 1인 팀 2배
+      F: 10, // 동료(B) 킬 1 × 5, 1인 팀 2배(양수라 그대로 적용)
       C: 0, // 생존해도 보너스 없음
       D: 0,
     })
-    expect(output.playerScores).toEqual({ 하늘: 0, 민재: 0, 지우: -30, 준호: 30, 유나: 30, 서준: 10, 서연: 0, 도윤: 0, 하준: 0, 수아: 0 })
+    expect(output.playerScores).toEqual({ 하늘: 0, 민재: 0, 지우: -15, 준호: 30, 유나: 30, 서준: 10, 서연: 0, 도윤: 0, 하준: 0, 수아: 0 })
   })
 
   it('왕 아웃은 라이프를 다 써야 한다 — 1인 팀 왕은 한 번 맞아도 감점이 없다', () => {
@@ -304,7 +312,7 @@ describe('왕잡기 (P07 §4.4)', () => {
     expect(output.teamScores.F).toBe(0)
     const out = kingHuntScoring({ teams: KH_TEAMS, xTeams: KINGS, tally: {}, hits: { F: 2 } })
     expect(out.teamScores.B).toBe(-20)
-    expect(out.teamScores.F).toBe(-40)
+    expect(out.teamScores.F).toBe(-20) // 1인 팀이어도 감점은 2배 안 됨(결정 13, 2026-09-20)
   })
 
   it('레지스트리의 왕잡기 정의가 이 규칙을 쓴다', () => {
@@ -316,7 +324,7 @@ describe('스태프 추격전 (P07 §4.5)', () => {
   /** A·B는 2인 팀(라이프 1), C는 1인 팀(라이프 2) */
   const SC_TEAMS = { A: ['u1', 'u2'], B: ['u3', 'u4'], C: ['u5'] }
 
-  it('생존 팀은 15, 아웃 팀은 5를 팀원 각자에게 — 1인 팀도 2배로 뻥튀기하지 않는다', () => {
+  it('생존 팀은 15, 아웃 팀은 5를 팀원 각자에게 — 1인 팀은 2배로 받는다(결정 14, #45 예외 되돌림)', () => {
     const output = staffChaseScoring({
       teams: SC_TEAMS,
       xTeams: [],
@@ -324,16 +332,16 @@ describe('스태프 추격전 (P07 §4.5)', () => {
       hits: { B: 1, C: 1 },
     })
 
-    // B는 아웃(hits 1 ≥ 라이프 1) · C는 아직 생존(hits 1 < 라이프 2, 1인 팀이라도 2배 없이 15 그대로)
-    expect(output.teamScores).toEqual({ A: 15, B: 5, C: 15 })
-    expect(output.playerScores).toEqual({ u1: 15, u2: 15, u3: 5, u4: 5, u5: 15 })
+    // B는 아웃(hits 1 ≥ 라이프 1) · C는 아직 생존(hits 1 < 라이프 2)이고 1인 팀이라 15 × 2 = 30
+    expect(output.teamScores).toEqual({ A: 15, B: 5, C: 30 })
+    expect(output.playerScores).toEqual({ u1: 15, u2: 15, u3: 5, u4: 5, u5: 30 })
   })
 
-  it('1인 팀도 라이프를 다 써야 아웃이다', () => {
+  it('1인 팀은 아웃도 2배다 — 라이프를 다 써야 아웃이고 아웃 점수 5 × 2 = 10', () => {
     const output = staffChaseScoring({ teams: SC_TEAMS, xTeams: [], tally: {}, hits: { C: 2 } })
 
-    expect(output.teamScores.C).toBe(5)
-    expect(output.playerScores.u5).toBe(5)
+    expect(output.teamScores.C).toBe(10)
+    expect(output.playerScores.u5).toBe(10)
   })
 
   it('참가자 전원이 동맹이라 킬 집계는 무시한다', () => {
@@ -344,8 +352,8 @@ describe('스태프 추격전 (P07 §4.5)', () => {
       hits: {},
     })
 
-    // 킬을 아무리 올려도 생존 15 그대로 — 등급은 hits(스태프 아웃 기록)로만 갈린다
-    expect(output.teamScores).toEqual({ A: 15, B: 15, C: 15 })
+    // 킬을 아무리 올려도 생존 15 그대로(1인 팀은 2배 30) — 등급은 hits(스태프 아웃 기록)로만 갈린다
+    expect(output.teamScores).toEqual({ A: 15, B: 15, C: 30 })
   })
 
   it('레지스트리의 스태프 추격전 정의가 이 규칙을 쓴다', () => {
