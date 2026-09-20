@@ -28,6 +28,9 @@ export type WaitingRoomPhase = 'idle' | 'joining' | 'joined' | 'not-found' | 'er
 /** 준비 완료 쓰기 타임아웃(ms) — 이 시간 안에 서버 ack가 없으면 오프라인으로 간주한다(QA D-03) */
 const READY_WRITE_TIMEOUT_MS = 8000
 
+/** 준비 완료 불안정 안내 — 타임아웃 시 표시하고, 뒤늦은 쓰기가 커밋되면 이 메시지를 보고 제거한다 */
+const READY_UNSTABLE_MESSAGE = '연결이 불안정해 준비 완료를 확인하지 못했어요. 연결되면 자동으로 반영돼요.'
+
 /** withTimeout이 시간 초과로 reject할 때 쓰는 표식 에러 — 진짜 실패(네트워크 거부 등)와 구분한다 */
 class ReadyWriteTimeoutError extends Error {}
 
@@ -316,15 +319,22 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
     }
     isConfirmingReady.value = true
     readyError.value = null
+    const write = setReady(roomCode.value, myId.value)
     try {
-      await withTimeout(setReady(roomCode.value, myId.value), READY_WRITE_TIMEOUT_MS)
+      await withTimeout(write, READY_WRITE_TIMEOUT_MS)
     } catch (error) {
-      // 타임아웃은 재시도 가능 상태로만 되돌린다 — 큐잉된 쓰기가 재연결 시 그대로 커밋되고
-      // 스냅샷이 버튼을 '준비 완료'로 바꾼다. 그 전까지 다시 눌러도 같은 값 쓰기라 안전(멱등)하다.
-      readyError.value =
-        error instanceof ReadyWriteTimeoutError
-          ? '연결이 불안정해 준비 완료를 확인하지 못했어요. 연결되면 자동으로 반영돼요.'
-          : '준비 완료 처리에 실패했어요. 다시 시도해 주세요.'
+      // 타임아웃은 재시도 상태로만 되돌린다 — Firestore 오프라인 쓰기가 큐잉되어
+      // 재연결 시 그대로 커밋되고 스냅샷이 버튼을 '준비 완료'로 바꾼다.
+      // 버튼은 latency compensation으로 이미 준비 완료 상태인데, 안내는 불안정함을 설명한다.
+      if (error instanceof ReadyWriteTimeoutError) {
+        readyError.value = READY_UNSTABLE_MESSAGE
+        // 늦게 도착한 서버 ack가 안내를 거둔다 — 그 사이 다른 오류 문구로 바뀌었으면 건드리지 않는다
+        void write.then(() => {
+          if (readyError.value === READY_UNSTABLE_MESSAGE) readyError.value = null
+        }, () => {})
+      } else {
+        readyError.value = '준비 완료 처리에 실패했어요. 다시 시도해 주세요.'
+      }
     } finally {
       isConfirmingReady.value = false
     }

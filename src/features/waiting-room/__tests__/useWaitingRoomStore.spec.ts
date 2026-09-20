@@ -341,7 +341,7 @@ describe('useWaitingRoomStore', () => {
     expect(setReadyMock).toHaveBeenCalledTimes(2)
   })
 
-  it('confirmReady가 8초 안에 끝나지 않으면(오프라인) 불안정 안내로 전환하고 재시도 가능 상태로 되돌린다', async () => {
+  it('confirmReady가 8초 안에 끝나지 않으면(오프라인) 불안정 안내로 전환하고, 뒤늦은 쓰기가 커밋되면 안내를 제거한다', async () => {
     const deliver = captureSnapshotCallbacks()
     const store = useWaitingRoomStore()
     await store.enter('AB2C')
@@ -349,8 +349,13 @@ describe('useWaitingRoomStore', () => {
 
     vi.useFakeTimers()
     try {
-      // Firestore 오프라인 쓰기 — 서버 ack가 없어 영원히 resolve되지 않는 promise를 흉내낸다
-      setReadyMock.mockReturnValueOnce(new Promise<void>(() => {}))
+      // Firestore 오프라인 쓰기 — 타임아웃 후에도 언젠가 resolve되는 promise를 흉내낸다
+      let resolveWrite: () => void = () => {}
+      setReadyMock.mockReturnValueOnce(
+        new Promise<void>((resolve) => {
+          resolveWrite = resolve
+        }),
+      )
       const confirming = store.confirmReady()
 
       vi.advanceTimersByTime(8000)
@@ -360,6 +365,11 @@ describe('useWaitingRoomStore', () => {
       expect(store.readyError).toBe(
         '연결이 불안정해 준비 완료를 확인하지 못했어요. 연결되면 자동으로 반영돼요.',
       )
+
+      // 뒤늦게 서버 ack가 도착하면 안내가 제거된다
+      resolveWrite()
+      await Promise.resolve()
+      expect(store.readyError).toBeNull()
     } finally {
       vi.useRealTimers()
     }
