@@ -37,6 +37,8 @@ const { isSubmitting, submit } = useKillshotSubmit()
 const videoRef = ref<HTMLVideoElement | null>(null)
 const room = ref<RoomInfo | null>(null)
 const participants = ref<Participant[]>([])
+/** 참가자 스냅샷이 한 번이라도 도착했는가 — 첫 도착 전에는 "배정 확인 중" 문구가 이미 그 순간을 설명한다 */
+const participantsLoaded = ref(false)
 const latestNotice = ref<Notice | null>(null)
 /**
  * 이번 차수 라운드 원장(P07) — 탈락 모델(M3)의 근거. 판정 배치가 올리는 hits로 내 팀의 아웃과
@@ -84,6 +86,8 @@ let unsubscribeLedger: (() => void) | null = null
 /** 원장 구독이 따라가는 차수 — 방 스냅샷마다 차수가 같으면 다시 구독하지 않는다 */
 let subscribedLedgerRound: number | null = null
 let subscriptionFailed = false
+/** 미배정 리다이렉트가 이미 발생했는지 — 참가자 스냅샷이 여러 번 갱신돼도 한 번만 내보낸다 */
+let unassignedRedirectSent = false
 let noticeResizeObserver: ResizeObserver | null = null
 
 const round = computed(() => room.value?.round ?? null)
@@ -189,6 +193,25 @@ function handleSubscriptionError() {
   toast({ title: '게임 정보를 불러올 수 없어요. 다시 입장해주세요.', tone: 'danger' })
   router.replace({ name: 'entry' })
 }
+
+/**
+ * 미배정 게스트가 딥링크·옛 탭으로 콕핏에 들어오면 대기실로 되돌린다(로드맵 D-5).
+ * 참가자 스냅샷이 아직 도착하지 않은 순간은 대상이 아니다 — 그 순간은 "배정 확인 중"
+ * 문구(확인 화면)가 이미 설명한다. 참가자 문서 자체가 없는 경우(강퇴·미입장)도 대상이
+ * 아니다 — 그건 이번 라운드 미배정과 다른 문제라 기존 동작을 그대로 둔다.
+ */
+watch([participantsLoaded, me, room], ([loaded, myParticipant, currentRoom]) => {
+  if (!loaded || unassignedRedirectSent) return
+  if (currentRoom === null || currentRoom.status !== 'playing') return
+  if (myParticipant !== null) return
+  const uid = authStore.user?.uid
+  if (uid === undefined || !participants.value.some((participant) => participant.id === uid)) {
+    return
+  }
+  unassignedRedirectSent = true
+  router.replace({ name: 'waiting-room', params: { roomCode } })
+  toast({ title: '이번 라운드에는 배정되지 않았어요.', tone: 'neutral' })
+})
 
 async function measureNoticeOverflow() {
   await nextTick()
@@ -306,6 +329,7 @@ onMounted(() => {
     roomCode,
     (nextParticipants) => {
       participants.value = nextParticipants
+      participantsLoaded.value = true
     },
     handleSubscriptionError,
   )

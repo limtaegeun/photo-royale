@@ -471,6 +471,8 @@ describe('WaitingRoomPage', () => {
       round: null,
     }
     deliver.room(playing)
+    // 이번 라운드에 배정된 참가자여야 콕핏으로 넘어간다(D-5) — 그 전까지는 대기실에 머문다
+    deliver.participants([{ ...ROSTER[0]!, team: 'A', assignedRound: 1, isReady: true }])
     await flushPromises()
     expect(replaceMock).not.toHaveBeenCalled()
 
@@ -481,6 +483,28 @@ describe('WaitingRoomPage', () => {
     await flushPromises()
 
     expect(replaceMock).toHaveBeenCalledWith({ name: 'camera', params: { roomCode: 'AB2C' } })
+  })
+
+  it('게스트: 이번 라운드에 배정되지 않았으면 라운드가 뛰는 중이어도 콕핏으로 가지 않는다(D-5)', async () => {
+    const deliver = captureSnapshotCallbacks()
+    const wrapper = mountPage()
+    await flushPromises()
+
+    deliver.room({
+      hostUid: 'host9',
+      status: 'playing',
+      assignmentRound: 1,
+      gameMode: 'normal',
+      roundModes: {},
+      round: { status: 'running', startedAtMs: Date.now(), durationMs: 1_200_000, pausedRemainingMs: null },
+    })
+    // 배정 확정 후 늦게 합류했거나 이번 배정에서 빠진 참가자 — team이 미배정(null)이다
+    deliver.participants([ROSTER[0]!])
+    await flushPromises()
+
+    expect(replaceMock).not.toHaveBeenCalledWith({ name: 'camera', params: { roomCode: 'AB2C' } })
+    expect(wrapper.text()).toContain('이번 라운드에는 배정되지 않았어요')
+    expect(findButton(wrapper, '확인하고 준비 완료')).toBeUndefined()
   })
 
   it('게스트: 타이머가 0에 닿은 라운드로는 콕핏으로 되밀어 내지 않는다(A-4)', async () => {
@@ -526,6 +550,7 @@ describe('WaitingRoomPage', () => {
       round: { status: 'running' as const, startedAtMs, durationMs: 1_200_000, pausedRemainingMs: null },
     }
     deliver.room(expired)
+    deliver.participants([{ ...ROSTER[0]!, team: 'A', assignedRound: 1, isReady: true }])
     await flushPromises()
     expect(replaceMock).not.toHaveBeenCalledWith({ name: 'camera', params: { roomCode: 'AB2C' } })
 
@@ -594,6 +619,7 @@ describe('WaitingRoomPage', () => {
         pausedRemainingMs: 600_000,
       },
     })
+    deliver.participants([{ ...ROSTER[0]!, team: 'A', assignedRound: 1, isReady: true }])
     await flushPromises()
 
     expect(replaceMock).toHaveBeenCalledWith({ name: 'camera', params: { roomCode: 'AB2C' } })
