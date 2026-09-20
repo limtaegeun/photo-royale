@@ -59,6 +59,11 @@ export interface RoomInfo {
   roundModes: Record<string, GameModeId>
   /** 진행 중인 라운드 타이머. 필드가 없으면(라운드 시작 전) null */
   round: RoundState | null
+  /**
+   * 행사장 지도 이미지 URL(P08 §2.2) — 운영자가 대기실에서 등록한다. 필드가 없으면(등록 전) null이고,
+   * 그 방의 콕핏은 지도 슬롯을 숨긴다. rules가 https 문자열만 받으므로 읽을 때 형식은 다시 검사하지 않는다.
+   */
+  mapImageUrl: string | null
 }
 
 export interface Participant {
@@ -148,6 +153,8 @@ function toRoomInfo(data: Record<string, unknown>): RoomInfo {
       typeof gameMode === 'string' && isGameModeId(gameMode) ? gameMode : DEFAULT_GAME_MODE,
     roundModes: toRoundModes(data.roundModes ?? null),
     round: toRoundState(data.round ?? null),
+    mapImageUrl:
+      typeof data.mapImageUrl === 'string' && data.mapImageUrl.length > 0 ? data.mapImageUrl : null,
   }
 }
 
@@ -366,6 +373,16 @@ export async function endGame(code: string, settlement?: RoundLedgerSettlement):
 export interface RoundLedgerSettlement {
   roundNo: number
   result: RoundSettlement
+}
+
+/**
+ * 행사장 지도 등록(호스트 전용, P08 §2.2) — 방 문서의 mapImageUrl 한 필드만 쓴다. firestore.rules가
+ * "호스트 본인 + https 문자열(8~2048자)"만 허용하므로 권한·형식 검증은 서버가 담당하고, 클라는
+ * 왕복 전에 같은 조건을 먼저 거른다(useWaitingRoomStore.setMapImageUrl). 방 상태(대기·게임 중)와
+ * 무관하다 — 참가자 콕핏은 방 문서 구독으로 새 지도를 바로 받는다.
+ */
+export async function setRoomMapImageUrl(code: string, url: string): Promise<void> {
+  await updateDoc(doc(db, 'rooms', code), { mapImageUrl: url })
 }
 
 /** 참가자 명단 실시간 구독 — 입장 순서(joinedAt)로 정렬해 전달한다 */

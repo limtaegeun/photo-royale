@@ -26,6 +26,7 @@ const joinRoomMock =
 const setReadyMock = vi.fn<(code: string, uid: string) => Promise<void>>()
 const startGameMock = vi.fn<(code: string) => Promise<void>>()
 const kickParticipantMock = vi.fn<(code: string, uid: string) => Promise<void>>()
+const setRoomMapImageUrlMock = vi.fn<(code: string, url: string) => Promise<void>>()
 const unsubscribeParticipantsMock = vi.fn<() => void>()
 const unsubscribeRoomMock = vi.fn<() => void>()
 const subscribeParticipantsMock =
@@ -48,6 +49,7 @@ vi.mock('../api/rooms', () => ({
   setReady: (code: string, uid: string) => setReadyMock(code, uid),
   startGame: (code: string) => startGameMock(code),
   kickParticipant: (code: string, uid: string) => kickParticipantMock(code, uid),
+  setRoomMapImageUrl: (code: string, url: string) => setRoomMapImageUrlMock(code, url),
   subscribeToParticipants: (code: string, onChange: (participants: Participant[]) => void) =>
     subscribeParticipantsMock(code, onChange),
   subscribeToRoom: (code: string, onChange: (room: RoomInfo | null) => void) =>
@@ -133,6 +135,7 @@ const GUEST_ROOM: RoomInfo = {
   gameMode: 'normal',
   roundModes: {},
   round: null,
+  mapImageUrl: null,
 }
 const MY_ROOM: RoomInfo = {
   hostUid: 'me',
@@ -141,6 +144,7 @@ const MY_ROOM: RoomInfo = {
   gameMode: 'normal',
   roundModes: {},
   round: null,
+  mapImageUrl: null,
 }
 
 const ME_WAITING: Participant = {
@@ -177,6 +181,7 @@ describe('useWaitingRoomStore', () => {
     setReadyMock.mockReset().mockResolvedValue(undefined)
     startGameMock.mockReset().mockResolvedValue(undefined)
     kickParticipantMock.mockReset().mockResolvedValue(undefined)
+    setRoomMapImageUrlMock.mockReset().mockResolvedValue(undefined)
     subscribeParticipantsMock.mockReset().mockReturnValue(unsubscribeParticipantsMock)
     subscribeRoomMock.mockReset().mockReturnValue(unsubscribeRoomMock)
     subscribeLedgersMock.mockReset().mockReturnValue(unsubscribeLedgersMock)
@@ -502,6 +507,7 @@ describe('useWaitingRoomStore', () => {
       gameMode: 'normal',
       roundModes: {},
       round: null,
+      mapImageUrl: null,
     }
 
     function assigned(id: string, name: string, team: string, round: number): Participant {
@@ -666,6 +672,7 @@ describe('useWaitingRoomStore', () => {
       gameMode: 'normal',
       roundModes: {},
       round: null,
+      mapImageUrl: null,
     }
 
     it('호스트가 배정 확정 후 호출하면 status를 playing으로 전이한다', async () => {
@@ -736,6 +743,95 @@ describe('useWaitingRoomStore', () => {
       await store.startPlaying()
       expect(store.startGameError).toBeNull()
       expect(startGameMock).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  /**
+   * 행사장 지도 등록(P08 §2.2 단계 1) — rules(https 문자열 8~2048자)와 같은 조건을 왕복 전에 거르고,
+   * 성공 여부를 돌려 화면이 시트를 닫을지 정한다. 형식 안내는 입력 아래 한 문구로 수렴한다.
+   */
+  describe('setMapImageUrl', () => {
+    const MAP_URL = 'https://example.com/venue/map.png'
+
+    async function enterAsHost() {
+      authState.user = { uid: 'me', displayName: '오리' }
+      getRoomMock.mockResolvedValue(MY_ROOM)
+      captureSnapshotCallbacks()
+      const store = useWaitingRoomStore()
+      await store.enter('AB2C')
+      return store
+    }
+
+    it('호스트가 https 주소를 넣으면 앞뒤 공백을 지우고 방 문서에 쓴 뒤 true를 돌려준다', async () => {
+      const store = await enterAsHost()
+
+      await expect(store.setMapImageUrl(`  ${MAP_URL}  `)).resolves.toBe(true)
+
+      expect(setRoomMapImageUrlMock).toHaveBeenCalledExactlyOnceWith('AB2C', MAP_URL)
+      expect(store.mapImageError).toBeNull()
+      expect(store.isSavingMapImage).toBe(false)
+    })
+
+    it('http 주소는 쓰지 않고 형식 안내를 세팅한다', async () => {
+      const store = await enterAsHost()
+
+      await expect(store.setMapImageUrl('http://example.com/map.png')).resolves.toBe(false)
+
+      expect(setRoomMapImageUrlMock).not.toHaveBeenCalled()
+      expect(store.mapImageError).toBe('https://로 시작하는 이미지 주소를 넣어 주세요.')
+    })
+
+    it('빈 값·URL이 아닌 문자열도 같은 형식 안내로 거른다', async () => {
+      const store = await enterAsHost()
+
+      await expect(store.setMapImageUrl('   ')).resolves.toBe(false)
+      await expect(store.setMapImageUrl('https://')).resolves.toBe(false)
+      await expect(store.setMapImageUrl('행사장 지도.png')).resolves.toBe(false)
+
+      expect(setRoomMapImageUrlMock).not.toHaveBeenCalled()
+      expect(store.mapImageError).toBe('https://로 시작하는 이미지 주소를 넣어 주세요.')
+    })
+
+    it('rules 상한(2048자)을 넘는 주소는 길이 안내로 거른다', async () => {
+      const store = await enterAsHost()
+
+      await expect(store.setMapImageUrl(`${MAP_URL}?q=${'a'.repeat(2048)}`)).resolves.toBe(false)
+
+      expect(setRoomMapImageUrlMock).not.toHaveBeenCalled()
+      expect(store.mapImageError).toBe('이미지 주소는 2048자 이하여야 해요.')
+    })
+
+    it('쓰기가 실패하면 저장 실패 안내를 세팅하고 false를 돌려주며, 다음 시도에서 안내가 지워진다', async () => {
+      const store = await enterAsHost()
+      setRoomMapImageUrlMock.mockRejectedValueOnce(new Error('permission denied'))
+
+      await expect(store.setMapImageUrl(MAP_URL)).resolves.toBe(false)
+      expect(store.mapImageError).toBe('행사장 지도를 저장하지 못했어요. 다시 시도해 주세요.')
+
+      await expect(store.setMapImageUrl(MAP_URL)).resolves.toBe(true)
+      expect(store.mapImageError).toBeNull()
+    })
+
+    it('게스트는 호출해도 아무 일도 일어나지 않는다', async () => {
+      getRoomMock.mockResolvedValue(GUEST_ROOM)
+      captureSnapshotCallbacks()
+      const store = useWaitingRoomStore()
+      await store.enter('AB2C')
+
+      await expect(store.setMapImageUrl(MAP_URL)).resolves.toBe(false)
+
+      expect(setRoomMapImageUrlMock).not.toHaveBeenCalled()
+      expect(store.mapImageError).toBeNull()
+    })
+
+    it('화면을 떠나면 지도 안내도 지운다', async () => {
+      const store = await enterAsHost()
+      await store.setMapImageUrl('http://example.com/map.png')
+      expect(store.mapImageError).not.toBeNull()
+
+      store.leave()
+
+      expect(store.mapImageError).toBeNull()
     })
   })
 })

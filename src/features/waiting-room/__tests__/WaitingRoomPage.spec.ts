@@ -35,6 +35,7 @@ const joinRoomMock =
 const setReadyMock = vi.fn<(code: string, uid: string) => Promise<void>>()
 const startGameMock = vi.fn<(code: string) => Promise<void>>()
 const kickParticipantMock = vi.fn<(code: string, uid: string) => Promise<void>>()
+const setRoomMapImageUrlMock = vi.fn<(code: string, url: string) => Promise<void>>()
 const unsubscribeParticipantsMock = vi.fn<() => void>()
 const unsubscribeRoomMock = vi.fn<() => void>()
 const subscribeParticipantsMock =
@@ -64,6 +65,7 @@ vi.mock('../api/rooms', async (importOriginal) => {
     setReady: (code: string, uid: string) => setReadyMock(code, uid),
     startGame: (code: string) => startGameMock(code),
     kickParticipant: (code: string, uid: string) => kickParticipantMock(code, uid),
+    setRoomMapImageUrl: (code: string, url: string) => setRoomMapImageUrlMock(code, url),
     subscribeToParticipants: (code: string, onChange: (participants: Participant[]) => void) =>
       subscribeParticipantsMock(code, onChange),
     subscribeToRoom: (code: string, onChange: (room: RoomInfo | null) => void) =>
@@ -148,6 +150,7 @@ const GUEST_ROOM: RoomInfo = {
   gameMode: 'normal',
   roundModes: {},
   round: null,
+  mapImageUrl: null,
 }
 const MY_ROOM: RoomInfo = {
   hostUid: 'me',
@@ -156,6 +159,7 @@ const MY_ROOM: RoomInfo = {
   gameMode: 'normal',
   roundModes: {},
   round: null,
+  mapImageUrl: null,
 }
 
 const ROSTER: Participant[] = [
@@ -203,6 +207,7 @@ describe('WaitingRoomPage', () => {
     setReadyMock.mockReset().mockResolvedValue(undefined)
     startGameMock.mockReset().mockResolvedValue(undefined)
     kickParticipantMock.mockReset().mockResolvedValue(undefined)
+    setRoomMapImageUrlMock.mockReset().mockResolvedValue(undefined)
     subscribeParticipantsMock.mockReset().mockReturnValue(unsubscribeParticipantsMock)
     subscribeRoomMock.mockReset().mockReturnValue(unsubscribeRoomMock)
     subscribeLedgersMock.mockReset().mockReturnValue(() => {})
@@ -314,6 +319,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'group',
       roundModes: {},
       round: null,
+      mapImageUrl: null,
     })
     await flushPromises()
 
@@ -431,6 +437,111 @@ describe('WaitingRoomPage', () => {
     expect(wrapper.text()).not.toContain('오리')
   })
 
+  /**
+   * 행사장 지도(P08 §2.2 단계 1) — 호스트만 등록 행을 본다. 등록하면 캡션에 URL 전체 대신 host만
+   * 보이고 버튼은 '바꾸기'로 바뀐다. 시트는 성공했을 때만 닫히고, 실패·형식 오류는 입력 아래에 남는다.
+   */
+  describe('행사장 지도 등록(호스트)', () => {
+    const MAP_URL = 'https://cdn.example.com/venue/map.png'
+
+    async function mountAsHost(room: RoomInfo = MY_ROOM) {
+      const deliver = captureSnapshotCallbacks()
+      getRoomMock.mockResolvedValue(room)
+      const wrapper = mountPage()
+      await flushPromises()
+      deliver.participants([])
+      await flushPromises()
+      return { wrapper, deliver }
+    }
+
+    it('호스트는 등록 전 안내 캡션과 지도 등록 버튼이 있는 행을 본다', async () => {
+      const { wrapper } = await mountAsHost()
+
+      expect(wrapper.text()).toContain('행사장 지도')
+      expect(wrapper.text()).toContain('아직 등록하지 않았어요.')
+      expect(findButton(wrapper, '지도 등록')).toBeDefined()
+    })
+
+    it('게스트에게는 지도 행이 없다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      await flushPromises()
+      deliver.participants(ROSTER)
+      await flushPromises()
+
+      expect(wrapper.text()).not.toContain('행사장 지도')
+      expect(findButton(wrapper, '지도 등록')).toBeUndefined()
+      expect(findButton(wrapper, '바꾸기')).toBeUndefined()
+    })
+
+    it('등록된 방은 캡션에 URL의 host만 보이고 버튼이 바꾸기로 바뀐다', async () => {
+      const { wrapper } = await mountAsHost({ ...MY_ROOM, mapImageUrl: MAP_URL })
+
+      expect(wrapper.text()).toContain('등록됨 · cdn.example.com')
+      expect(wrapper.text()).not.toContain('/venue/map.png')
+      expect(findButton(wrapper, '바꾸기')).toBeDefined()
+      expect(findButton(wrapper, '지도 등록')).toBeUndefined()
+    })
+
+    it('지도 등록 → 주소 입력 → 저장하면 방 문서에 쓰고 토스트를 띄운 뒤 시트를 닫는다', async () => {
+      const { wrapper } = await mountAsHost()
+
+      await findButton(wrapper, '지도 등록')!.trigger('click')
+      await flushPromises()
+
+      const body = document.body.textContent ?? ''
+      expect(body).toContain('행사장 지도')
+      expect(body).toContain('참가자 콕핏의 지도 버튼에 이 이미지가 보여요.')
+      // 등록 전이라 미리보기가 없다
+      expect(document.body.querySelector('img[alt="행사장 지도 미리보기"]')).toBeNull()
+
+      const input = document.body.querySelector<HTMLInputElement>('#map-image-url')!
+      expect(input.type).toBe('url')
+      input.value = `  ${MAP_URL} `
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      await flushPromises()
+      findBodyButton('저장').click()
+      await flushPromises()
+
+      expect(setRoomMapImageUrlMock).toHaveBeenCalledExactlyOnceWith('AB2C', MAP_URL)
+      expect(toastMock).toHaveBeenCalledWith({ title: '행사장 지도를 등록했어요.', tone: 'success' })
+      expect(document.body.querySelector('#map-image-url')).toBeNull()
+    })
+
+    it('https가 아닌 주소는 쓰지 않고 입력 아래 안내를 보이며 시트를 열어 둔다', async () => {
+      const { wrapper } = await mountAsHost()
+      await findButton(wrapper, '지도 등록')!.trigger('click')
+      await flushPromises()
+
+      const input = document.body.querySelector<HTMLInputElement>('#map-image-url')!
+      input.value = 'http://cdn.example.com/venue/map.png'
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      await flushPromises()
+      findBodyButton('저장').click()
+      await flushPromises()
+
+      expect(setRoomMapImageUrlMock).not.toHaveBeenCalled()
+      expect(toastMock).not.toHaveBeenCalled()
+      const error = document.body.querySelector('#map-image-url-error')!
+      expect(error.getAttribute('role')).toBe('alert')
+      expect(error.textContent).toContain('https://로 시작하는 이미지 주소를 넣어 주세요.')
+      expect(input.getAttribute('aria-describedby')).toContain('map-image-url-error')
+      // 시트는 그대로 열려 있어 고쳐서 다시 저장할 수 있다
+      expect(document.body.querySelector('#map-image-url')).not.toBeNull()
+    })
+
+    it('바꾸기로 열면 현재 지도 미리보기와 현재 주소가 채워진 입력을 보여준다', async () => {
+      const { wrapper } = await mountAsHost({ ...MY_ROOM, mapImageUrl: MAP_URL })
+
+      await findButton(wrapper, '바꾸기')!.trigger('click')
+      await flushPromises()
+
+      const preview = document.body.querySelector<HTMLImageElement>('img[alt="행사장 지도 미리보기"]')
+      expect(preview?.getAttribute('src')).toBe(MAP_URL)
+      expect(document.body.querySelector<HTMLInputElement>('#map-image-url')!.value).toBe(MAP_URL)
+    })
+  })
+
   /** 진행자가 인원을 세고 공지하는 동안 플레이어가 켜진 뷰파인더만 보게 두지 않는다 */
   it('게스트: playing 전이만으로는 카메라로 가지 않고 배정 카드에 머문다', async () => {
     const deliver = captureSnapshotCallbacks()
@@ -444,6 +555,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'normal',
       roundModes: {},
       round: null,
+      mapImageUrl: null,
     })
     deliver.participants([{ ...ROSTER[0]!, team: 'A', assignedRound: 1, isReady: true }])
     await flushPromises()
@@ -469,6 +581,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'normal' as const,
       roundModes: {},
       round: null,
+      mapImageUrl: null,
     }
     deliver.room(playing)
     // 이번 라운드에 배정된 참가자여야 콕핏으로 넘어간다(D-5) — 그 전까지는 대기실에 머문다
@@ -497,6 +610,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'normal',
       roundModes: {},
       round: { status: 'running', startedAtMs: Date.now(), durationMs: 1_200_000, pausedRemainingMs: null },
+      mapImageUrl: null,
     })
     // 배정 확정 후 늦게 합류했거나 이번 배정에서 빠진 참가자 — team이 미배정(null)이다
     deliver.participants([ROSTER[0]!])
@@ -520,6 +634,7 @@ describe('WaitingRoomPage', () => {
       assignmentRound: 1,
       gameMode: 'normal',
       roundModes: {},
+      mapImageUrl: null,
       round: {
         status: 'running',
         startedAtMs: Date.now() - 1_200_000,
@@ -548,6 +663,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'normal' as const,
       roundModes: {},
       round: { status: 'running' as const, startedAtMs, durationMs: 1_200_000, pausedRemainingMs: null },
+      mapImageUrl: null,
     }
     deliver.room(expired)
     deliver.participants([{ ...ROSTER[0]!, team: 'A', assignedRound: 1, isReady: true }])
@@ -573,7 +689,7 @@ describe('WaitingRoomPage', () => {
     const deliver = captureSnapshotCallbacks()
     mountPage()
     await flushPromises()
-    deliver.room({ hostUid: 'host9', status: 'waiting', assignmentRound: 0, gameMode: 'normal', roundModes: {}, round: null })
+    deliver.room({ hostUid: 'host9', status: 'waiting', assignmentRound: 0, gameMode: 'normal', roundModes: {}, round: null, mapImageUrl: null })
     await flushPromises()
     replaceMock.mockClear()
 
@@ -591,7 +707,7 @@ describe('WaitingRoomPage', () => {
     const deliver = captureSnapshotCallbacks()
     mountPage()
     await flushPromises()
-    deliver.room({ hostUid: 'host9', status: 'waiting', assignmentRound: 0, gameMode: 'normal', roundModes: {}, round: null })
+    deliver.room({ hostUid: 'host9', status: 'waiting', assignmentRound: 0, gameMode: 'normal', roundModes: {}, round: null, mapImageUrl: null })
     deliver.participants([{ id: 'me', name: '나', gender: null, isReady: false, team: null, assignedRound: 0, isXTeam: false, sameGenderStreak: 0, previousPartnerIds: [] }])
     await flushPromises()
 
@@ -612,6 +728,7 @@ describe('WaitingRoomPage', () => {
       assignmentRound: 1,
       gameMode: 'normal',
       roundModes: {},
+      mapImageUrl: null,
       round: {
         status: 'paused',
         startedAtMs: Date.now() - 600_000,
@@ -631,7 +748,7 @@ describe('WaitingRoomPage', () => {
     mountPage()
     await flushPromises()
 
-    deliver.room({ hostUid: 'me', status: 'playing', assignmentRound: 1, gameMode: 'normal', roundModes: {}, round: null })
+    deliver.room({ hostUid: 'me', status: 'playing', assignmentRound: 1, gameMode: 'normal', roundModes: {}, round: null, mapImageUrl: null })
     await flushPromises()
 
     expect(replaceMock).toHaveBeenCalledWith({
@@ -827,6 +944,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'normal',
       roundModes: {},
       round: null,
+      mapImageUrl: null,
     })
     const wrapper = mountPage()
     await flushPromises()
@@ -859,6 +977,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'group',
       roundModes: {},
       round: null,
+      mapImageUrl: null,
     })
     // mountPage 대신 명시적 pinia로 마운트해 같은 인스턴스의 팀 배정 스토어를 조회한다
     const pinia = createPinia()
@@ -877,7 +996,7 @@ describe('WaitingRoomPage', () => {
     expect(taStore.draftGameMode).toBe('group')
 
     // 다른 탭이 확정해 room 스냅샷의 assignmentRound가 올라가도(3) 드래프트 차수는 그대로 3
-    deliver.room({ hostUid: 'me', status: 'waiting', assignmentRound: 3, gameMode: 'group', roundModes: {}, round: null })
+    deliver.room({ hostUid: 'me', status: 'waiting', assignmentRound: 3, gameMode: 'group', roundModes: {}, round: null, mapImageUrl: null })
     await flushPromises()
     expect(taStore.draftRound).toBe(3)
   })
@@ -916,6 +1035,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'normal',
       roundModes: {},
       round: null,
+      mapImageUrl: null,
     }
     getRoomMock.mockResolvedValue(hostRound1)
     const wrapper = mountPage()
@@ -943,6 +1063,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'normal',
       roundModes: {},
       round: null,
+      mapImageUrl: null,
     }
     getRoomMock.mockResolvedValue(hostRound1)
     const wrapper = mountPage()
@@ -974,6 +1095,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'normal',
       roundModes: {},
       round: null,
+      mapImageUrl: null,
     }
     getRoomMock.mockResolvedValue(hostRound1)
     const wrapper = mountPage()
@@ -1000,6 +1122,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'normal',
       roundModes: {},
       round: null,
+      mapImageUrl: null,
     }
     getRoomMock.mockResolvedValue(hostRound1)
     const wrapper = mountPage()
@@ -1027,6 +1150,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'normal',
       roundModes: {},
       round: null,
+      mapImageUrl: null,
     }
     getRoomMock.mockResolvedValue(hostRound1)
     const wrapper = mountPage()
@@ -1055,6 +1179,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'normal',
       roundModes: {},
       round: null,
+      mapImageUrl: null,
     }
     getRoomMock.mockResolvedValue(hostRound1)
     const wrapper = mountPage()
@@ -1102,6 +1227,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'normal',
       roundModes: {},
       round: null,
+      mapImageUrl: null,
     })
     const wrapper = mountPage()
     await flushPromises()
