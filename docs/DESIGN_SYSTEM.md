@@ -170,7 +170,7 @@ src/shared/components/
 
 `loading`이 한 번에 처리하는 것:
 
-- 라벨을 `invisible`로 숨겨 **자리(폭·높이)를 유지**한 채 스피너를 중앙에 겹친다 → 레이아웃 시프트 0.
+- 라벨을 `opacity-0`으로 숨겨 자리(폭·높이)와 **접근성 이름**을 유지한 채 스피너를 중앙에 겹친다(visibility:hidden은 낭독기에서 이름을 지운다) → 레이아웃 시프트 0.
 - `aria-busy="true"` + 네이티브 `disabled`로 **클릭을 물리적으로 차단**한다(중복 제출 가드는 composable/store에도 그대로 둔다 — 이중 방어).
 - 스타일 훅으로 `data-loading="true"`를 노출한다. 테스트·QA의 판정 기준은 버튼 텍스트가 아니라 이 속성이다.
 

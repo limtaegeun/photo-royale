@@ -106,15 +106,18 @@ describe('BaseButton', () => {
       expect(wrapper.emitted('click')).toBeUndefined()
     })
 
-    it('스피너를 렌더하면서도 라벨 텍스트는 DOM에 그대로 유지한다(자리 유지, invisible 처리)', () => {
+    it('스피너를 렌더하면서도 라벨의 접근성 이름은 유지한다(자리 유지, opacity-0 처리)', () => {
       const wrapper = mount(BaseButton, {
         props: { loading: true },
         slots: { default: '재배정' },
       })
 
-      // 라벨은 지워지지 않고 invisible 클래스로만 시각적으로 숨는다 — 버튼 폭이 유지된다
+      // 라벨은 지워지지 않고 opacity-0로만 시각적으로 숨는다 — 버튼 폭이 유지되고 접근성 이름도 남는다
       expect(wrapper.text()).toContain('재배정')
-      expect(wrapper.find('.invisible').text()).toBe('재배정')
+      const label = wrapper.find('.opacity-0')
+      expect(label.text()).toBe('재배정')
+      // visibility:hidden(invisible)은 낭독기에서 이름을 지우므로 쓰지 않는다(QA F-05)
+      expect(label.classes()).not.toContain('invisible')
 
       // 스피너는 별도 요소로 렌더되고 스크린리더에서는 숨겨진다(aria-hidden)
       const spinner = wrapper.find('[aria-hidden="true"]')
@@ -129,7 +132,7 @@ describe('BaseButton', () => {
       })
 
       expect(wrapper.find('[aria-hidden="true"]').exists()).toBe(false)
-      expect(wrapper.find('.invisible').exists()).toBe(false)
+      expect(wrapper.find('.opacity-0').exists()).toBe(false)
       expect(wrapper.attributes('aria-busy')).toBeUndefined()
     })
   })

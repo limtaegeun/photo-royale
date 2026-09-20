@@ -25,6 +25,36 @@ import { serverNow } from '../serverClock'
  */
 export type WaitingRoomPhase = 'idle' | 'joining' | 'joined' | 'not-found' | 'error' | 'kicked'
 
+/** 준비 완료 쓰기 타임아웃(ms) — 이 시간 안에 서버 ack가 없으면 오프라인으로 간주한다(QA D-03) */
+const READY_WRITE_TIMEOUT_MS = 8000
+
+/** 준비 완료 불안정 안내 — 타임아웃 시 표시하고, 뒤늦은 쓰기가 커밋되면 이 메시지를 보고 제거한다 */
+const READY_UNSTABLE_MESSAGE = '연결이 불안정해 준비 완료를 확인하지 못했어요. 연결되면 자동으로 반영돼요.'
+
+/** withTimeout이 시간 초과로 reject할 때 쓰는 표식 에러 — 진짜 실패(네트워크 거부 등)와 구분한다 */
+class ReadyWriteTimeoutError extends Error {}
+
+/**
+ * Firestore 오프라인 쓰기는 서버 ack까지 resolve되지 않아 스피너가 영원히 돈다(QA D-03).
+ * promise가 ms 안에 끝나지 않으면 ReadyWriteTimeoutError로 reject하는 경주를 붙인다.
+ * 원래 promise는 계속 진행되고(취소 불가), 연결이 복구되면 그 쓰기가 그대로 커밋된다.
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new ReadyWriteTimeoutError()), ms)
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error: unknown) => {
+        clearTimeout(timer)
+        reject(error)
+      },
+    )
+  })
+}
+
 /**
  * P02 대기실 상태 — Firestore rooms/{code} 문서와 participants 하위 컬렉션을 실시간
  * 구독한다. 호스트는 플레이어가 아니라 진행자다(Kahoot 모델): 참가자로 등록되지 않고
@@ -289,10 +319,22 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
     }
     isConfirmingReady.value = true
     readyError.value = null
+    const write = setReady(roomCode.value, myId.value)
     try {
-      await setReady(roomCode.value, myId.value)
-    } catch {
-      readyError.value = '준비 완료 처리에 실패했어요. 다시 시도해 주세요.'
+      await withTimeout(write, READY_WRITE_TIMEOUT_MS)
+    } catch (error) {
+      // 타임아웃은 재시도 상태로만 되돌린다 — Firestore 오프라인 쓰기가 큐잉되어
+      // 재연결 시 그대로 커밋되고 스냅샷이 버튼을 '준비 완료'로 바꾼다.
+      // 버튼은 latency compensation으로 이미 준비 완료 상태인데, 안내는 불안정함을 설명한다.
+      if (error instanceof ReadyWriteTimeoutError) {
+        readyError.value = READY_UNSTABLE_MESSAGE
+        // 늦게 도착한 서버 ack가 안내를 거둔다 — 그 사이 다른 오류 문구로 바뀌었으면 건드리지 않는다
+        void write.then(() => {
+          if (readyError.value === READY_UNSTABLE_MESSAGE) readyError.value = null
+        }, () => {})
+      } else {
+        readyError.value = '준비 완료 처리에 실패했어요. 다시 시도해 주세요.'
+      }
     } finally {
       isConfirmingReady.value = false
     }
