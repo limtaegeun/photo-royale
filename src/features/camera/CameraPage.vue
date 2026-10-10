@@ -16,7 +16,12 @@ import { useAuthStore } from '@/features/auth'
 import { GAME_MODES } from '@/features/game-mode'
 import { groupTextClass } from '@/features/team-assignment'
 import { useToast } from '@/shared/composables/useToast'
-import { subscribeToLatestNotice, type Notice, useRoundTimer } from '@/features/round-ops'
+import {
+  formatRelativeTime,
+  subscribeToLatestNotice,
+  type Notice,
+  useRoundTimer,
+} from '@/features/round-ops'
 import {
   aliveTeamCount,
   subscribeToRoundLedger,
@@ -106,6 +111,16 @@ let noticeResizeObserver: ResizeObserver | null = null
 
 const round = computed(() => room.value?.round ?? null)
 const { nowMs, formatted: remainingTime, displayState } = useRoundTimer(round)
+/**
+ * 공지를 보낸 시각("N분 전") — 공지는 라운드가 바뀌어도 방의 마지막 1건이 그대로 남는다. 시각이
+ * 없으면 지난 라운드 공지가 방금 온 공지처럼 읽혀 끝난 안내대로 움직이게 된다(2026-10-09 리허설
+ * 문제 4). 운영 탭 공지 카드와 같은 표기를 쓰고, 라운드 타이머의 서버 보정 시각으로 흐른다.
+ */
+const noticeSentAt = computed(() =>
+  latestNotice.value === null
+    ? null
+    : formatRelativeTime(latestNotice.value.createdAtMs, nowMs.value),
+)
 /**
  * 타이머가 0에 닿은 상태 — 확정 스펙(라운드당 20분)이 표시로만 존재하지 않도록 셔터·제출을
  * 여기서 잠근다(RoundOpsPage의 동일 이름 파생값과 같은 뜻: displayState === 'ended').
@@ -510,6 +525,14 @@ function subscribeToCurrentRoundLedger(roundNumber: number) {
             :class="noticeExpanded ? 'items-start' : 'items-center'"
           >
             <span class="shrink-0 text-caption text-warning">공지</span>
+            <!-- 본문보다 먼저, 흐르지 않는 자리에 둔다 — 긴 공지가 흘러가도 언제 보낸 것인지는 남는다 -->
+            <span
+              v-if="noticeSentAt !== null"
+              data-testid="notice-sent-at"
+              class="shrink-0 text-caption text-content-secondary"
+            >
+              {{ noticeSentAt }}
+            </span>
             <span ref="noticeViewportRef" class="min-w-0 flex-1 overflow-hidden">
               <span
                 id="cockpit-notice"
