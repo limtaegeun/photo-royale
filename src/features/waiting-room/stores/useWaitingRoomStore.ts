@@ -13,6 +13,7 @@ import {
   startGame,
   subscribeToParticipants,
   subscribeToRoom,
+  type KickSnapshotRemoval,
   type Participant,
   type RoomInfo,
 } from '../api/rooms'
@@ -385,17 +386,29 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
   const canKick = computed(() => isHost.value && gameStatus.value === 'waiting')
 
   /**
+   * 내보낼 참가자를 편성 스냅샷에서도 뺄 자리(2026-10-09 리허설 문제 8) — 이번 차수 원장이 있고
+   * 아직 정산 전(게임 시작 전)이며 그 원장의 팀에 이 사람이 있을 때만. 정산이 끝난 라운드는 이
+   * 사람이 실제로 뛰었으니 그대로 둔다. 원장이 없는(도입 전 배정) 방은 예전처럼 문서만 지운다.
+   */
+  function snapshotRemovalFor(uid: string): KickSnapshotRemoval | undefined {
+    const ledger = ledgers.value.find((entry) => entry.roundNo === assignmentRound.value)
+    if (ledger === undefined || ledger.result !== null) return undefined
+    const armband = Object.keys(ledger.teams).find((key) => ledger.teams[key]!.includes(uid))
+    return armband === undefined ? undefined : { roundNo: ledger.roundNo, armband }
+  }
+
+  /**
    * 강퇴(호스트 전용) — 참가자 문서 삭제를 요청하고 성공 여부를 반환한다(안내는 호출부가
    * 토스트로 띄운다). 명단 반영은 스냅샷 구독이, 내보내진 본인 화면 전환은 그 기기의 강퇴
    * 감지가 맡는다. 중복 가드는 **같은 대상**에만 건다 — 삭제는 멱등이라 서로 다른 대상의
-   * 요청이 겹쳐도 안전하고, 전역 잠금이면 오프라인에서 미결 요청 하나가(deleteDoc은
+   * 요청이 겹쳐도 안전하고, 전역 잠금이면 오프라인에서 미결 요청 하나가(배치 쓰기는
    * 오프라인에서 큐잉된 채 완료되지 않는다) 다른 참가자 강퇴까지 막는다.
    */
   async function kick(uid: string): Promise<boolean> {
     if (!roomCode.value || !canKick.value || kickingId.value === uid) return false
     kickingId.value = uid
     try {
-      await kickParticipant(roomCode.value, uid)
+      await kickParticipant(roomCode.value, uid, snapshotRemovalFor(uid))
       return true
     } catch {
       return false

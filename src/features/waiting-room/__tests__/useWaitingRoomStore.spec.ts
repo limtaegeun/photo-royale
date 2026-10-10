@@ -25,7 +25,10 @@ const joinRoomMock =
   >()
 const setReadyMock = vi.fn<(code: string, uid: string) => Promise<void>>()
 const startGameMock = vi.fn<(code: string) => Promise<void>>()
-const kickParticipantMock = vi.fn<(code: string, uid: string) => Promise<void>>()
+const kickParticipantMock =
+  vi.fn<
+    (code: string, uid: string, snapshotRemoval?: { roundNo: number; armband: string }) => Promise<void>
+  >()
 const setRoomMapImageUrlMock = vi.fn<(code: string, url: string) => Promise<void>>()
 const unsubscribeParticipantsMock = vi.fn<() => void>()
 const unsubscribeRoomMock = vi.fn<() => void>()
@@ -48,7 +51,11 @@ vi.mock('../api/rooms', () => ({
   ) => joinRoomMock(code, member),
   setReady: (code: string, uid: string) => setReadyMock(code, uid),
   startGame: (code: string) => startGameMock(code),
-  kickParticipant: (code: string, uid: string) => kickParticipantMock(code, uid),
+  kickParticipant: (
+    code: string,
+    uid: string,
+    snapshotRemoval?: { roundNo: number; armband: string },
+  ) => kickParticipantMock(code, uid, snapshotRemoval),
   setRoomMapImageUrl: (code: string, url: string) => setRoomMapImageUrlMock(code, url),
   subscribeToParticipants: (code: string, onChange: (participants: Participant[]) => void) =>
     subscribeParticipantsMock(code, onChange),
@@ -104,6 +111,22 @@ function captureSnapshotCallbacks() {
     room: (room: RoomInfo | null) => deliverRoom(room),
     ledgers: (ledgers: RoundLedger[]) => deliverLedgers(ledgers),
     ledgersError: (error: Error) => failLedgers(error),
+  }
+}
+
+/** 배정 확정 뒤·정산 전 원장 — 강퇴가 편성 스냅샷에서도 뺄지 가르는 재료 */
+function assignedLedger(roundNo: number, teams: Record<string, string[]>): RoundLedger {
+  return {
+    roundNo,
+    mode: 'normal',
+    teams,
+    xTeams: [],
+    confirmedAtMs: 0,
+    tally: null,
+    hits: null,
+    tails: null,
+    credits: null,
+    result: null,
   }
 }
 
@@ -458,8 +481,58 @@ describe('useWaitingRoomStore', () => {
 
       await expect(store.kick('u2')).resolves.toBe(true)
 
-      expect(kickParticipantMock).toHaveBeenCalledExactlyOnceWith('AB2C', 'u2')
+      expect(kickParticipantMock).toHaveBeenCalledExactlyOnceWith('AB2C', 'u2', undefined)
       expect(store.kickingId).toBeNull()
+    })
+
+    /**
+     * 2026-10-09 리허설 문제 8 — 배정 확정 뒤 준비를 안 누른 사람을 내보내면, 스냅샷에 남은 그 사람이
+     * 라운드 점수를 받고 남은 짝꿍은 화면엔 1인 팀인데 2인 팀으로 정산됐다.
+     */
+    it('kick: 배정 확정 뒤·정산 전이면 그 차수 편성 스냅샷에서도 빼도록 완장을 함께 넘긴다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      getRoomMock.mockResolvedValue(MY_ROOM)
+      const store = useWaitingRoomStore()
+      await store.enter('AB2C')
+      deliver.room({ ...MY_ROOM, assignmentRound: 2 })
+      deliver.ledgers([
+        settledLedger(1, { u2: 10 }, { u2: 1 }, { u2: 10 }),
+        assignedLedger(2, { R: ['u4', 'u5'], S: ['u3', 'u2'] }),
+      ])
+
+      await expect(store.kick('u2')).resolves.toBe(true)
+
+      expect(kickParticipantMock).toHaveBeenCalledExactlyOnceWith('AB2C', 'u2', { roundNo: 2, armband: 'S' })
+    })
+
+    it('kick: 정산이 끝난 차수(라운드를 뛰고 대기실로 돌아온 뒤)면 편성은 그대로 두고 문서만 지운다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      getRoomMock.mockResolvedValue(MY_ROOM)
+      const store = useWaitingRoomStore()
+      await store.enter('AB2C')
+      deliver.room({ ...MY_ROOM, assignmentRound: 1 })
+      deliver.ledgers([{ ...settledLedger(1, { u2: 10 }, { u2: 1 }, { u2: 10 }), teams: { S: ['u2', 'u3'] } }])
+
+      await expect(store.kick('u2')).resolves.toBe(true)
+
+      expect(kickParticipantMock).toHaveBeenCalledExactlyOnceWith('AB2C', 'u2', undefined)
+    })
+
+    it('kick: 이번 차수 편성에 없는 사람(대기자·늦은 입장)이나 원장이 없는 차수는 문서만 지운다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      getRoomMock.mockResolvedValue(MY_ROOM)
+      const store = useWaitingRoomStore()
+      await store.enter('AB2C')
+      deliver.room({ ...MY_ROOM, assignmentRound: 2 })
+      deliver.ledgers([assignedLedger(2, { S: ['u3', 'u4'] })])
+
+      await expect(store.kick('u2')).resolves.toBe(true)
+      expect(kickParticipantMock).toHaveBeenLastCalledWith('AB2C', 'u2', undefined)
+
+      // 원장 도입 전에 배정된 차수 — 문서가 없으니 원장에 쓰면 배치가 통째로 실패한다
+      deliver.room({ ...MY_ROOM, assignmentRound: 3 })
+      await expect(store.kick('u3')).resolves.toBe(true)
+      expect(kickParticipantMock).toHaveBeenLastCalledWith('AB2C', 'u3', undefined)
     })
 
     it('kick: 게스트가 호출하면 아무 요청도 하지 않는다', async () => {
