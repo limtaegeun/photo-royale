@@ -149,7 +149,7 @@ QR 인프라 전제라 MVP 범위 밖(확정 스펙). 정산 틀만 적어 둔�
 
 ### 5.1 `rooms/{code}/rounds/{차수}` 서브컬렉션 신설 — 라운드 원장
 
-문서 ID = 차수 문자열. 세 시점에 세 갈래로 쓴다.
+문서 ID = 차수 문자열. 세 시점에 세 갈래로 쓴다. 배정 확정 뒤·게임 시작 전에 내보낸 참가자는 강퇴 배치가 `teams`에서도 뺀다(④, 2026-10-09 리허설 문제 8).
 
 ```ts
 {
@@ -158,6 +158,9 @@ QR 인프라 전제라 MVP 범위 밖(확정 스펙). 정산 틀만 적어 둔�
   teams: Record<string, string[]>   // 완장 → 멤버 uid 배열 (편성 스냅샷)
   xTeams: string[]                  // X 겸직 완장 (왕잡기 배율 근거)
   confirmedAt: Timestamp
+
+  // ④ 배정 뒤·게임 시작 전 강퇴 시 (강퇴 배치에 update 추가 — 원자)
+  //    teams.<완장>에서 내보낸 uid를 arrayRemove. 빈 목록이 된 완장은 읽을 때 팀이 없는 것으로 본다
 
   // ② 판정 확정 시 (approve 배치에 update 추가 — 원자)
   tally?: Record<string, { kills: number; tripleKills: number }>  // 공격 완장별 집계 (분리 집계 — 3배 킬은 tripleKills에만)
@@ -185,6 +188,7 @@ QR 인프라 전제라 MVP 범위 밖(확정 스펙). 정산 틀만 적어 둔�
 - `create`: 호스트 && 방 waiting && `roundNo == string(getAfter(rooms).assignmentRound)`(같은 배치의 rooms 갱신 결과와 대조 — participants 갱신 갈래가 이미 쓰는 방식) && 키 화이트리스트(`mode`·`teams`·`xTeams`·`confirmedAt`) && `mode == getAfter(rooms).gameMode` && `teams is map` && `xTeams is list`
 - `update` 갈래 1 (판정 집계): 호스트 && 방 playing && `roundNo == string(rooms.assignmentRound)` && affectedKeys가 `tally`·`hits`뿐
 - `update` 갈래 2 (정산 확정): 호스트 && (배치 전) 방 playing && `roundNo == string(rooms.assignmentRound)` && affectedKeys가 `result`뿐 && 네 맵은 형태만 검증(수치 검증은 클라 계산 신뢰 — 서버 함수 부재 전제)
+- `update` 갈래 3 (배정 뒤 내보내기, 2026-10-09 리허설 문제 8): 호스트 && 방 waiting && `roundNo == string(rooms.assignmentRound)` && `result` 없음(정산 전) && affectedKeys가 `teams`뿐 && 완장 추가·삭제 없음 && 바뀐 완장 1개 이하. 강퇴(참가자 문서 삭제)와 같은 배치로 온다
 - `delete`: false
 
 ⚠️ **rules는 앱보다 먼저 배포** — 신규 컬렉션을 앱이 먼저 쓰면 배정 확정이 전멸한다(배정 확정 403 사고 전례, `rules-deploy-before-client`). 구버전 클라이언트는 rounds 문서를 안 쓰므로 새 rules 아래에서도 그대로 통과한다(배포 순서만 지키면 된다).
@@ -246,7 +250,7 @@ QR 인프라 전제라 MVP 범위 밖(확정 스펙). 정산 틀만 적어 둔�
 5. **라운드마다 등급 수가 다름** — 등급 표는 등급 번호 기준이라 인원·팀 수와 무관하다. 킬이 한 팀에서만 나면 그 라운드는 1등급(10)과 0점(1) 두 칸뿐이다.
 6. **X팀 없는 왕잡기** — 인원이 적어 X 모듈을 생략한 편성이면 왕 배율 이벤트가 발생하지 않는다. 배정 보드에서 왕잡기 선택 시 X 모듈 강제(또는 경고)를 M4에서 함께 결정.
 7. **오프라인 판정** — approve 배치가 SDK 오프라인 큐에 남으면 tally도 함께 지연된다. 배치라 원자성은 유지 — 순위 카드가 잠시 덜 집계된 값을 표시할 뿐, 종료 정산 시점에 수렴한다(기존 정책과 동일).
-8. **강퇴·이탈자** — 편성 스냅샷의 uid가 participants에서 사라져도 포인트는 uid 기준으로 남는다. 이후 라운드는 결정 11대로 0포인트. 순위 표시는 이름 조인 실패 시 "나간 참가자"로 표기.
+8. **강퇴·이탈자** — 편성 스냅샷의 uid가 participants에서 사라져도 포인트는 uid 기준으로 남는다. 이후 라운드는 결정 11대로 0포인트. 순위 표시는 이름 조인 실패 시 "나간 참가자"로 표기. 단 배정 확정 뒤·게임 시작 전에 내보낸 사람은 그 차수 스냅샷에서도 빠진다 — 뛰지 않은 라운드라 0포인트이고, 남은 짝꿍은 1인 팀(라이프 2·원점수 2배)으로 정산된다(2026-10-09 리허설 문제 8). 이미 정산된 라운드의 스냅샷은 그대로다.
 9. **rounds 문서 없는 진행 중 라운드**(배포 직후) — 판정은 tally 없이 통과시키고(§5.3), 종료 시 result를 쓰지 않는다. 그 라운드는 순위에서 빠진다.
 
 ## 10. M1 구현 계획
