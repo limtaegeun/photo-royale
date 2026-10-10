@@ -2,8 +2,9 @@
  * 라운드 원장(P07) 타입 — `rooms/{code}/rounds/{차수}` 문서의 읽기 모델.
  *
  * 사진이 실린 submissions를 다시 열지 않고 점수·순위를 내기 위한 경량 문서다. 문서 ID는
- * 팀편성 차수(rooms.assignmentRound)의 문자열이고, 세 시점에 세 갈래로 쓴다 —
- * 배정 확정(편성 스냅샷) · 판정 확정(집계 increment) · 라운드 종료(정산 결과).
+ * 팀편성 차수(rooms.assignmentRound)의 문자열이고, 네 시점에 네 갈래로 쓴다 —
+ * 배정 확정(편성 스냅샷) · 배정 뒤 내보내기(편성에서 빼기) · 판정 확정(집계 increment) ·
+ * 라운드 종료(정산 결과).
  * 기획: docs/plans/p07-round-scoring.md §5.
  *
  * 키 목록 상수는 firestore.rules의 rounds 갈래와 **같아야 한다** — rules는 클라 코드를
@@ -25,12 +26,15 @@ export interface TeamTally {
   kingKills: number
 }
 
-/** ① 배정 확정 시 — 편성 스냅샷. 이후 라운드가 끝나도 바뀌지 않는다 */
+/**
+ * ① 배정 확정 시 — 편성 스냅샷. 게임 시작 전에 내보낸 참가자만 빠지고(④), 그 뒤로는 라운드가
+ * 끝나도 바뀌지 않는다
+ */
 export interface RoundSnapshot {
   /** 팀편성 차수 = 문서 ID를 숫자로 */
   roundNo: number
   mode: GameModeId
-  /** 완장 → 그 라운드의 팀원 uid 목록 */
+  /** 완장 → 그 라운드의 팀원 uid 목록. 내보내기로 팀원이 모두 빠진 완장은 읽을 때 버린다 */
   teams: ArmbandMap<string[]>
   /** X 겸직 완장 — 왕잡기에서 왕 팀(배율 근거) */
   xTeams: string[]
@@ -85,3 +89,9 @@ export const ROUND_RESULT_KEYS = [
   'playerPoints',
   'finishedAt',
 ] as const
+
+/**
+ * rules `rounds` update 갈래 ④(배정 뒤 내보내기)가 허용하는 키 — 게임 시작 전에 내보낸 참가자를
+ * 그 차수 완장 목록에서 뺀다(2026-10-09 리허설 문제 8). 완장을 더하거나 지우지는 않는다.
+ */
+export const ROUND_KICK_KEYS = ['teams'] as const

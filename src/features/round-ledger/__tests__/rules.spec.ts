@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, it, expect } from 'vitest'
-import { ROUND_RESULT_KEYS, ROUND_SNAPSHOT_KEYS, ROUND_TALLY_KEYS } from '../types'
+import { ROUND_KICK_KEYS, ROUND_RESULT_KEYS, ROUND_SNAPSHOT_KEYS, ROUND_TALLY_KEYS } from '../types'
 
 /**
  * rules는 클라 코드를 import할 수 없어 rounds 문서의 키 목록이 types.ts와 이중화되어 있다.
@@ -52,5 +52,23 @@ describe('firestore.rules 라운드 원장 규칙 동기화 가드', () => {
   it('정산 확정은 게임 종료 배치와 함께만 성립한다(커밋 후 방 상태 waiting 대조)', () => {
     const updateBlock = roundsBlock!.match(/allow update:[\s\S]*?\n {10}\);/)![0]
     expect(updateBlock).toMatch(/getAfter\([\s\S]*?\)\.data\.status == 'waiting'/)
+  })
+
+  /**
+   * 갈래 ④(배정 뒤 내보내기, 2026-10-09 리허설 문제 8) — 강퇴 배치가 원장 teams를 고친다. 키가
+   * 어긋나면 강퇴 배치가 통째로 거부돼 "내보내기에 실패했어요"만 남는다.
+   */
+  it('update 갈래 ④(배정 뒤 내보내기)가 허용하는 키가 ROUND_KICK_KEYS와 같다', () => {
+    const updateBlock = roundsBlock!.match(/allow update:[\s\S]*?\n {10}\);/)![0]
+    expect(parseList(updateBlock, 'affectedKeys\\(\\)\\.hasOnly')).toContainEqual([...ROUND_KICK_KEYS])
+  })
+
+  it('배정 뒤 내보내기는 대기 중·정산 전에만, 완장을 더하거나 지우지 않고 한 팀만 바꿀 때 성립한다', () => {
+    const updateBlock = roundsBlock!.match(/allow update:[\s\S]*?\n {10}\);/)![0]
+    const kickBranch = updateBlock.slice(updateBlock.indexOf('// 4)'))
+    expect(kickBranch).toMatch(/\.data\.status == 'waiting'\s*&& !\('result' in resource\.data\)/)
+    expect(kickBranch).toContain('teams.diff(resource.data.teams).addedKeys().size() == 0')
+    expect(kickBranch).toContain('teams.diff(resource.data.teams).removedKeys().size() == 0')
+    expect(kickBranch).toContain('teams.diff(resource.data.teams).changedKeys().size() <= 1')
   })
 })

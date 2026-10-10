@@ -34,6 +34,7 @@ vi.mock('firebase/firestore', () => ({
   serverTimestamp: () => SERVER_TIMESTAMP,
   increment: (n: number) => ({ increment: n }),
   arrayUnion: (...items: string[]) => ({ arrayUnion: items }),
+  arrayRemove: (...items: string[]) => ({ arrayRemove: items }),
   // 실제 runTransaction의 재시도는 커밋 경합에서만 일어나므로, 콜백 1회 실행으로 충분하다
   runTransaction: <T>(
     _db: unknown,
@@ -46,6 +47,7 @@ vi.mock('firebase/firestore', () => ({
 
 import {
   addRoundSnapshotToBatch,
+  addSnapshotRemovalToBatch,
   addTallyToBatch,
   recordStaffOut,
   roundLedgerDoc,
@@ -106,6 +108,23 @@ describe('addRoundSnapshotToBatch', () => {
     ])
 
     expect(batch.set.mock.calls[0]![1]).toMatchObject({ xTeams: [] })
+  })
+})
+
+/**
+ * 2026-10-09 리허설 문제 8 — 배정 뒤·시작 전에 내보낸 사람이 스냅샷에 남아 그 라운드 점수를 받고,
+ * 남은 짝꿍이 2인 팀으로 정산됐다. 강퇴 배치가 그 완장 목록에서 uid 하나만 뺀다.
+ */
+describe('addSnapshotRemovalToBatch (배정 뒤 내보내기)', () => {
+  it('내보낸 uid를 그 차수 완장 목록에서 arrayRemove로 뺀다 — 다른 완장·키는 건드리지 않는다', () => {
+    const batch = { update: vi.fn<(ref: FakeRef, data: Record<string, unknown>) => void>() }
+
+    addSnapshotRemovalToBatch(batch as never, 'AB2C', 2, 'S', 'u2')
+
+    expect(batch.update).toHaveBeenCalledExactlyOnceWith(
+      { path: 'rooms/AB2C/rounds/2' },
+      { 'teams.S': { arrayRemove: ['u2'] } },
+    )
   })
 })
 
@@ -272,6 +291,12 @@ describe('toRoundLedger', () => {
     expect(ledger?.teams).toEqual({ A: ['u1'] })
     expect(ledger?.xTeams).toEqual([])
     expect(ledger?.hits).toEqual({ A: 1 })
+  })
+
+  it('팀원이 모두 빠진 완장(1인 팀을 배정 뒤 내보내 빈 목록)은 팀으로 읽지 않는다 — 유령 팀이 생존 점수를 받지 않게', () => {
+    const ledger = toRoundLedger('2', { ...SNAPSHOT_DATA, teams: { A: ['u1', 'u2'], B: [] } })
+
+    expect(ledger?.teams).toEqual({ A: ['u1', 'u2'] })
   })
 })
 
