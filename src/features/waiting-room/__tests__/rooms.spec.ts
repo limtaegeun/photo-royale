@@ -24,7 +24,7 @@ const getDocsMock = vi.fn<(query: unknown) => Promise<{ docs: FakeQueryDoc[] }>>
 const transactionGetMock = vi.fn<(ref: FakeRef) => Promise<{ exists: () => boolean }>>()
 const transactionSetMock = vi.fn<(ref: FakeRef, data: Record<string, unknown>) => void>()
 const updateDocMock = vi.fn<(ref: FakeRef, data: Record<string, unknown>) => Promise<void>>()
-const deleteDocMock = vi.fn<(ref: FakeRef) => Promise<void>>()
+const batchDeleteMock = vi.fn<(ref: FakeRef) => void>()
 const batchUpdateMock = vi.fn<(ref: FakeRef, data: Record<string, unknown>) => void>()
 const batchCommitMock = vi.fn<() => Promise<void>>()
 const onSnapshotMock =
@@ -60,10 +60,10 @@ vi.mock('firebase/firestore', () => ({
   serverTimestamp: () => 'server-timestamp',
   deleteField: () => 'delete-field',
   updateDoc: (ref: FakeRef, data: Record<string, unknown>) => updateDocMock(ref, data),
-  deleteDoc: (ref: FakeRef) => deleteDocMock(ref),
-  writeBatch: () => ({ update: batchUpdateMock, commit: batchCommitMock }),
+  writeBatch: () => ({ update: batchUpdateMock, delete: batchDeleteMock, commit: batchCommitMock }),
   // round-ledger api가 import하는 것 — 이 스펙에서는 원장 쓰기 payload만 본다
   increment: (n: number) => ({ increment: n }),
+  arrayRemove: (...items: string[]) => ({ arrayRemove: items }),
 }))
 
 import {
@@ -91,7 +91,7 @@ beforeEach(() => {
   transactionGetMock.mockReset()
   transactionSetMock.mockReset()
   updateDocMock.mockReset()
-  deleteDocMock.mockReset()
+  batchDeleteMock.mockReset()
   batchUpdateMock.mockReset()
   batchCommitMock.mockReset().mockResolvedValue(undefined)
   onSnapshotMock.mockReset()
@@ -666,12 +666,23 @@ describe('setRoomMapImageUrl', () => {
 })
 
 describe('kickParticipant', () => {
-  it('해당 참가자 문서의 삭제를 요청한다(권한·시점 검증은 rules 담당)', async () => {
-    deleteDocMock.mockResolvedValue(undefined)
-
+  it('해당 참가자 문서의 삭제를 요청한다(권한·시점 검증은 rules 담당) — 편성 빼기가 없으면 원장은 건드리지 않는다', async () => {
     await kickParticipant('AB2C', 'u1')
 
-    expect(deleteDocMock).toHaveBeenCalledExactlyOnceWith({ path: 'rooms/AB2C/participants/u1' })
+    expect(batchDeleteMock).toHaveBeenCalledExactlyOnceWith({ path: 'rooms/AB2C/participants/u1' })
+    expect(batchUpdateMock).not.toHaveBeenCalled()
+    expect(batchCommitMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('편성 빼기가 있으면 같은 배치로 그 차수 원장의 완장 목록에서도 뺀다(2026-10-09 리허설 문제 8)', async () => {
+    await kickParticipant('AB2C', 'u1', { roundNo: 2, armband: 'S' })
+
+    expect(batchDeleteMock).toHaveBeenCalledExactlyOnceWith({ path: 'rooms/AB2C/participants/u1' })
+    expect(batchUpdateMock).toHaveBeenCalledExactlyOnceWith(
+      { path: 'rooms/AB2C/rounds/2' },
+      { 'teams.S': { arrayRemove: ['u1'] } },
+    )
+    expect(batchCommitMock).toHaveBeenCalledTimes(1)
   })
 })
 

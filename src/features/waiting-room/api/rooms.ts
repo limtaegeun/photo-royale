@@ -1,6 +1,5 @@
 import {
   collection,
-  deleteDoc,
   deleteField,
   doc,
   getDoc,
@@ -21,7 +20,11 @@ import { createRoundAnchorObserver } from '../serverClock'
 import type { Gender } from '@/features/auth'
 // 게임 모드는 game-mode 기능의 소유물이라 public API로만 가져온다(내부 파일 직접 import 금지)
 import { DEFAULT_GAME_MODE, isGameModeId, type GameModeId } from '@/features/game-mode'
-import { addRoundResultToBatch, type RoundSettlement } from '@/features/round-ledger'
+import {
+  addRoundResultToBatch,
+  addSnapshotRemovalToBatch,
+  type RoundSettlement,
+} from '@/features/round-ledger'
 
 export type RoomStatus = 'waiting' | 'playing'
 
@@ -429,7 +432,26 @@ export async function setReady(code: string, uid: string): Promise<void> {
  * 중(waiting)"일 때만 허용하므로 권한·시점 검증은 서버가 담당한다. 삭제는 멱등이라(이미
  * 없는 문서 삭제도 성공) 다른 기기와 겹쳐 눌러도 안전하다. 내보낸 참가자의 화면 전환은
  * 본인 기기의 명단 구독(subscribeToParticipants)이 감지한다 — 별도 알림 채널이 없다.
+ *
+ * 배정 확정 뒤·게임 시작 전에 내보내면 그 차수 편성 스냅샷에서도 같은 배치로 뺀다(snapshotRemoval,
+ * 2026-10-09 리허설 문제 8). 빼지 않으면 내보낸 사람이 그 라운드 점수를 받고 남은 짝꿍이 2인 팀으로
+ * 정산된다. 배치라 문서 삭제와 스냅샷 빼기는 함께 되거나 함께 안 된다.
  */
-export async function kickParticipant(code: string, uid: string): Promise<void> {
-  await deleteDoc(doc(db, 'rooms', code, 'participants', uid))
+export async function kickParticipant(
+  code: string,
+  uid: string,
+  snapshotRemoval?: KickSnapshotRemoval,
+): Promise<void> {
+  const batch = writeBatch(db)
+  batch.delete(doc(db, 'rooms', code, 'participants', uid))
+  if (snapshotRemoval !== undefined) {
+    addSnapshotRemovalToBatch(batch, code, snapshotRemoval.roundNo, snapshotRemoval.armband, uid)
+  }
+  await batch.commit()
+}
+
+/** 강퇴와 함께 편성 스냅샷에서 뺄 자리 — 호출부(대기실)가 원장이 있고 정산 전일 때만 만든다 */
+export interface KickSnapshotRemoval {
+  roundNo: number
+  armband: string
 }

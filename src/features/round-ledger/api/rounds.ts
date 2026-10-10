@@ -1,4 +1,5 @@
 import {
+  arrayRemove,
   arrayUnion,
   collection,
   doc,
@@ -53,6 +54,26 @@ export function addRoundSnapshotToBatch(
     xTeams,
     confirmedAt: serverTimestamp(),
   })
+}
+
+/**
+ * 강퇴 배치에 편성 스냅샷 빼기를 얹는다(2026-10-09 리허설 문제 8). 스냅샷은 배정 확정 때 굳으므로
+ * 배정 뒤·게임 시작 전에 참가자 문서만 지우면, 내보낸 사람이 그 라운드 점수를 받고 남은 짝꿍은
+ * 화면엔 1인 팀인데 2인 팀(목숨 1·1배)으로 정산됐다. 같은 배치에서 그 완장 목록에서도 뺀다.
+ *
+ * arrayRemove라 같은 팀 두 사람을 잇달아 내보내도 서로를 되살리지 않는다. 마지막 한 명이 빠져 빈
+ * 목록이 된 완장은 키를 지우지 않고 읽는 쪽(toRoundLedger)이 버린다 — rules가 "완장은 그대로, 한
+ * 팀의 목록만 바뀜"으로 좁게 검증한다. 문서가 없으면(원장 도입 전 배정) update가 배치 전체를
+ * 실패시키므로 호출부가 원장 존재·정산 전 여부를 보고 얹는다.
+ */
+export function addSnapshotRemovalToBatch(
+  batch: WriteBatch,
+  code: string,
+  roundNo: number,
+  armband: string,
+  uid: string,
+): void {
+  batch.update(roundLedgerDoc(code, roundNo), { [`teams.${armband}`]: arrayRemove(uid) })
 }
 
 /**
@@ -153,6 +174,16 @@ function toUidListMap(raw: unknown): ArmbandMap<string[]> {
   return map
 }
 
+/**
+ * 편성 스냅샷 teams — 팀원이 모두 빠진 완장(배정 뒤 내보내기로 빈 목록이 된 1인 팀)은 버린다. 남겨
+ * 두면 아무도 차지 않은 완장이 아웃 판정에서 살아 있는 팀으로 셈해지고 생존 점수까지 받는다.
+ */
+function toTeams(raw: unknown): ArmbandMap<string[]> {
+  return Object.fromEntries(
+    Object.entries(toUidListMap(raw)).filter(([, members]) => members.length > 0),
+  )
+}
+
 function toTally(raw: unknown): ArmbandMap<TeamTally> | null {
   if (raw === null || typeof raw !== 'object') return null
   const tally: ArmbandMap<TeamTally> = {}
@@ -192,7 +223,7 @@ export function toRoundLedger(id: string, data: DocumentData): RoundLedger | nul
   return {
     roundNo,
     mode: data.mode,
-    teams: toUidListMap(data.teams),
+    teams: toTeams(data.teams),
     xTeams: Array.isArray(data.xTeams) ? data.xTeams.filter((x) => typeof x === 'string') : [],
     confirmedAtMs: toMillis(data.confirmedAt),
     tally: toTally(data.tally ?? null),
