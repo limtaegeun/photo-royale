@@ -20,5 +20,8 @@ export const staffChaseMode: GameModeDefinition = {
   targeting: ALL_ALLIES_TARGETING,
   // 참가자 전원이 동맹 — 콕핏 셔터를 잠근다(P07 §4.5 후속)
   killshotLock: '이 모드에서는 킬샷을 찍지 않아요. 스태프에게 잡히면 진행자가 아웃으로 기록해요.',
+  // 참가자끼리 사냥하지 않는 모드라 "X끼리만 사냥"을 지킬 방법이 없다
+  xModule: 'off',
+  xModuleLockReason: '스태프 추격전은 킬샷이 없어 X를 쓰지 않습니다',
   available: true,
 }

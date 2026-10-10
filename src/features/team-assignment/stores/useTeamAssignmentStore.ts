@@ -1,7 +1,13 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import type { Gender } from '@/features/auth'
-import { DEFAULT_GAME_MODE, GAME_MODES, groupForArmband, type GameModeId } from '@/features/game-mode'
+import {
+  DEFAULT_GAME_MODE,
+  GAME_MODES,
+  groupForArmband,
+  type GameModeId,
+  type XModulePolicy,
+} from '@/features/game-mode'
 import { assignTeams, deriveCarryover } from '../teamAssignment'
 import { ARMBAND_LABELS, armbandForTeamIndex } from '../armbands'
 import { pickXTeams } from '../xRole'
@@ -66,8 +72,12 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
   const canConfirm = computed(
     () => draftTeams.value.some((team) => team.members.length > 0) && !isConfirming.value,
   )
-  /** 이번 모드가 X 모듈을 강제하는지(왕잡기) — 켜져 있고 끌 수 없다 */
-  const isXModuleLocked = computed(() => GAME_MODES[draftGameMode.value].requiresXModule === true)
+  /** 이번 모드가 X 모듈을 다루는 방식 — 정하지 않은 모드는 진행자 선택 */
+  const xModulePolicy = computed<XModulePolicy>(
+    () => GAME_MODES[draftGameMode.value].xModule ?? 'optional',
+  )
+  /** 모드가 X를 정해 두어 스위치를 잠그는지 — 왕잡기는 켠 채, 꼬리잡기·그룹전·스태프 추격전은 끈 채 잠근다 */
+  const isXModuleLocked = computed(() => xModulePolicy.value !== 'optional')
 
   /** 현재 draftTeams(완장·멤버 수) 기준으로 X 팀을 재선정해 isXTeam을 다시 마킹한다 */
   function applyXModule(random: () => number = Math.random) {
@@ -127,8 +137,9 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
     }))
     draftRound.value = nextRound
     draftGameMode.value = gameMode
-    // 왕잡기로 여는 보드(직전 확정 모드 승계)는 X를 켜고 시작한다
-    if (isXModuleLocked.value) xModuleEnabled.value = true
+    // 모드가 X를 정해 두었으면 그 값으로 시작한다 — 왕잡기로 여는 보드(직전 확정 모드 승계)는 켜고,
+    // 항상 끄는 모드는 끈다. 진행자 선택 모드는 진행자가 둔 값을 유지한다(재배정)
+    if (isXModuleLocked.value) xModuleEnabled.value = xModulePolicy.value === 'required'
     if (xModuleEnabled.value) applyXModule(random)
     waitingPool.value = []
     selectedMemberId.value = null
@@ -256,20 +267,28 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
   /**
    * 게임 모드 선택 — 로컬 드래프트만 바꾼다. 확정 시 confirmAssignment로 room에 커밋된다.
    * UI(모드 선택 시트)가 미구현 모드를 막지만, 방어적으로 store 레벨에서도 무시한다.
+   *
+   * 모드를 바꾸면 X는 새 모드의 기본값으로 돌아간다 — 왕잡기만 켜고 X 팀을 새로 뽑으며, 그 밖의 모드는
+   * 진행자가 켜 둔 X까지 끈다. 보드는 직전 확정 모드로 열리므로, 왕잡기 다음 라운드에서 모드만 바꾸면
+   * 왕잡기의 X가 그대로 확정됐다(2026-10-09 행사 리허설 문제 2). 같은 모드를 다시 고르면 그대로 둔다.
    */
   function setGameMode(id: GameModeId, random: () => number = Math.random) {
-    if (!GAME_MODES[id].available) return
+    if (!GAME_MODES[id].available || id === draftGameMode.value) return
     draftGameMode.value = id
-    // 왕잡기는 그룹마다 왕(X)이 있어야 성립한다 — 고르는 순간 X 모듈을 켠다
-    if (isXModuleLocked.value && !xModuleEnabled.value) setXModule(true, random)
+    writeXModule(xModulePolicy.value === 'required', random)
   }
 
   /**
-   * X 모듈 토글 — 켜면 현재 편성 기준으로 X 팀을 재선정하고, 끄면 전 팀의 X를 해제한다.
-   * X를 강제하는 모드(왕잡기)에서는 끄기를 무시한다(UI도 스위치를 잠근다).
+   * X 모듈 토글(배정 보드 스위치) — 모드가 X를 정해 둔 모드(왕잡기·꼬리잡기·그룹전·스태프 추격전)에서는
+   * 무시한다(UI도 스위치를 잠근다).
    */
   function setXModule(enabled: boolean, random: () => number = Math.random) {
-    if (!enabled && isXModuleLocked.value) return
+    if (isXModuleLocked.value) return
+    writeXModule(enabled, random)
+  }
+
+  /** X 모듈 값을 반영한다 — 켜면 현재 편성 기준으로 X 팀을 재선정하고, 끄면 전 팀의 X를 해제한다 */
+  function writeXModule(enabled: boolean, random: () => number = Math.random) {
     xModuleEnabled.value = enabled
     if (enabled) {
       applyXModule(random)

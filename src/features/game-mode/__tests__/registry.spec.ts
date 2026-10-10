@@ -93,10 +93,30 @@ describe('game-mode registry', () => {
     }
   })
 
-  it('왕잡기만 X 모듈을 강제한다 — 왕이 없으면 성립하지 않는 모드', () => {
-    expect(GAME_MODES['king-hunt'].requiresXModule).toBe(true)
-    for (const id of GAME_MODE_IDS.filter((id) => id !== 'king-hunt')) {
-      expect(GAME_MODES[id].requiresXModule).toBeUndefined()
+  it('X 모듈은 모드가 정한다 — 일반전만 진행자 선택, 왕잡기는 항상 켬, 나머지 선택 가능 모드는 항상 끔', () => {
+    expect(GAME_MODES.normal.xModule).toBe('optional')
+    expect(GAME_MODES['king-hunt'].xModule).toBe('required')
+    expect(GAME_MODES['tail-chase'].xModule).toBe('off')
+    expect(GAME_MODES.group.xModule).toBe('off')
+    expect(GAME_MODES['staff-chase'].xModule).toBe('off')
+    // 선택할 수 있는 모드는 빠짐없이 정책을 밝힌다 — 새 모드를 열 때 X를 어떻게 다룰지 정하게 한다
+    for (const id of GAME_MODE_IDS.filter((id) => GAME_MODES[id].available)) {
+      expect(GAME_MODES[id].xModule).toBeDefined()
+    }
+  })
+
+  it('X 스위치를 잠그는 모드는 잠근 이유를 가지고, 진행자 선택 모드는 갖지 않는다', () => {
+    const lockedIds = GAME_MODE_IDS.filter(
+      (id) => GAME_MODES[id].xModule === 'required' || GAME_MODES[id].xModule === 'off',
+    )
+    const unlockedIds = GAME_MODE_IDS.filter((id) => !lockedIds.includes(id))
+
+    expect(lockedIds).toEqual(['tail-chase', 'group', 'king-hunt', 'staff-chase'])
+    for (const id of lockedIds) {
+      expect(GAME_MODES[id].xModuleLockReason).toContain('X')
+    }
+    for (const id of unlockedIds) {
+      expect(GAME_MODES[id].xModuleLockReason).toBeUndefined()
     }
   })
 

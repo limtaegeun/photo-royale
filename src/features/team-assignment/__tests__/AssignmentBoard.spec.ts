@@ -224,6 +224,29 @@ describe('AssignmentBoard', () => {
     expect(wrapper.text()).toContain('왕잡기는 그룹마다 왕(X)이 필요해 항상 켜집니다')
   })
 
+  it.each([
+    ['tail-chase', '꼬리잡기는 X를 쓰지 않습니다'],
+    ['group', '그룹전은 X를 쓰지 않습니다'],
+    ['staff-chase', '스태프 추격전은 킬샷이 없어 X를 쓰지 않습니다'],
+  ] as const)(
+    '왕잡기로 연 보드에서 %s를 고르면 X 스위치가 꺼진 채 잠기고 팀 카드의 X 배지가 사라진다',
+    async (mode, reason) => {
+      const { wrapper, store } = mountBoard()
+      store.startDraft(mixedFour(), 5, 'king-hunt', identityRandom)
+      await flushPromises()
+      expect(wrapper.find('[data-team="A"]').text()).toContain('X')
+
+      store.setGameMode(mode, identityRandom)
+      await flushPromises()
+
+      const toggle = wrapper.get('[role="switch"]')
+      expect(toggle.attributes('aria-checked')).toBe('false')
+      expect(toggle.attributes('disabled')).toBeDefined()
+      expect(wrapper.text()).toContain(reason)
+      expect(wrapper.find('[data-team="A"]').text()).not.toContain('X')
+    },
+  )
+
   it('칩을 선택한 뒤 팀 카드를 터치하면 해당 팀으로 이동한다', async () => {
     const { wrapper, store } = mountBoard()
     store.startDraft(mixedFour(), 1, 'normal', identityRandom)
