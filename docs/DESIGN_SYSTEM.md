@@ -127,7 +127,7 @@ src/shared/components/
 | `BaseDialog` / `BaseBottomSheet` / `BaseToast`(+`useToast`) | 오버레이 | |
 | `BaseCard` | 카드 서피스(`bg-elevated` + 보더 + radius + 패딩) | `padding` md(16)·lg(20)·none. `none`은 `BaseListRow`를 담는 리스트 카드용 |
 | `BaseSectionHeader` | 화면 섹션 제목 행(제목 + 요약 + `#aside` 슬롯) | 섹션 헤딩 위계를 `text-subheading`으로 고정 |
-| `BaseListRow` | 설정 행(라벨 + 캡션 / `#control` 슬롯) | 행 높이를 `--pr-size-control-lg`로 고정. 여러 행은 `BaseCard padding="none"` + `divide-y divide-stroke` |
+| `BaseListRow` | 설정 행(라벨 + 캡션 / `#control` 슬롯) | 행 높이를 `--pr-size-control-lg`로 고정. 캡션은 한 줄 말줄임 — 잠긴 컨트롤의 이유처럼 잘리면 안 되는 캡션은 `wrapCaption`(줄바꿈, 행이 늘어난다). 여러 행은 `BaseCard padding="none"` + `divide-y divide-stroke` |
 
 **타이포 위계 규칙(화면 간 통일)**: 화면 섹션 헤딩 = `text-subheading`(=`BaseSectionHeader`) / 카드 내부 타이틀 = `text-label` / 보조 설명·요약 = `text-caption`. 같은 위계에 서로 다른 역할 유틸리티를 쓰지 않는다.
 

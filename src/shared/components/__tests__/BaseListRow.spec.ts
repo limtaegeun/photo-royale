@@ -17,6 +17,20 @@ describe('BaseListRow', () => {
     expect(wrapper.classes()).toContain('min-h-(--pr-size-control-lg)')
   })
 
+  it('wrapCaption이면 캡션을 자르지 않고 어절 단위로 줄바꿈한다', () => {
+    const wrapper = mount(BaseListRow, {
+      props: {
+        label: '특수 완장 X',
+        caption: '스태프 추격전은 킬샷이 없어 X를 쓰지 않습니다',
+        wrapCaption: true,
+      },
+    })
+
+    const caption = wrapper.findAll('p')[1]!
+    expect(caption.classes()).toEqual(expect.arrayContaining(['text-caption', 'break-keep']))
+    expect(caption.classes()).not.toContain('truncate')
+  })
+
   it('caption이 없으면 캡션 문단을 렌더하지 않는다', () => {
     const wrapper = mount(BaseListRow, { props: { label: '특수 완장 X' } })
     expect(wrapper.findAll('p')).toHaveLength(1)

@@ -210,7 +210,8 @@ async function onConfirm() {
         </template>
       </BaseListRow>
 
-      <BaseListRow label="특수 완장 X" :caption="xModuleCaption">
+      <!-- 잠금 이유는 390px에서 한 줄을 넘는다 — 잘리면 왜 못 바꾸는지 읽을 수 없어 줄바꿈한다 -->
+      <BaseListRow label="특수 완장 X" :caption="xModuleCaption" wrap-caption>
         <template #control>
           <BaseSwitch
             v-model="isXModuleEnabled"
