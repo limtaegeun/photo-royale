@@ -9,5 +9,7 @@ export type { Participant, RoomInfo, RoomStatus, RoundLedgerSettlement, RoundSta
 export { hasPlayedRound, markRoundPlayed } from './roundPlayMarker'
 // 라운드 시계 — 방 문서의 round를 남은 시간으로 읽는 해석은 방 데이터 소유자인 여기가 갖는다
 export { computeRoundRemainingMs } from './roundClock'
+// 행사장 지도(P08 §2.2) — 대기실에서 받아 둔 지도를 콕핏이 다시 내려받지 않고 그대로 연다
+export { useVenueMapStore } from './stores/useVenueMapStore'
 // 서버 시각 보정 — 라운드 종료 판정이 기기 시계에 좌우되지 않게 한다(라운드 운영 화면도 같이 쓴다)
 export { serverNow } from './serverClock'

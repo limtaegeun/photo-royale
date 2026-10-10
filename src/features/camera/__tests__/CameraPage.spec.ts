@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
-import { ref } from 'vue'
+import { reactive, ref } from 'vue'
 import type { RoomInfo, RoundState } from '@/features/waiting-room'
 
 const replaceMock = vi.fn<(to: unknown) => void>()
@@ -92,8 +92,22 @@ const subscribeParticipantsMock =
     ) => () => void
   >()
 
+/**
+ * 행사장 지도 보관(useVenueMapStore) — 대기실에서 받아 둔 지도를 콕핏이 그대로 연다. 콕핏은 track으로
+ * 이 방을 추적하고(이미 받는 중이면 그대로) image만 읽으므로, 테스트는 image를 바꿔 지도 도착을 흉내 낸다.
+ * 테스트마다 새로 만든다 — 공유하면 앞 테스트에서 남은 화면이 다음 테스트의 변경에 반응해 다시 그려진다
+ */
+function createVenueMapMock() {
+  return reactive({
+    image: null as string | null,
+    track: vi.fn<(code: string) => void>(),
+  })
+}
+let venueMapMock = createVenueMapMock()
+
 vi.mock('@/features/waiting-room', () => {
   return {
+    useVenueMapStore: () => venueMapMock,
     normalizeRoomCode: (code: string) => code.trim().toUpperCase(),
     isAssignedInRound: (
       participant: { team: string | null; assignedRound: number },
@@ -199,7 +213,6 @@ function playingRoom(overrides: Partial<RoomInfo> = {}): RoomInfo {
     gameMode: 'normal',
     roundModes: {},
     round: RUNNING_ROUND,
-    mapImageUrl: null,
     ...overrides,
   }
 }
@@ -311,6 +324,7 @@ function findShutterKnob(wrapper: VueWrapper) {
 }
 
 beforeEach(() => {
+  venueMapMock = createVenueMapMock()
   createObjectURL.mockClear()
   revokeObjectURL.mockClear()
   replaceMock.mockReset()
@@ -939,13 +953,13 @@ describe('CameraPage', () => {
   })
 
   /**
-   * P08 §2.5 — 아이템 2칸은 MVP 제외(2026-09-20), 지도는 방에 mapImageUrl이 등록된 뒤에만 열린다.
+   * P08 §2.5 — 아이템 2칸은 MVP 제외(2026-09-20), 지도는 행사장 지도를 받은 뒤에만 열린다.
    * 기능 없는 버튼을 자리만 남기지 않으므로 지도가 없는 방의 하단 격자는 셔터 + 기록 한 칸이다.
    */
   it('지도가 등록되지 않은 방은 아이템·지도 슬롯 없이 셔터와 기록 버튼만 둔다', async () => {
     const deliverRoom = captureRoomSnapshot()
     const wrapper = await mountWithActiveCamera()
-    deliverRoom(playingRoom({ mapImageUrl: null }))
+    deliverRoom(playingRoom())
     await flushPromises()
 
     expect(wrapper.text()).not.toContain('아이템')
@@ -958,14 +972,24 @@ describe('CameraPage', () => {
     expect(recordButton.text()).toContain('기록')
   })
 
-  /** P08 §2.2 단계 1 — 운영자가 등록한 지도 URL이 있으면 왼쪽 칸에 지도 슬롯이 열린다 */
+  /**
+   * P08 §2.2 — 진행자가 올린 지도를 받았으면 왼쪽 칸에 지도 슬롯이 열린다. 지도는 방 문서가 아니라
+   * 따로 받아 두는 스토어에 있어, 콕핏은 이 방을 추적만 하고(대기실에서 이미 받았으면 그대로) 이미지를 읽는다.
+   */
   describe('지도 슬롯(3)', () => {
-    const MAP_URL = 'https://cdn.example.com/venue/map.png'
+    const MAP_IMAGE = 'data:image/jpeg;base64,venue-map'
 
-    it('방에 mapImageUrl이 있으면 왼쪽 칸에 지도 버튼이 나타나고, 지워지면 다시 숨는다', async () => {
+    it('콕핏에 들어오면 이 방의 지도를 추적한다 — 새로고침으로 대기실을 거치지 않아도 지도를 받는다', async () => {
+      await mountWithActiveCamera()
+
+      expect(venueMapMock.track).toHaveBeenCalledExactlyOnceWith('AB2C')
+    })
+
+    it('지도를 받았으면 왼쪽 칸에 지도 버튼이 나타나고, 없어지면 다시 숨는다', async () => {
       const deliverRoom = captureRoomSnapshot()
       const wrapper = await mountWithActiveCamera()
-      deliverRoom(playingRoom({ mapImageUrl: MAP_URL }))
+      deliverRoom(playingRoom())
+      venueMapMock.image = MAP_IMAGE
       await flushPromises()
 
       const mapButton = wrapper.find('button[aria-label="행사장 지도 열기"]')
@@ -976,15 +1000,16 @@ describe('CameraPage', () => {
       // 기록 슬롯은 그대로 오른쪽에 남는다
       expect(wrapper.find('button[aria-label="내 기록 열기"]').exists()).toBe(true)
 
-      deliverRoom(playingRoom({ mapImageUrl: null }))
+      venueMapMock.image = null
       await flushPromises()
       expect(wrapper.find('button[aria-label="행사장 지도 열기"]').exists()).toBe(false)
     })
 
-    it('지도 버튼을 누르면 등록된 이미지를 담은 행사장 지도 시트가 열린다', async () => {
+    it('지도 버튼을 누르면 받아 둔 이미지를 담은 행사장 지도 시트가 열린다', async () => {
       const deliverRoom = captureRoomSnapshot()
       const wrapper = await mountWithActiveCamera()
-      deliverRoom(playingRoom({ mapImageUrl: MAP_URL }))
+      deliverRoom(playingRoom())
+      venueMapMock.image = MAP_IMAGE
       await flushPromises()
       expect(document.body.querySelector('img[alt="행사장 지도"]')).toBeNull()
 
@@ -993,7 +1018,7 @@ describe('CameraPage', () => {
 
       expect(document.body.textContent).toContain('행사장 지도')
       const image = document.body.querySelector<HTMLImageElement>('img[alt="행사장 지도"]')
-      expect(image?.getAttribute('src')).toBe(MAP_URL)
+      expect(image?.getAttribute('src')).toBe(MAP_IMAGE)
       wrapper.unmount()
     })
 
@@ -1001,7 +1026,8 @@ describe('CameraPage', () => {
       mockDisplayState.value = 'paused'
       const deliverRoom = captureRoomSnapshot()
       const wrapper = await mountWithActiveCamera()
-      deliverRoom(playingRoom({ mapImageUrl: MAP_URL }))
+      deliverRoom(playingRoom())
+      venueMapMock.image = MAP_IMAGE
       await flushPromises()
       expect(findShutter(wrapper).attributes('disabled')).toBeDefined()
 
@@ -1010,7 +1036,7 @@ describe('CameraPage', () => {
       await mapButton.trigger('click')
       await flushPromises()
 
-      expect(document.body.querySelector('img[alt="행사장 지도"]')?.getAttribute('src')).toBe(MAP_URL)
+      expect(document.body.querySelector('img[alt="행사장 지도"]')?.getAttribute('src')).toBe(MAP_IMAGE)
       wrapper.unmount()
     })
   })

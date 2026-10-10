@@ -2,14 +2,14 @@
 import BaseBottomSheet from '@/shared/components/BaseBottomSheet.vue'
 
 /**
- * 콕핏 지도 시트(P08 슬롯 3, 단계 1 정적) — 운영자가 방에 등록한 행사장 지도 이미지를 콕핏을 떠나지
+ * 콕핏 지도 시트(P08 슬롯 3, 단계 1 정적) — 진행자가 올린 행사장 지도 이미지를 콕핏을 떠나지
  * 않고 본다. 경계·안전 구역·집결지를 뛰는 중에 한 번에 확인하는 용도라 이미지 하나가 전부다.
  * 확대는 브라우저 기본(핀치 줌·스크롤)에 맡기고, 링크·다운로드 경로는 두지 않는다.
- * 지도가 등록되지 않은 방은 콕핏이 슬롯 자체를 숨기므로 이 시트는 URL이 있을 때만 마운트된다.
+ * 지도가 없는 방은 콕핏이 슬롯 자체를 숨기므로 이 시트는 지도를 받은 뒤에만 마운트된다.
  */
 interface Props {
-  /** 방 문서의 mapImageUrl — rules가 https 문자열만 받아 그대로 src로 쓴다 */
-  mapImageUrl: string
+  /** 행사장 지도(JPEG 데이터 URL) — 대기실에서 미리 받아 둔 것이라 네트워크 없이 바로 그린다 */
+  mapImage: string
 }
 
 defineProps<Props>()
@@ -26,7 +26,7 @@ const open = defineModel<boolean>('open', { default: false })
         class="max-h-[70dvh] touch-pan-x touch-pan-y touch-pinch-zoom overflow-auto rounded-lg border border-stroke bg-surface"
       >
         <img
-          :src="mapImageUrl"
+          :src="mapImage"
           alt="행사장 지도"
           decoding="async"
           class="w-full rounded-lg object-contain"

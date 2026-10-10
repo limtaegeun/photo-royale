@@ -2,11 +2,11 @@ import { describe, it, expect, afterEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import CockpitMapSheet from '../components/CockpitMapSheet.vue'
 
-const MAP_URL = 'https://cdn.example.com/venue/map.png'
+const MAP_IMAGE = 'data:image/jpeg;base64,venue-map'
 
 /** 시트는 포털로 body에 렌더된다 — 포털 마운트를 기다린 뒤 document.body에서 확인한다 */
 async function mountSheet(open = true) {
-  const wrapper = mount(CockpitMapSheet, { props: { mapImageUrl: MAP_URL, open } })
+  const wrapper = mount(CockpitMapSheet, { props: { mapImage: MAP_IMAGE, open } })
   await flushPromises()
   return wrapper
 }
@@ -25,7 +25,7 @@ describe('CockpitMapSheet', () => {
 
     const image = document.body.querySelector<HTMLImageElement>('img[alt="행사장 지도"]')
     expect(image).not.toBeNull()
-    expect(image!.getAttribute('src')).toBe(MAP_URL)
+    expect(image!.getAttribute('src')).toBe(MAP_IMAGE)
   })
 
   it('이미지는 스크롤·핀치 줌이 되는 상자 안에 있고 링크·다운로드 경로가 없다', async () => {
