@@ -38,14 +38,17 @@ const subscribeMySubmissionsMock =
   >()
 /** 라운드 종료 게이트 테스트가 마운트 중간에 바꿔 끼울 수 있도록 실제 ref로 둔다 */
 const mockDisplayState = ref<'idle' | 'running' | 'paused' | 'ended'>('running')
+/** 상대 시각 표기 — 기본은 고정 문구, 공지 시각 테스트만 문구를 바꾸고 넘긴 인자를 검증한다 */
+const formatRelativeTimeMock = vi.fn<(createdAtMs: number | null, nowMs: number) => string>()
 
 vi.mock('@/features/round-ops', async () => {
   const { computed, ref } = await import('vue')
   return {
     SUBMISSION_PHOTO_PREFIX: 'data:image/jpeg;base64,',
     SUBMISSION_PHOTO_MAX_LENGTH: 900000,
-    // 기록 시트의 제출 시각 표기 — 이 파일은 시트 내용을 검증하지 않으므로(별도 CockpitRecordSheet.spec) 고정 문구
-    formatRelativeTime: () => '방금',
+    // 공지·기록 시트의 시각 표기 — 기록 시트 내용은 이 파일이 검증하지 않는다(별도 CockpitRecordSheet.spec)
+    formatRelativeTime: (createdAtMs: number | null, nowMs: number) =>
+      formatRelativeTimeMock(createdAtMs, nowMs),
     submitKillshot: (code: string, input: Record<string, unknown>) =>
       submitKillshotMock(code, input),
     subscribeToMySubmissions: (
@@ -346,6 +349,7 @@ beforeEach(() => {
   subscribeMySubmissionsMock.mockReset().mockReturnValue(unsubscribeMySubmissionsMock)
   submitKillshotMock.mockReset().mockResolvedValue(undefined)
   mockDisplayState.value = 'running'
+  formatRelativeTimeMock.mockReset().mockReturnValue('방금')
 })
 
 afterEach(() => {
@@ -1143,6 +1147,34 @@ describe('CameraPage', () => {
     expect(notice.text()).toBe('곧 시작합니다.')
     expect(notice.classes()).not.toContain('notice-marquee')
     expect(notice.attributes('style')).toBeUndefined()
+  })
+
+  /**
+   * 공지는 라운드가 바뀌어도 마지막 1건이 남는다 — 보낸 시각이 없으면 지난 라운드 공지가 방금 온
+   * 공지처럼 읽힌다(2026-10-09 리허설 문제 4). 시각은 흐르는 본문 밖에 있어야 긴 공지에서도 남는다.
+   */
+  it('공지를 보낸 시각을 흐르는 본문 밖에 함께 보여 준다', async () => {
+    formatRelativeTimeMock.mockReturnValue('12분 전')
+    subscribeNoticeMock.mockImplementation((_code, onChange) => {
+      onChange({ id: 'notice-old', text: '10분 뒤 분수대 앞에 보급품이 놓입니다.', createdAtMs: 1_000 })
+      return unsubscribeNoticeMock
+    })
+    const wrapper = await mountWithActiveCamera()
+    const sentAt = wrapper.find('[data-testid="notice-sent-at"]')
+    const notice = wrapper.find('#cockpit-notice')
+
+    expect(sentAt.text()).toBe('12분 전')
+    expect(formatRelativeTimeMock).toHaveBeenCalledWith(1_000, expect.any(Number))
+    expect(sentAt.classes()).toContain('shrink-0')
+    expect(notice.element.parentElement!.contains(sentAt.element)).toBe(false)
+    expect(notice.text()).toBe('10분 뒤 분수대 앞에 보급품이 놓입니다.')
+  })
+
+  it('공지가 없으면 보낸 시각을 띄우지 않는다', async () => {
+    const wrapper = await mountWithActiveCamera()
+
+    expect(wrapper.find('#cockpit-notice').text()).toBe('새로운 공지가 없습니다.')
+    expect(wrapper.find('[data-testid="notice-sent-at"]').exists()).toBe(false)
   })
 
   it('HUD 버튼에 공용 패딩 옵션을 사용하고 셔터 전용 variant를 적용한다', async () => {
