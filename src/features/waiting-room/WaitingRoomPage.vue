@@ -132,6 +132,34 @@ const guestCtaLabel = computed(() => {
   return showGuestAssignment.value ? '라운드 준비 완료' : '확인하고 준비 완료'
 })
 
+/** 명단 묶음 제목 색 — 상태를 색과 글자로 함께 표기한다. 동적 클래스라 리터럴 맵으로 둔다 */
+const ROSTER_GROUP_TITLE_CLASS = {
+  waiting: 'text-warning',
+  ready: 'text-success',
+} as const
+
+/**
+ * 입장 명단을 준비 상태로 나눈다. 대기 묶음을 위에 둬서 진행자가 아직 준비하지 않은 사람을
+ * 바로 찾아 이름으로 부를 수 있게 한다. 칩마다 붙던 상태 점·글자는 3열 칩의 이름 칸을 먹어
+ * 닉네임이 첫 글자만 보였으므로(10/9 리허설 40명), 상태는 묶음 제목이 맡고 칩에는 이름만 둔다.
+ * 빈 묶음은 그리지 않고, 묶음 안 순서는 명단 순서를 그대로 따른다.
+ * roster는 이번 라운드 배정이 아닌 완장을 숨긴 명단이다(유령 완장 방지).
+ */
+const rosterGroups = computed(() =>
+  [
+    {
+      key: 'waiting' as const,
+      label: '대기',
+      members: roster.value.filter((participant) => !participant.isReady),
+    },
+    {
+      key: 'ready' as const,
+      label: '준비',
+      members: roster.value.filter((participant) => participant.isReady),
+    },
+  ].filter((group) => group.members.length > 0),
+)
+
 /**
  * 팀 배정 시작(호스트) — 참가자·레디 상태를 검증한 뒤 드래프트를 채우고 보드를 연다.
  * 배정 대상은 명단(플레이어)뿐이며, 호스트(진행자)는 플레이어가 아니라 제외된다.
@@ -481,24 +509,34 @@ async function copyInviteLink() {
             <p v-if="canKick && participantCount > 0" class="text-caption text-content-tertiary">
               참가자를 누르면 방에서 내보낼 수 있어요.
             </p>
-            <!-- roster는 이번 라운드 배정이 아닌 완장을 숨긴 명단이다(유령 완장 방지) -->
-            <ul v-if="participantCount > 0" class="grid grid-cols-3 gap-2">
-              <li v-for="participant in roster" :key="participant.id">
-                <!-- 호스트(대기 중): 칩 전체가 내보내기 확인을 여는 버튼이다(히트 확장은 칩 소유) -->
-                <KickableRosterChip
-                  v-if="canKick"
-                  :participant="participant"
-                  @kick="requestKick(participant)"
-                />
-                <PlayerChip
-                  v-else
-                  :name="participant.name"
-                  :team="participant.team"
-                  :gender="participant.gender"
-                  :is-ready="participant.isReady"
-                />
-              </li>
-            </ul>
+            <!-- 준비 상태별 묶음(rosterGroups) — 상태는 묶음 제목이 말하고 칩에는 이름만 둔다 -->
+            <div v-if="participantCount > 0" class="flex flex-col gap-4">
+              <div v-for="group in rosterGroups" :key="group.key" class="flex flex-col gap-2">
+                <h3
+                  :id="`roster-group-${group.key}`"
+                  class="text-label"
+                  :class="ROSTER_GROUP_TITLE_CLASS[group.key]"
+                >
+                  {{ group.label }} {{ group.members.length }}명
+                </h3>
+                <ul class="grid grid-cols-3 gap-2" :aria-labelledby="`roster-group-${group.key}`">
+                  <li v-for="participant in group.members" :key="participant.id">
+                    <!-- 호스트(대기 중): 칩 전체가 내보내기 확인을 여는 버튼이다(히트 확장은 칩 소유) -->
+                    <KickableRosterChip
+                      v-if="canKick"
+                      :participant="participant"
+                      @kick="requestKick(participant)"
+                    />
+                    <PlayerChip
+                      v-else
+                      :name="participant.name"
+                      :team="participant.team"
+                      :gender="participant.gender"
+                    />
+                  </li>
+                </ul>
+              </div>
+            </div>
             <p v-else class="text-caption text-content-secondary">
               아직 입장한 참가자가 없어요. 초대 링크를 공유해 보세요.
             </p>

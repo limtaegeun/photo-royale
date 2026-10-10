@@ -17,7 +17,7 @@
 | 4 | 인증 플로우 `?code=` 쿼리 보존 | `LoginPage.vue` / `SignupPage.vue` / `useAuthGuard.ts` |
 | 5 | 내가 만든 방 목록 (이어하기 + 바텀 시트) | `src/features/waiting-room/components/MyRoomList.vue` |
 | 6 | P02 대기실: 멱등 입장·호스트(진행자) 모델·실시간 명단·레디·초대 링크·playing 전이 | `WaitingRoomPage.vue` / `useWaitingRoomStore.ts` / `api/rooms.ts` |
-| 7 | 참가자 칩 (팀 보더·성별 이름 색·레디 상태·접근성 라벨) | `components/PlayerChip.vue` |
+| 7 | 참가자 칩 (팀 보더·성별 이름 색·접근성 라벨). 레디 상태는 칩이 아니라 명단의 `대기 N명`·`준비 N명` 묶음 제목이 표시한다(2026-10-10) | `components/PlayerChip.vue` / `WaitingRoomPage.vue` |
 | 8 | 프로필 성별 조회 | `src/features/auth/api/profile.ts` |
 | 9 | 라우트 `/waiting-room/:roomCode` (requiresAuth) | `src/router/index.ts` |
 | 10 | 공용: BaseBadge outline, 닫기 버튼 SVG, gender 토큰, 버튼 pointer 커서 | `src/shared/**` |
@@ -123,11 +123,11 @@
 | ID | 우선 | 사전조건 | 절차 | 기대 결과 |
 |---|---|---|---|---|
 | F-01 | P1 | A(호스트)·B·C 3클라이언트 | B, C 순차 입장 | 호스트·기존 참가자 화면에 새 참가자가 **실시간** 추가(입장 순 정렬), `N명 입장`·`참가자 N명` 카운트 동기 갱신 |
-| F-02 | P1 | F-01 | B가 레디 → C 화면 관찰 | C·호스트 화면에서 B 칩이 대기(warning)→준비(success)로 실시간 전환, `준비 N명`·`N명 레디` 갱신 |
+| F-02 | P1 | F-01 | B가 레디 → C 화면 관찰 | C·호스트 화면에서 B 칩이 `대기 N명` 묶음(warning 제목)에서 `준비 N명` 묶음(success 제목)으로 실시간 이동, 두 묶음 제목 수·`N명 입장 · N명 준비` 갱신. 대기 묶음이 비면 묶음째 사라진다 |
 | F-03 [unit] | P2 | 게스트 0명 방 | 호스트 입장 | 명단 대신 `아직 입장한 참가자가 없어요. 초대 링크를 공유해 보세요.` 안내 |
 | F-04 [unit] | P2 | 콘솔에서 `participants/{호스트uid}` 문서 수동 생성(레거시 데이터 재현) | 대기실 화면 확인 | 호스트 문서는 명단·카운트에서 제외됨 |
-| F-05 [unit] | P2 | B(male)·C(female) 입장 | 칩 확인 | 이름 색: 남 파랑(`text-gender-male`)·여 빨강(`text-gender-female`)·성별 없음 기본색. 팀 미배정이라 중립 보더. 레디 dot·라벨(준비/대기) 병기 |
-| F-06 [unit] | P3 | F-05 | 접근성 트리/aria-label 확인 | `{이름} · {남성/여성} · {팀명/팀 미배정} · {준비/대기}` 형식 — 색약 대응 라벨 병기 |
+| F-05 [unit] | P2 | B(male)·C(female) 입장 | 칩 확인 | 이름 색: 남 파랑(`text-gender-male`)·여 빨강(`text-gender-female`)·성별 없음 기본색. 팀 미배정이라 중립 보더. 칩에는 이름만 있고(상태 점·글자 없음) 레디 상태는 `대기 N명`(위)·`준비 N명`(아래) 묶음 제목이 색+글자로 표시 |
+| F-06 [unit] | P3 | F-05 | 접근성 트리/aria-label 확인 | 칩 `{이름} · {남성/여성} · {팀명/팀 미배정}` 형식 — 색약 대응 라벨 병기. 상태는 목록을 이름 붙인 묶음 제목(`aria-labelledby`)이 읽힌다. 호스트 칩 버튼은 `{이름}({준비/대기}) 내보내기` |
 | F-07 | P3 | 12자 닉네임 계정 입장 | 칩 확인 | 긴 이름 truncate, 칩 레이아웃 안 깨짐 |
 | F-08 | P3 | 참가자 7명+ | 명단 확인 | 3열 그리드 유지, 명단이 넘칠 때만 세로 스크롤 발생(콘텐츠 적을 땐 스크롤 없음) |
 | F-09 | P2 | B 계정을 두 기기에서 동시 로그인 | 두 기기 모두 같은 방 입장 → 한 기기에서 레디 | 참가자 문서는 1개(멱등), 양 기기 상태 실시간 동기(둘 다 `준비 완료` disabled), 명단 중복 없음 |
