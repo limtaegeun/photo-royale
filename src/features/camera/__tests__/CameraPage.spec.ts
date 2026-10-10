@@ -245,6 +245,8 @@ function stubGetUserMedia(impl: (constraints: MediaStreamConstraints) => Promise
 // jsdom은 canvas 2d 컨텍스트/toBlob을 구현하지 않으므로 프로토타입을 스텁한다
 function stubCanvas() {
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+    // 제출 인코딩(encodeJpegDataUrl)은 투명 픽셀을 흰 바탕으로 덮고 나서 그린다
+    fillRect: vi.fn<(x: number, y: number, w: number, h: number) => void>(),
     drawImage:
       vi.fn<(image: CanvasImageSource, dx: number, dy: number, dw: number, dh: number) => void>(),
   } as unknown as CanvasRenderingContext2D)
