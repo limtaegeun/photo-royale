@@ -17,5 +17,8 @@ export const groupMode: GameModeDefinition = {
   scoring: groupScoring,
   // 동맹은 잡을 수 없다 — 판정 시트에서 제출 팀과 같은 그룹을 비활성화한다
   targeting: ALLY_GROUP_TARGETING,
+  // 규칙서에 X 규칙이 없고, 4색이 모두 인쇄된 X 완장은 "같은 색은 동맹"으로 편을 가를 수 없다
+  xModule: 'off',
+  xModuleLockReason: '그룹전은 X를 쓰지 않습니다',
   available: true,
 }

@@ -13,5 +13,7 @@ export const normalMode: GameModeDefinition = {
   ],
   // 일반전 원점수(P07 §4.1) — 팀 킬 10 · 낙오 포착 킬 30 · 종료 시 생존 5(탈락 모델 M3), 팀원 각자에게
   scoring: normalScoring,
+  // 규칙서 §3.1이 X 규칙("오직 X끼리만 서로를 사냥")을 정한 모드 — 진행자가 켜고 끈다(판정은 진행자 재량, P07 §4.1)
+  xModule: 'optional',
   available: true,
 }

@@ -390,7 +390,7 @@ describe('useTeamAssignmentStore', () => {
     })
 
     /** 왕잡기(P07 M4-3) — 왕 = X 겸직 팀이라 X 모듈 없이는 성립하지 않는다 */
-    it('왕잡기를 고르면 X 모듈이 켜지고 잠긴다 — 끄기는 무시되고 다른 모드로 바꾸면 풀린다', () => {
+    it('왕잡기를 고르면 X 모듈이 켜지고 잠긴다 — 끄기는 무시되고, 다른 모드로 바꾸면 꺼진다', () => {
       const store = useTeamAssignmentStore()
       store.startDraft(mixedFour(), 1, 'normal', identityRandom)
       expect(store.isXModuleLocked).toBe(false)
@@ -407,8 +407,8 @@ describe('useTeamAssignmentStore', () => {
 
       store.setGameMode('normal')
       expect(store.isXModuleLocked).toBe(false)
-      store.setXModule(false)
       expect(store.xModuleEnabled).toBe(false)
+      expect(store.draftTeams.every((team) => !team.isXTeam)).toBe(true)
     })
 
     it('왕잡기로 보드를 열면(직전 확정 모드 승계) X 모듈이 켜진 채 시작한다', () => {
@@ -447,6 +447,104 @@ describe('useTeamAssignmentStore', () => {
       store.reset()
 
       expect(store.draftGameMode).toBe(DEFAULT_GAME_MODE)
+    })
+  })
+
+  /**
+   * X 모듈은 모드가 정한다 — 보드가 직전 확정 모드(왕잡기)로 열린 뒤 모드만 바꾸면 왕잡기의 X가
+   * 다음 라운드에 그대로 확정됐다(2026-10-09 행사 리허설 문제 2·3).
+   */
+  describe('X 모듈 — 모드를 바꾸면 새 모드의 기본값', () => {
+    it('왕잡기로 연 보드에서 스태프 추격전을 고르면 X가 꺼지고 잠긴다 — 확정해도 X 팀이 없다', async () => {
+      const store = useTeamAssignmentStore()
+      store.startDraft(mixedFour(), 5, 'king-hunt', identityRandom)
+      expect(store.draftTeams.some((team) => team.isXTeam)).toBe(true)
+
+      store.setGameMode('staff-chase', identityRandom)
+
+      expect(store.xModuleEnabled).toBe(false)
+      expect(store.isXModuleLocked).toBe(true)
+      expect(store.draftTeams.every((team) => !team.isXTeam)).toBe(true)
+
+      await store.confirm('AB2C')
+
+      const teams = confirmAssignmentMock.mock.calls[0]![3] as { isXTeam: boolean }[]
+      expect(teams.every((team) => !team.isXTeam)).toBe(true)
+    })
+
+    it('왕잡기로 연 보드에서 일반전을 고르면 X가 꺼지고, 진행자가 다시 켤 수 있다', () => {
+      const store = useTeamAssignmentStore()
+      store.startDraft(mixedFour(), 5, 'king-hunt', identityRandom)
+
+      store.setGameMode('normal', identityRandom)
+
+      expect(store.xModuleEnabled).toBe(false)
+      expect(store.isXModuleLocked).toBe(false)
+      expect(store.draftTeams.every((team) => !team.isXTeam)).toBe(true)
+
+      store.setXModule(true, identityRandom)
+
+      expect(store.xModuleEnabled).toBe(true)
+      expect(store.draftTeams.some((team) => team.isXTeam)).toBe(true)
+    })
+
+    it('일반전에서 켠 X도 모드를 바꾸면 꺼진다 — 왕잡기를 거쳐 일반전으로 돌아와도 꺼진 채다', () => {
+      const store = useTeamAssignmentStore()
+      store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+      store.setXModule(true, identityRandom)
+
+      store.setGameMode('king-hunt', identityRandom)
+      expect(store.xModuleEnabled).toBe(true)
+
+      store.setGameMode('normal', identityRandom)
+
+      expect(store.xModuleEnabled).toBe(false)
+      expect(store.draftTeams.every((team) => !team.isXTeam)).toBe(true)
+    })
+
+    it.each(['tail-chase', 'group', 'staff-chase'] as const)(
+      '%s에서는 스위치를 켜도 X가 켜지지 않는다',
+      (mode) => {
+        const store = useTeamAssignmentStore()
+        store.startDraft(mixedFour(), 1, mode, identityRandom)
+        expect(store.isXModuleLocked).toBe(true)
+
+        store.setXModule(true, identityRandom)
+
+        expect(store.xModuleEnabled).toBe(false)
+        expect(store.draftTeams.every((team) => !team.isXTeam)).toBe(true)
+      },
+    )
+
+    it('항상 끄는 모드로 보드를 열면 미리 켜 둔 X도 꺼진 채 시작한다', () => {
+      const store = useTeamAssignmentStore()
+      store.setXModule(true, identityRandom) // 빈 보드(기본 모드 일반전)에서 켜 둔다
+
+      store.startDraft(mixedFour(), 1, 'group', identityRandom)
+
+      expect(store.xModuleEnabled).toBe(false)
+      expect(store.draftTeams.every((team) => !team.isXTeam)).toBe(true)
+    })
+
+    it('같은 모드를 다시 고르면 진행자가 켜 둔 X를 그대로 둔다', () => {
+      const store = useTeamAssignmentStore()
+      store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+      store.setXModule(true, identityRandom)
+
+      store.setGameMode('normal', identityRandom)
+
+      expect(store.xModuleEnabled).toBe(true)
+      expect(store.draftTeams.some((team) => team.isXTeam)).toBe(true)
+    })
+
+    it('왕잡기에서 재배정하면 X를 켠 채 X 팀을 새 편성으로 다시 뽑는다', () => {
+      const store = useTeamAssignmentStore()
+      store.startDraft(mixedFour(), 1, 'king-hunt', identityRandom)
+
+      store.reroll(identityRandom)
+
+      expect(store.xModuleEnabled).toBe(true)
+      expect(store.draftTeams.some((team) => team.isXTeam)).toBe(true)
     })
   })
 

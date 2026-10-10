@@ -22,7 +22,8 @@ export const kingHuntMode: GameModeDefinition = {
   scoring: kingHuntScoring,
   targeting: ALLY_GROUP_TARGETING,
   // 왕이 없으면 성립하지 않는 모드 — 배정 보드가 X 모듈을 켜고 잠근다
-  requiresXModule: true,
+  xModule: 'required',
+  xModuleLockReason: '왕잡기는 그룹마다 왕(X)이 필요해 항상 켜집니다',
   xTeamCaption: '우리 그룹의 왕이에요. 잡히면 그룹 전체가 감점을 받아요.',
   available: true,
 }

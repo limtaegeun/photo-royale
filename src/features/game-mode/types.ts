@@ -79,6 +79,15 @@ export interface TargetRule {
   blockedBadge: string
 }
 
+/**
+ * 모드가 배정 보드의 특수 완장 X 모듈을 다루는 방식. 모드를 바꾸면 X는 새 모드의 기본값으로 돌아간다
+ * — 왕잡기에서 켜진 X가 다음 라운드 모드로 넘어가던 결함의 수정(2026-10-09 행사 리허설 문제 2·3).
+ * - optional: 진행자가 켜고 끈다. 꺼진 채 시작한다(일반전 — 규칙서 §3.1이 X 규칙을 정한 모드)
+ * - required: 항상 켜고 잠근다(왕잡기 — 그룹마다 왕이 있어야 한다)
+ * - off: 항상 끄고 잠근다(규칙서에 X 규칙이 없고, "X끼리만 사냥"이 모드의 사냥 규칙과 부딪히는 모드)
+ */
+export type XModulePolicy = 'optional' | 'required' | 'off'
+
 export interface GameModeDefinition {
   id: GameModeId
   /** 규칙서 배지·모드 선택 리스트에 쓰는 한글 라벨 */
@@ -94,8 +103,10 @@ export interface GameModeDefinition {
   scoring: ModeScoring
   /** 판정 시트의 대상 제한 — 없으면 제출 팀·탈락 팀 외 모든 팀을 잡을 수 있다 */
   targeting?: TargetRule
-  /** 배정 보드에서 특수 완장 X 모듈을 강제로 켜는 모드(왕잡기 — 그룹마다 왕이 있어야 한다) */
-  requiresXModule?: boolean
+  /** 배정 보드의 특수 완장 X 모듈 정책 — 없으면 optional(미구현 모드는 열 때 정한다) */
+  xModule?: XModulePolicy
+  /** X 스위치를 잠근 이유 — xModule이 required·off인 모드가 배정 보드 스위치 아래에 보인다 */
+  xModuleLockReason?: string
   /**
    * 잡힌 팀이 잡은 팀의 꼬리로 편입되는 모드(꼬리잡기) — 판정 배치가 원장에 tails(편입 uid)·credits
    * (킬 시점 소속 크레딧)를 함께 쓴다(absorbKillEffect). 없으면 킬은 공격 완장의 tally에만 남는다.

@@ -9,16 +9,25 @@ interface Props {
   label: string
   /** 라벨 아래 한 줄 보조 설명(선택). 한 줄을 넘기면 잘라낸다(행 높이 고정 유지) */
   caption?: string
+  /**
+   * 캡션을 자르지 않고 줄바꿈해 전부 보인다 — 잠긴 컨트롤의 이유처럼 잘리면 뜻이 사라지는 설명용.
+   * 행은 최소 높이에서 캡션 줄 수만큼 늘어난다
+   */
+  wrapCaption?: boolean
 }
 
-withDefaults(defineProps<Props>(), { caption: undefined })
+withDefaults(defineProps<Props>(), { caption: undefined, wrapCaption: false })
 </script>
 
 <template>
   <div class="flex min-h-(--pr-size-control-lg) items-center justify-between gap-4 px-4 py-3">
     <div class="min-w-0">
       <p class="text-label text-content">{{ label }}</p>
-      <p v-if="caption" class="mt-1 truncate text-caption text-content-secondary">
+      <p
+        v-if="caption"
+        class="mt-1 text-caption text-content-secondary"
+        :class="wrapCaption ? 'text-pretty break-keep' : 'truncate'"
+      >
         {{ caption }}
       </p>
     </div>

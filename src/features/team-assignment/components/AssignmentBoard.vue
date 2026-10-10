@@ -58,12 +58,13 @@ const isXModuleEnabled = computed<boolean>({
   get: () => store.xModuleEnabled,
   set: (value) => store.setXModule(value),
 })
-/** X를 강제하는 모드(왕잡기)면 스위치를 잠그고 캡션으로 이유를 보인다 */
+/**
+ * 모드가 X를 정해 둔 모드(왕잡기는 켬, 꼬리잡기·그룹전·스태프 추격전은 끔)면 스위치를 잠그고,
+ * 캡션으로 모드가 적어 둔 이유를 보인다
+ */
 const isXModuleLocked = computed(() => store.isXModuleLocked)
 const xModuleCaption = computed(() =>
-  isXModuleLocked.value
-    ? `${currentMode.value.label}는 그룹마다 왕(X)이 필요해 항상 켜집니다`
-    : '그룹마다 한 팀이 X를 겸합니다',
+  isXModuleLocked.value ? currentMode.value.xModuleLockReason : '그룹마다 한 팀이 X를 겸합니다',
 )
 
 /**
@@ -209,7 +210,8 @@ async function onConfirm() {
         </template>
       </BaseListRow>
 
-      <BaseListRow label="특수 완장 X" :caption="xModuleCaption">
+      <!-- 잠금 이유는 390px에서 한 줄을 넘는다 — 잘리면 왜 못 바꾸는지 읽을 수 없어 줄바꿈한다 -->
+      <BaseListRow label="특수 완장 X" :caption="xModuleCaption" wrap-caption>
         <template #control>
           <BaseSwitch
             v-model="isXModuleEnabled"
