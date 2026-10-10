@@ -264,6 +264,43 @@ describe('WaitingRoomPage', () => {
   })
 
   /**
+   * 3열 칩에 상태 점·글자까지 넣으면 이름 칸이 모자라 닉네임이 첫 글자만 보였다(10/9 리허설 40명).
+   * 준비 상태는 묶음 제목이 맡고, 대기 묶음을 위에 둬 진행자가 미준비자를 이름으로 부를 수 있게 한다.
+   */
+  it('명단을 대기·준비 묶음으로 나눠 대기를 위에 두고, 칩에는 이름만 보인다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    const wrapper = mountPage()
+    await flushPromises()
+    deliver.participants(ROSTER)
+    await flushPromises()
+
+    const groupTitles = wrapper.findAll('[id^="roster-group-"]').map((title) => title.text())
+    expect(groupTitles).toEqual(['대기 1명', '준비 2명'])
+    const chipTexts = (key: string) =>
+      wrapper.findAll(`ul[aria-labelledby="roster-group-${key}"] li`).map((item) => item.text())
+    expect(chipTexts('waiting')).toEqual(['오리'])
+    expect(chipTexts('ready')).toEqual(['하린', '도윤'])
+  })
+
+  it('대기하던 참가자가 준비하면 준비 묶음으로 옮겨 가고, 빈 대기 묶음은 그리지 않는다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    const wrapper = mountPage()
+    await flushPromises()
+    deliver.participants(ROSTER)
+    await flushPromises()
+
+    deliver.participants(ROSTER.map((participant) => ({ ...participant, isReady: true })))
+    await flushPromises()
+
+    const groupTitles = wrapper.findAll('[id^="roster-group-"]').map((title) => title.text())
+    expect(groupTitles).toEqual(['준비 3명'])
+    const readyTexts = wrapper
+      .findAll('ul[aria-labelledby="roster-group-ready"] li')
+      .map((item) => item.text())
+    expect(readyTexts).toEqual(['오리', '하린', '도윤'])
+  })
+
+  /**
    * 누적 순위(P07)는 정산이 끝난 라운드가 있을 때만 — 순위 카드가 없는 화면은 이전과 같아야 한다.
    * 배정 카드가 룸 카드를 대체하는 게스트에게도 보여야 하므로 뷰 분기 밖에 있다.
    */

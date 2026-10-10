@@ -16,8 +16,9 @@ const props = defineProps<Props>()
 defineEmits<{ kick: [] }>()
 
 /**
- * aria-label이 버튼 안 텍스트(이름·준비 상태)를 덮으므로 상태를 라벨에 병기한다 —
- * 내보낼 사람을 고르는 쪽(진행자)이 소리만으로도 준비 여부를 들을 수 있어야 한다.
+ * 칩에는 이름만 있고 준비 상태는 명단의 묶음 제목이 보여 준다. aria-label이 버튼 안 텍스트를
+ * 덮으므로 상태를 라벨에 병기한다 — 내보낼 사람을 고르는 쪽(진행자)이 칩 하나만 들어도
+ * 준비 여부를 알 수 있어야 한다.
  */
 const ariaLabel = computed(
   () => `${props.participant.name}(${props.participant.isReady ? '준비' : '대기'}) 내보내기`,
@@ -36,7 +37,6 @@ const ariaLabel = computed(
       :name="participant.name"
       :team="participant.team"
       :gender="participant.gender"
-      :is-ready="participant.isReady"
     />
   </button>
 </template>
