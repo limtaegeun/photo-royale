@@ -31,6 +31,7 @@ function stubToDataURL(...results: string[]) {
 function stubCanvasContext() {
   const drawImage = vi.fn<(image: CanvasImageSource, dx: number, dy: number) => void>()
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+    fillRect: vi.fn<(x: number, y: number, w: number, h: number) => void>(),
     drawImage,
   } as unknown as CanvasRenderingContext2D)
   return drawImage

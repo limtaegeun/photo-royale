@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { MAP_IMAGE_URL_MAX_LENGTH } from '../mapImageUrl'
 import { resetServerClock, serverClockOffsetMs } from '../serverClock'
 
 vi.mock('@/shared/api/firebase', () => ({ db: {} }))
@@ -79,7 +78,6 @@ import {
   normalizeRoomCode,
   roomExists,
   setReady,
-  setRoomMapImageUrl,
   startGame,
   subscribeToParticipants,
   subscribeToRoom,
@@ -171,7 +169,6 @@ describe('getRoom', () => {
       gameMode: 'king-hunt',
       roundModes: {},
       round: null,
-      mapImageUrl: null,
     })
     expect(getDocMock).toHaveBeenCalledWith({ path: 'rooms/AB2C' })
 
@@ -313,8 +310,12 @@ describe('getRoom', () => {
     expect((await getRoom('AB2C'))!.roundModes).toEqual({})
   })
 
-  /** 행사장 지도(P08 §2.2) — 필드가 없는 방(등록 전)은 null이라 콕핏이 지도 슬롯을 숨긴다 */
-  it('mapImageUrl은 문자열이면 그대로, 없거나 빈 문자열이면 null로 읽는다', async () => {
+  /**
+   * 행사장 지도는 링크 등록(방 문서 mapImageUrl)을 없애고 파일 업로드(assets/venueMap 문서)로 바꿨다
+   * (P08 결정 5, 2026-10-10). 링크 시절 방 문서에 남은 값은 읽지 않는다 — 콕핏이 깨질 수 있는 외부
+   * 주소를 다시 그리지 않게.
+   */
+  it('옛 방 문서에 남은 mapImageUrl(링크 등록 시절 값)은 읽지 않는다', async () => {
     getDocMock.mockResolvedValueOnce({
       exists: () => true,
       data: () => ({
@@ -323,21 +324,8 @@ describe('getRoom', () => {
         mapImageUrl: 'https://example.com/venue/map.png',
       }),
     })
-    await expect(getRoom('AB2C')).resolves.toMatchObject({
-      mapImageUrl: 'https://example.com/venue/map.png',
-    })
 
-    getDocMock.mockResolvedValueOnce({
-      exists: () => true,
-      data: () => ({ hostUid: 'host-1', status: 'waiting' }),
-    })
-    await expect(getRoom('AB2C')).resolves.toMatchObject({ mapImageUrl: null })
-
-    getDocMock.mockResolvedValueOnce({
-      exists: () => true,
-      data: () => ({ hostUid: 'host-1', status: 'waiting', mapImageUrl: '' }),
-    })
-    await expect(getRoom('AB2C')).resolves.toMatchObject({ mapImageUrl: null })
+    expect(await getRoom('AB2C')).not.toHaveProperty('mapImageUrl')
   })
 })
 
@@ -573,7 +561,6 @@ describe('subscribeToRoom', () => {
       gameMode: 'staff-chase',
       roundModes: {},
       round: null,
-      mapImageUrl: null,
     })
 
     onNext({ exists: () => false, metadata: { fromCache: false, hasPendingWrites: false } })
@@ -652,19 +639,6 @@ describe('endGame', () => {
   })
 })
 
-describe('setRoomMapImageUrl', () => {
-  it('방 문서의 mapImageUrl 한 필드만 갱신한다(권한·형식 검증은 rules 담당)', async () => {
-    updateDocMock.mockResolvedValue(undefined)
-
-    await setRoomMapImageUrl('AB2C', 'https://example.com/venue/map.png')
-
-    expect(updateDocMock).toHaveBeenCalledExactlyOnceWith(
-      { path: 'rooms/AB2C' },
-      { mapImageUrl: 'https://example.com/venue/map.png' },
-    )
-  })
-})
-
 describe('kickParticipant', () => {
   it('해당 참가자 문서의 삭제를 요청한다(권한·시점 검증은 rules 담당) — 편성 빼기가 없으면 원장은 건드리지 않는다', async () => {
     await kickParticipant('AB2C', 'u1')
@@ -719,22 +693,14 @@ describe('firestore.rules 방 코드 규칙 동기화 가드', () => {
 })
 
 /**
- * 행사장 지도(P08 §2.2) — rules의 rooms update 5번 갈래는 mapImageUrl 한 키만, https 문자열
- * 8~2048자로 받는다. 길이 상한은 클라 MAP_IMAGE_URL_MAX_LENGTH의 이중 정의라 여기서 대조하고,
- * 키 단독 갈래·https 접두 검사가 rules에 남아 있는지도 함께 고정한다.
+ * 행사장 지도(P08 §2.2) — 링크 등록 갈래(방 문서 mapImageUrl)는 없앴다(결정 5, 2026-10-10). 방 문서에
+ * 지도 주소를 다시 쓸 수 있게 되면 콕핏이 깨진 외부 이미지를 그릴 수 있으니 갈래가 없음을 고정한다.
+ * 지도 문서(assets/venueMap) 규칙의 동기화 가드는 venueMap.spec에 있다.
  */
-describe('firestore.rules 행사장 지도 규칙 동기화 가드', () => {
+describe('firestore.rules 행사장 지도 링크 갈래 제거 가드', () => {
   const rules = readFileSync(resolve(process.cwd(), 'firestore.rules'), 'utf8')
 
-  it('mapImageUrl 한 키만 바꾸는 갈래가 있고 https 접두 문자열만 받는다', () => {
-    expect(rules).toContain("affectedKeys().hasOnly(['mapImageUrl'])")
-    expect(rules).toContain('request.resource.data.mapImageUrl is string')
-    expect(rules).toContain("request.resource.data.mapImageUrl.matches('^https://.*')")
-  })
-
-  it('길이 상한이 클라 MAP_IMAGE_URL_MAX_LENGTH와 같다', () => {
-    const match = rules.match(/request\.resource\.data\.mapImageUrl\.size\(\) <= (\d+)/)
-    expect(match).not.toBeNull()
-    expect(Number(match![1])).toBe(MAP_IMAGE_URL_MAX_LENGTH)
+  it('방 문서에 mapImageUrl을 쓰는 갈래가 없다', () => {
+    expect(rules).not.toContain('mapImageUrl')
   })
 })

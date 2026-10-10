@@ -14,11 +14,12 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore'
 import { db } from '@/shared/api/firebase'
+import { JPEG_DATA_URL_PREFIX } from '@/shared/utils/encodeJpegDataUrl'
 import type { AbsorbKillEffect } from '@/features/game-mode'
 import { addTallyToBatch } from '@/features/round-ledger'
 
 /** 킬샷 데이터 URL 접두 — JPEG만 허용한다(firestore.rules의 matches 정규식과 같은 규칙) */
-export const SUBMISSION_PHOTO_PREFIX = 'data:image/jpeg;base64,'
+export const SUBMISSION_PHOTO_PREFIX = JPEG_DATA_URL_PREFIX
 
 /**
  * 킬샷 데이터 URL 길이 상한(문자 수 ≒ 바이트). Firestore 문서 한도(1MiB)에서 나머지 필드

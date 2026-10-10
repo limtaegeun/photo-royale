@@ -114,7 +114,7 @@ service cloud.firestore {
         && request.resource.data.status == 'waiting'
         && request.resource.data.createdAt == request.time;
 
-      // 호스트 본인만. 다섯 갈래로 나뉜다.
+      // 호스트 본인만. 네 갈래로 나뉜다. (행사장 지도는 방 문서가 아니라 assets/venueMap 문서에 있다)
       allow update: if request.auth != null
         && request.auth.uid == resource.data.hostUid
         && (
@@ -162,15 +162,6 @@ service cloud.firestore {
             && resource.data.status == 'playing'
             && request.resource.data.status == 'waiting'
             && !('round' in request.resource.data))
-          // 5) 행사장 지도(P08 §2.2) — 운영자가 URL 하나를 등록한다. 이미지는 hosting 자산이나
-          //    외부 URL이고 Storage는 쓰지 않는다. 방 상태와 무관하게 바꿀 수 있다(게임 중에도
-          //    참가자 콕핏이 방 문서 구독으로 새 지도를 바로 받는다). 상한 2048은 클라
-          //    MAP_IMAGE_URL_MAX_LENGTH와 같아야 한다(rooms.spec이 대조 검증). 삭제는 허용하지 않는다.
-          || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['mapImageUrl'])
-            && request.resource.data.mapImageUrl is string
-            && request.resource.data.mapImageUrl.size() >= 8
-            && request.resource.data.mapImageUrl.size() <= 2048
-            && request.resource.data.mapImageUrl.matches('^https://.*'))
         );
 
       // 방 정리(삭제) 플로우 도입 전까지 불변이다.
@@ -240,6 +231,36 @@ service cloud.firestore {
         allow delete: if request.auth != null
           && get(/databases/$(database)/documents/rooms/$(roomCode)).data.hostUid == request.auth.uid
           && get(/databases/$(database)/documents/rooms/$(roomCode)).data.status == 'waiting';
+      }
+
+      // 방 자산(P08 §2.2) — 지금은 행사장 지도 한 장(문서 ID venueMap)뿐이다. 진행자가 이미지 파일을 올리면
+      // 클라가 다운스케일·압축한 JPEG 데이터 URL로 문서에 인라인 저장한다(킬샷 사진과 같은 방식, Storage 없음).
+      // 방 문서와 따로 두는 이유: 방 문서는 참가자 전원이 계속 구독하므로 거기 실으면 방이 바뀔 때마다
+      // 지도가 전원에게 다시 내려간다.
+      match /assets/{assetId} {
+        // 문서가 커서(1MB 가까이) 초대 코드만 아는 사용자에게는 열지 않는다 — 호스트와 그 방 참가자만
+        // 읽는다(submissions와 같은 기준). 참가자는 대기실에서 미리 받아 두고 콕핏에서 연다.
+        allow read: if request.auth != null
+          && (get(/databases/$(database)/documents/rooms/$(roomCode)).data.hostUid == request.auth.uid
+            || exists(/databases/$(database)/documents/rooms/$(roomCode)/participants/$(request.auth.uid)));
+
+        // 호스트 본인만 venueMap 문서를 통째로 쓴다(등록·바꾸기). 방 상태(대기·게임 중)와 무관하다 —
+        // 게임 중에 바꿔도 참가자 콕핏이 지도 구독으로 새 지도를 바로 받는다. 길이 상한(1000000)은
+        // src/features/waiting-room/api/venueMap.ts의 VENUE_MAP_IMAGE_MAX_LENGTH와 **숫자까지 동일**해야
+        // 한다(venueMap.spec이 대조 검증 — 변경 시 양쪽을 함께 갱신·배포할 것).
+        allow create, update: if request.auth != null
+          && assetId == 'venueMap'
+          && get(/databases/$(database)/documents/rooms/$(roomCode)).data.hostUid == request.auth.uid
+          && request.resource.data.keys().hasAll(['image', 'updatedAt'])
+          && request.resource.data.keys().hasOnly(['image', 'updatedAt'])
+          && request.resource.data.image is string
+          && request.resource.data.image.size() >= 1
+          && request.resource.data.image.size() <= 1000000
+          && request.resource.data.image.matches('^data:image/jpeg;base64,.*')
+          && request.resource.data.updatedAt == request.time;
+
+        // 지도를 지우는 플로우는 없다(바꾸기만 한다).
+        allow delete: if false;
       }
 
       // 진행자 공지. append-only 히스토리 — 운영 탭은 최신 1건을 구독하고,

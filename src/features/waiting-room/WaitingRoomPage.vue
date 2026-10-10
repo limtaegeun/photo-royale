@@ -20,11 +20,11 @@ import {
 import { useToast } from '@/shared/composables/useToast'
 import { useAppHeader } from '@/shared/composables/useAppHeader'
 import KickableRosterChip from './components/KickableRosterChip.vue'
-import MapImageUrlSheet from './components/MapImageUrlSheet.vue'
 import StandingsCard from './components/StandingsCard.vue'
+import VenueMapUploadSheet from './components/VenueMapUploadSheet.vue'
 import { normalizeRoomCode, type Participant } from './api/rooms'
-import { parseMapImageUrl } from './mapImageUrl'
 import { hasPlayedRound } from './roundPlayMarker'
+import { useVenueMapStore } from './stores/useVenueMapStore'
 import { useWaitingRoomStore } from './stores/useWaitingRoomStore'
 
 const route = useRoute()
@@ -347,28 +347,22 @@ function viewPastRecords() {
   router.push({ name: 'round-ops', params: { roomCode: roomCode.value }, query: { tab: 'log' } })
 }
 
-// 행사장 지도(P08 §2.2 단계 1) — 호스트가 이미지 URL 하나를 방 문서에 붙이면 참가자 콕핏의 지도 슬롯이 열린다
+// 행사장 지도(P08 §2.2) — 호스트가 이미지 파일을 올리면 참가자 콕핏의 지도 슬롯이 열린다.
+// 지도는 방 문서와 따로 받아 두는 스토어에 있다(입장 때 useWaitingRoomStore.enter가 받기 시작한다)
+const venueMap = useVenueMapStore()
 const isMapImageSheetOpen = ref(false)
-const mapImageUrl = computed(() => room.value?.mapImageUrl ?? null)
-/**
- * 지도 행 캡션 — 등록됐으면 URL 전체 대신 host만 보인다(긴 경로가 한 줄 캡션을 잘라먹지 않게).
- * rules가 https 문자열만 받지만 파싱 실패까지 방어한다(오염된 값이면 등록됨만 표기).
- */
-const mapImageCaption = computed(() => {
-  if (mapImageUrl.value === null) return '아직 등록하지 않았어요.'
-  const host = parseMapImageUrl(mapImageUrl.value)?.host
-  return host === undefined ? '등록됨' : `등록됨 · ${host}`
-})
+const mapImage = computed(() => venueMap.image)
+const mapImageCaption = computed(() => (mapImage.value === null ? '아직 등록하지 않았어요.' : '등록됨'))
 
-/** 지도 시트 열기 — 지난번 실패 안내가 남아 있으면 지우고 깨끗한 입력으로 시작한다 */
+/** 지도 시트 열기 — 지난번 실패 안내가 남아 있으면 지우고 새로 시작한다 */
 function openMapImageSheet() {
   mapImageError.value = null
   isMapImageSheetOpen.value = true
 }
 
-/** 저장에 성공했을 때만 시트를 닫는다 — 실패하면 입력을 남겨 둔 채 안내를 보이고 재시도할 수 있어야 한다 */
-async function saveMapImageUrl(url: string) {
-  const saved = await store.setMapImageUrl(url)
+/** 저장에 성공했을 때만 시트를 닫는다 — 실패하면 고른 지도를 남겨 둔 채 안내를 보이고 다시 저장할 수 있어야 한다 */
+async function saveMapImage(image: string) {
+  const saved = await store.saveMapImage(image)
   if (!saved) return
   isMapImageSheetOpen.value = false
   toast({ title: '행사장 지도를 등록했어요.', tone: 'success' })
@@ -492,7 +486,7 @@ async function copyInviteLink() {
             <BaseListRow label="행사장 지도" :caption="mapImageCaption">
               <template #control>
                 <BaseButton variant="ghost" size="sm" @click="openMapImageSheet">
-                  {{ mapImageUrl === null ? '지도 등록' : '바꾸기' }}
+                  {{ mapImage === null ? '지도 등록' : '바꾸기' }}
                 </BaseButton>
               </template>
             </BaseListRow>
@@ -703,14 +697,14 @@ async function copyInviteLink() {
       </div>
     </BaseDialog>
 
-    <!-- 행사장 지도 등록 시트(호스트) — 성공했을 때만 saveMapImageUrl이 닫는다 -->
-    <MapImageUrlSheet
+    <!-- 행사장 지도 등록 시트(호스트) — 성공했을 때만 saveMapImage가 닫는다 -->
+    <VenueMapUploadSheet
       v-if="isHost"
       v-model:open="isMapImageSheetOpen"
-      :current-url="mapImageUrl"
+      :current-image="mapImage"
       :saving="isSavingMapImage"
       :error="mapImageError"
-      @save="saveMapImageUrl"
+      @save="saveMapImage"
     />
   </section>
 </template>

@@ -9,7 +9,6 @@ import {
   joinRoom,
   kickParticipant,
   setReady,
-  setRoomMapImageUrl,
   startGame,
   subscribeToParticipants,
   subscribeToRoom,
@@ -17,9 +16,10 @@ import {
   type Participant,
   type RoomInfo,
 } from '../api/rooms'
-import { MAP_IMAGE_URL_MAX_LENGTH, parseMapImageUrl } from '../mapImageUrl'
+import { saveVenueMapImage } from '../api/venueMap'
 import { isRoundLiveAt, isRoundOverAt } from '../roundClock'
 import { serverNow } from '../serverClock'
+import { useVenueMapStore } from './useVenueMapStore'
 
 /**
  * joining: 입장 처리 중(입장 직후 로딩) / joined: 명단 구독 중 /
@@ -34,9 +34,7 @@ const READY_WRITE_TIMEOUT_MS = 8000
 /** 준비 완료 불안정 안내 — 타임아웃 시 표시하고, 뒤늦은 쓰기가 커밋되면 이 메시지를 보고 제거한다 */
 const READY_UNSTABLE_MESSAGE = '연결이 불안정해 준비 완료를 확인하지 못했어요. 연결되면 자동으로 반영돼요.'
 
-/** 행사장 지도 URL 형식 오류 안내 — 빈 값·http·URL이 아닌 문자열이 모두 이 한 문구로 수렴한다 */
-const MAP_IMAGE_URL_INVALID_MESSAGE = 'https://로 시작하는 이미지 주소를 넣어 주세요.'
-const MAP_IMAGE_URL_TOO_LONG_MESSAGE = `이미지 주소는 ${MAP_IMAGE_URL_MAX_LENGTH}자 이하여야 해요.`
+/** 행사장 지도 저장 실패 안내 — 권한·형식 거부와 네트워크 실패가 모두 이 한 문구로 수렴한다 */
 const MAP_IMAGE_SAVE_FAILED_MESSAGE = '행사장 지도를 저장하지 못했어요. 다시 시도해 주세요.'
 
 /** withTimeout이 시간 초과로 reject할 때 쓰는 표식 에러 — 진짜 실패(네트워크 거부 등)와 구분한다 */
@@ -71,6 +69,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
  */
 export const useWaitingRoomStore = defineStore('waitingRoom', () => {
   const authStore = useAuthStore()
+  const venueMap = useVenueMapStore()
 
   const roomCode = ref<string | null>(null)
   const phase = ref<WaitingRoomPhase>('idle')
@@ -82,9 +81,9 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
   const startGameError = ref<string | null>(null)
   /** 강퇴 요청이 진행 중인 참가자 uid — 완료 전 중복 요청을 막고 버튼 로딩 표기에 쓴다 */
   const kickingId = ref<string | null>(null)
-  /** 행사장 지도 URL 쓰기 진행 중(P08 §2.2) — 시트의 저장 버튼 로딩·중복 요청 가드 */
+  /** 행사장 지도 쓰기 진행 중(P08 §2.2) — 시트의 저장 버튼 로딩·중복 요청 가드 */
   const isSavingMapImage = ref(false)
-  /** 행사장 지도 URL 형식 오류·저장 실패 안내 — 시트가 입력 아래에 보여준다 */
+  /** 행사장 지도 저장 실패 안내 — 시트가 버튼 위에 보여준다 */
   const mapImageError = ref<string | null>(null)
   /**
    * 라운드 원장 목록(P07) — 누적 순위의 재료. 정산이 끝난(result 있는) 라운드만 순위에 들어가고,
@@ -248,6 +247,9 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
       return
     }
 
+    // 행사장 지도는 입장(참가 등록)이 끝난 뒤에 받는다 — rules가 그 방 참가자와 호스트에게만 읽기를 연다.
+    // 대기실을 떠나도 구독을 남겨 두는 별도 스토어라, 콕핏에 가서도 다시 내려받지 않는다
+    venueMap.track(code)
     unsubscribeRoom = subscribeToRoom(code, (nextRoom) => {
       room.value = nextRoom
       // 입장 후 방 문서가 사라진 경우(정리 등) — 잘못된 코드와 같은 안내로 수렴시킨다
@@ -418,26 +420,16 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
   }
 
   /**
-   * 행사장 지도 등록(호스트 전용, P08 §2.2) — URL을 검증해 방 문서에 쓰고 성공 여부를 돌려준다
-   * (시트를 닫고 토스트를 띄우는 판단은 화면이 한다). 형식은 rules(https 문자열 8~2048자)와 같은
-   * 조건을 왕복 전에 먼저 거르고, 그보다 조금 더 엄격하게 URL로 파싱되는지까지 본다 — 캡션이 host를
-   * 뽑고 콕핏이 <img src>로 그대로 쓰기 때문이다. 방 상태(대기·게임 중)와 무관하게 바꿀 수 있다.
+   * 행사장 지도 저장(호스트 전용, P08 §2.2) — 시트가 브라우저에서 줄여 둔 JPEG 데이터 URL을 지도 문서에
+   * 쓰고 성공 여부를 돌려준다(시트를 닫고 토스트를 띄우는 판단은 화면이 한다). 권한·형식은 rules가 검증한다.
+   * 방 상태(대기·게임 중)와 무관하게 바꿀 수 있다.
    */
-  async function setMapImageUrl(url: string): Promise<boolean> {
+  async function saveMapImage(image: string): Promise<boolean> {
     if (!roomCode.value || !isHost.value || isSavingMapImage.value) return false
-    const trimmed = url.trim()
-    if (trimmed.length > MAP_IMAGE_URL_MAX_LENGTH) {
-      mapImageError.value = MAP_IMAGE_URL_TOO_LONG_MESSAGE
-      return false
-    }
-    if (parseMapImageUrl(trimmed) === null) {
-      mapImageError.value = MAP_IMAGE_URL_INVALID_MESSAGE
-      return false
-    }
     isSavingMapImage.value = true
     mapImageError.value = null
     try {
-      await setRoomMapImageUrl(roomCode.value, trimmed)
+      await saveVenueMapImage(roomCode.value, image)
       return true
     } catch {
       mapImageError.value = MAP_IMAGE_SAVE_FAILED_MESSAGE
@@ -479,6 +471,6 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
     confirmReady,
     startPlaying,
     kick,
-    setMapImageUrl,
+    saveMapImage,
   }
 })

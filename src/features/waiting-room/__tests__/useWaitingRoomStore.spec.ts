@@ -29,13 +29,24 @@ const kickParticipantMock =
   vi.fn<
     (code: string, uid: string, snapshotRemoval?: { roundNo: number; armband: string }) => Promise<void>
   >()
-const setRoomMapImageUrlMock = vi.fn<(code: string, url: string) => Promise<void>>()
 const unsubscribeParticipantsMock = vi.fn<() => void>()
 const unsubscribeRoomMock = vi.fn<() => void>()
 const subscribeParticipantsMock =
   vi.fn<(code: string, onChange: (participants: Participant[]) => void) => () => void>()
 const subscribeRoomMock =
   vi.fn<(code: string, onChange: (room: RoomInfo | null) => void) => () => void>()
+
+// 행사장 지도(P08 §2.2) — 지도 문서는 방 문서와 따로 받는다(useVenueMapStore). 이 스펙은 입장이 구독을
+// 시작하는 시점과 호스트 저장만 본다
+const saveVenueMapImageMock = vi.fn<(code: string, image: string) => Promise<void>>()
+const unsubscribeVenueMapMock = vi.fn<() => void>()
+const subscribeVenueMapMock =
+  vi.fn<(code: string, onChange: (image: string | null) => void) => () => void>()
+vi.mock('../api/venueMap', () => ({
+  saveVenueMapImage: (code: string, image: string) => saveVenueMapImageMock(code, image),
+  subscribeToVenueMapImage: (code: string, onChange: (image: string | null) => void) =>
+    subscribeVenueMapMock(code, onChange),
+}))
 
 vi.mock('../api/rooms', () => ({
   RoomNotFoundError: class RoomNotFoundError extends Error {},
@@ -56,7 +67,6 @@ vi.mock('../api/rooms', () => ({
     uid: string,
     snapshotRemoval?: { roundNo: number; armband: string },
   ) => kickParticipantMock(code, uid, snapshotRemoval),
-  setRoomMapImageUrl: (code: string, url: string) => setRoomMapImageUrlMock(code, url),
   subscribeToParticipants: (code: string, onChange: (participants: Participant[]) => void) =>
     subscribeParticipantsMock(code, onChange),
   subscribeToRoom: (code: string, onChange: (room: RoomInfo | null) => void) =>
@@ -158,7 +168,6 @@ const GUEST_ROOM: RoomInfo = {
   gameMode: 'normal',
   roundModes: {},
   round: null,
-  mapImageUrl: null,
 }
 const MY_ROOM: RoomInfo = {
   hostUid: 'me',
@@ -167,7 +176,6 @@ const MY_ROOM: RoomInfo = {
   gameMode: 'normal',
   roundModes: {},
   round: null,
-  mapImageUrl: null,
 }
 
 const ME_WAITING: Participant = {
@@ -204,7 +212,9 @@ describe('useWaitingRoomStore', () => {
     setReadyMock.mockReset().mockResolvedValue(undefined)
     startGameMock.mockReset().mockResolvedValue(undefined)
     kickParticipantMock.mockReset().mockResolvedValue(undefined)
-    setRoomMapImageUrlMock.mockReset().mockResolvedValue(undefined)
+    saveVenueMapImageMock.mockReset().mockResolvedValue(undefined)
+    subscribeVenueMapMock.mockReset().mockReturnValue(unsubscribeVenueMapMock)
+    unsubscribeVenueMapMock.mockReset()
     subscribeParticipantsMock.mockReset().mockReturnValue(unsubscribeParticipantsMock)
     subscribeRoomMock.mockReset().mockReturnValue(unsubscribeRoomMock)
     subscribeLedgersMock.mockReset().mockReturnValue(unsubscribeLedgersMock)
@@ -580,7 +590,6 @@ describe('useWaitingRoomStore', () => {
       gameMode: 'normal',
       roundModes: {},
       round: null,
-      mapImageUrl: null,
     }
 
     function assigned(id: string, name: string, team: string, round: number): Participant {
@@ -745,7 +754,6 @@ describe('useWaitingRoomStore', () => {
       gameMode: 'normal',
       roundModes: {},
       round: null,
-      mapImageUrl: null,
     }
 
     it('호스트가 배정 확정 후 호출하면 status를 playing으로 전이한다', async () => {
@@ -820,11 +828,12 @@ describe('useWaitingRoomStore', () => {
   })
 
   /**
-   * 행사장 지도 등록(P08 §2.2 단계 1) — rules(https 문자열 8~2048자)와 같은 조건을 왕복 전에 거르고,
-   * 성공 여부를 돌려 화면이 시트를 닫을지 정한다. 형식 안내는 입력 아래 한 문구로 수렴한다.
+   * 행사장 지도(P08 §2.2) — 입장이 끝나면 지도 구독을 시작하고(참가 등록 뒤 — rules가 참가자에게만 읽기를
+   * 연다), 화면을 떠나도 그 구독은 내리지 않는다(콕핏이 받아 둔 지도를 그대로 연다).
+   * 호스트 저장은 시트가 줄여 둔 JPEG 데이터 URL을 지도 문서에 쓰고 성공 여부를 돌려준다.
    */
-  describe('setMapImageUrl', () => {
-    const MAP_URL = 'https://example.com/venue/map.png'
+  describe('행사장 지도', () => {
+    const MAP_IMAGE = 'data:image/jpeg;base64,map'
 
     async function enterAsHost() {
       authState.user = { uid: 'me', displayName: '오리' }
@@ -835,54 +844,83 @@ describe('useWaitingRoomStore', () => {
       return store
     }
 
-    it('호스트가 https 주소를 넣으면 앞뒤 공백을 지우고 방 문서에 쓴 뒤 true를 돌려준다', async () => {
+    it('게스트는 참가 등록이 끝난 뒤에 지도 구독을 시작한다', async () => {
+      const order: string[] = []
+      joinRoomMock.mockImplementation(async () => {
+        order.push('join')
+      })
+      subscribeVenueMapMock.mockImplementation((code) => {
+        order.push(`venueMap:${code}`)
+        return unsubscribeVenueMapMock
+      })
+      captureSnapshotCallbacks()
+      const store = useWaitingRoomStore()
+
+      await store.enter('AB2C')
+
+      expect(order).toEqual(['join', 'venueMap:AB2C'])
+    })
+
+    it('호스트도 입장하면 지도 구독을 시작한다(등록 여부·미리보기)', async () => {
+      await enterAsHost()
+
+      expect(subscribeVenueMapMock).toHaveBeenCalledExactlyOnceWith('AB2C', expect.any(Function))
+    })
+
+    it('없는 방이면 지도 구독을 시작하지 않는다', async () => {
+      getRoomMock.mockResolvedValue(null)
+      const store = useWaitingRoomStore()
+
+      await store.enter('ZZZZ')
+
+      expect(subscribeVenueMapMock).not.toHaveBeenCalled()
+    })
+
+    it('화면을 떠나도 지도 구독은 남는다 — 콕핏이 다시 내려받지 않게', async () => {
       const store = await enterAsHost()
 
-      await expect(store.setMapImageUrl(`  ${MAP_URL}  `)).resolves.toBe(true)
+      store.leave()
 
-      expect(setRoomMapImageUrlMock).toHaveBeenCalledExactlyOnceWith('AB2C', MAP_URL)
+      expect(unsubscribeRoomMock).toHaveBeenCalled()
+      expect(unsubscribeVenueMapMock).not.toHaveBeenCalled()
+    })
+
+    it('호스트가 저장하면 지도 문서에 쓰고 true를 돌려준다', async () => {
+      const store = await enterAsHost()
+
+      await expect(store.saveMapImage(MAP_IMAGE)).resolves.toBe(true)
+
+      expect(saveVenueMapImageMock).toHaveBeenCalledExactlyOnceWith('AB2C', MAP_IMAGE)
       expect(store.mapImageError).toBeNull()
       expect(store.isSavingMapImage).toBe(false)
     })
 
-    it('http 주소는 쓰지 않고 형식 안내를 세팅한다', async () => {
-      const store = await enterAsHost()
-
-      await expect(store.setMapImageUrl('http://example.com/map.png')).resolves.toBe(false)
-
-      expect(setRoomMapImageUrlMock).not.toHaveBeenCalled()
-      expect(store.mapImageError).toBe('https://로 시작하는 이미지 주소를 넣어 주세요.')
-    })
-
-    it('빈 값·URL이 아닌 문자열도 같은 형식 안내로 거른다', async () => {
-      const store = await enterAsHost()
-
-      await expect(store.setMapImageUrl('   ')).resolves.toBe(false)
-      await expect(store.setMapImageUrl('https://')).resolves.toBe(false)
-      await expect(store.setMapImageUrl('행사장 지도.png')).resolves.toBe(false)
-
-      expect(setRoomMapImageUrlMock).not.toHaveBeenCalled()
-      expect(store.mapImageError).toBe('https://로 시작하는 이미지 주소를 넣어 주세요.')
-    })
-
-    it('rules 상한(2048자)을 넘는 주소는 길이 안내로 거른다', async () => {
-      const store = await enterAsHost()
-
-      await expect(store.setMapImageUrl(`${MAP_URL}?q=${'a'.repeat(2048)}`)).resolves.toBe(false)
-
-      expect(setRoomMapImageUrlMock).not.toHaveBeenCalled()
-      expect(store.mapImageError).toBe('이미지 주소는 2048자 이하여야 해요.')
-    })
-
     it('쓰기가 실패하면 저장 실패 안내를 세팅하고 false를 돌려주며, 다음 시도에서 안내가 지워진다', async () => {
       const store = await enterAsHost()
-      setRoomMapImageUrlMock.mockRejectedValueOnce(new Error('permission denied'))
+      saveVenueMapImageMock.mockRejectedValueOnce(new Error('permission denied'))
 
-      await expect(store.setMapImageUrl(MAP_URL)).resolves.toBe(false)
+      await expect(store.saveMapImage(MAP_IMAGE)).resolves.toBe(false)
       expect(store.mapImageError).toBe('행사장 지도를 저장하지 못했어요. 다시 시도해 주세요.')
 
-      await expect(store.setMapImageUrl(MAP_URL)).resolves.toBe(true)
+      await expect(store.saveMapImage(MAP_IMAGE)).resolves.toBe(true)
       expect(store.mapImageError).toBeNull()
+    })
+
+    it('저장 중 중복 호출은 무시한다', async () => {
+      const store = await enterAsHost()
+      let resolveSave!: () => void
+      saveVenueMapImageMock.mockReturnValueOnce(
+        new Promise<void>((resolvePromise) => {
+          resolveSave = resolvePromise
+        }),
+      )
+
+      const first = store.saveMapImage(MAP_IMAGE)
+      await expect(store.saveMapImage(MAP_IMAGE)).resolves.toBe(false)
+      resolveSave()
+
+      await expect(first).resolves.toBe(true)
+      expect(saveVenueMapImageMock).toHaveBeenCalledTimes(1)
     })
 
     it('게스트는 호출해도 아무 일도 일어나지 않는다', async () => {
@@ -891,15 +929,16 @@ describe('useWaitingRoomStore', () => {
       const store = useWaitingRoomStore()
       await store.enter('AB2C')
 
-      await expect(store.setMapImageUrl(MAP_URL)).resolves.toBe(false)
+      await expect(store.saveMapImage(MAP_IMAGE)).resolves.toBe(false)
 
-      expect(setRoomMapImageUrlMock).not.toHaveBeenCalled()
+      expect(saveVenueMapImageMock).not.toHaveBeenCalled()
       expect(store.mapImageError).toBeNull()
     })
 
     it('화면을 떠나면 지도 안내도 지운다', async () => {
       const store = await enterAsHost()
-      await store.setMapImageUrl('http://example.com/map.png')
+      saveVenueMapImageMock.mockRejectedValueOnce(new Error('offline'))
+      await store.saveMapImage(MAP_IMAGE)
       expect(store.mapImageError).not.toBeNull()
 
       store.leave()

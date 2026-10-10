@@ -1,9 +1,6 @@
 import { readonly, ref } from 'vue'
-import {
-  SUBMISSION_PHOTO_MAX_LENGTH,
-  SUBMISSION_PHOTO_PREFIX,
-  submitKillshot,
-} from '@/features/round-ops'
+import { SUBMISSION_PHOTO_MAX_LENGTH, submitKillshot } from '@/features/round-ops'
+import { encodeJpegDataUrl } from '@/shared/utils/encodeJpegDataUrl'
 import type { CapturedPhoto } from './usePhotoCapture'
 
 /**
@@ -32,39 +29,16 @@ export interface KillshotSubmitInput {
 export function useKillshotSubmit() {
   const isSubmitting = ref(false)
 
-  async function encodePhoto(photo: CapturedPhoto): Promise<string | null> {
-    const bitmap = await createImageBitmap(photo.blob)
-    try {
-      for (const step of COMPRESSION_STEPS) {
-        const scale = Math.min(1, step.maxEdge / Math.max(bitmap.width, bitmap.height))
-        const canvas = document.createElement('canvas')
-        canvas.width = Math.max(1, Math.round(bitmap.width * scale))
-        canvas.height = Math.max(1, Math.round(bitmap.height * scale))
-        const context = canvas.getContext('2d')
-        if (!context) return null
-        context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
-        const dataUrl = canvas.toDataURL('image/jpeg', step.quality)
-        // jsdom 등 JPEG 인코딩이 안 되는 환경은 다른 접두를 돌려준다 — rules가 거부할 값은
-        // 보내지 않는다
-        if (
-          dataUrl.startsWith(SUBMISSION_PHOTO_PREFIX) &&
-          dataUrl.length <= SUBMISSION_PHOTO_MAX_LENGTH
-        ) {
-          return dataUrl
-        }
-      }
-      return null
-    } finally {
-      bitmap.close()
-    }
-  }
-
   /** 성공 여부를 돌려준다(화면이 미리보기를 닫고 토스트를 띄우는 판단에 쓴다) */
   async function submit(input: KillshotSubmitInput): Promise<boolean> {
     if (isSubmitting.value) return false
     isSubmitting.value = true
     try {
-      const dataUrl = await encodePhoto(input.photo)
+      const dataUrl = await encodeJpegDataUrl(
+        input.photo.blob,
+        COMPRESSION_STEPS,
+        SUBMISSION_PHOTO_MAX_LENGTH,
+      )
       if (dataUrl === null) return false
       await submitKillshot(input.roomCode, {
         uid: input.uid,
