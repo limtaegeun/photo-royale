@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import BaseBottomSheet from '@/shared/components/BaseBottomSheet.vue'
 import BaseButton from '@/shared/components/BaseButton.vue'
 import { encodeVenueMapImage } from '../venueMapImage'
+import VenueMapPreview from './VenueMapPreview.vue'
 
 /**
  * 행사장 지도 등록 시트(호스트, P08 §2.2) — 진행자가 이미지 파일을 골라 올린다(주소 입력은 없다).
@@ -78,13 +79,12 @@ function save() {
 <template>
   <BaseBottomSheet v-model:open="open" title="행사장 지도">
     <div class="flex flex-col gap-4">
-      <!-- 미리보기 — 새로 고른 지도가 있으면 그것, 없으면 지금 등록된 지도(확대·저장 경로 없음) -->
-      <img
+      <!-- 미리보기 — 새로 고른 지도가 있으면 그것, 없으면 지금 등록된 지도. 누르면 화면 전체로 크게 본다 -->
+      <VenueMapPreview
         v-if="previewImage !== null"
-        :src="previewImage"
+        :image="previewImage"
         alt="행사장 지도 미리보기"
-        decoding="async"
-        class="max-h-40 w-full rounded-lg border border-stroke bg-surface object-contain"
+        image-class="max-h-40"
       />
 
       <!-- 파일 선택은 보이지 않는 네이티브 입력이 맡고, 보이는 컨트롤은 아래 BaseButton 하나다.
