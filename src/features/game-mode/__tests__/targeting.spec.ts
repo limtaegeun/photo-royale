@@ -1,9 +1,15 @@
 import { describe, it, expect } from 'vitest'
-import { ALL_ALLIES_TARGETING, ALLY_GROUP_TARGETING, TAIL_CHASE_TARGETING, nextPreyOf } from '../targeting'
+import {
+  ALL_ALLIES_TARGETING,
+  ALLY_GROUP_TARGETING,
+  TAIL_CHASE_TARGETING,
+  X_ONLY_TARGETING,
+  nextPreyOf,
+} from '../targeting'
 import type { TargetContext } from '../types'
 
-function context(teams: string[], outTeams: string[] = []): TargetContext {
-  return { teams, outTeams }
+function context(teams: string[], outTeams: string[] = [], xTeams: string[] = []): TargetContext {
+  return { teams, outTeams, xTeams }
 }
 
 describe('nextPreyOf (꼬리잡기 P07 §4.2)', () => {
@@ -56,5 +62,30 @@ describe('ALL_ALLIES_TARGETING (스태프 추격전 P07 §4.5)', () => {
 
   it('막힌 이유 배지는 "동맹"이다', () => {
     expect(ALL_ALLIES_TARGETING.blockedBadge).toBe('동맹')
+  })
+})
+
+describe('X_ONLY_TARGETING (일반전 특수 완장 X, 규칙서 §3.1)', () => {
+  // X는 그룹마다 1팀 — A(파랑)·B(주황)가 X, E(파랑)·F(주황)는 일반 팀
+  const ctx = context(['A', 'B', 'E', 'F'], [], ['A', 'B'])
+
+  it('X 팀은 X 팀만 잡을 수 있다', () => {
+    expect(X_ONLY_TARGETING.canTarget('A', 'B', ctx)).toBe(true)
+    expect(X_ONLY_TARGETING.canTarget('A', 'E', ctx)).toBe(false)
+  })
+
+  it('일반 팀은 X 팀을 잡을 수 없고 일반 팀끼리는 잡을 수 있다', () => {
+    expect(X_ONLY_TARGETING.canTarget('E', 'A', ctx)).toBe(false)
+    expect(X_ONLY_TARGETING.canTarget('E', 'F', ctx)).toBe(true)
+  })
+
+  it('X를 끈 라운드(xTeams 빈 배열)는 아무것도 막지 않는다', () => {
+    const offCtx = context(['A', 'B', 'E', 'F'])
+    expect(X_ONLY_TARGETING.canTarget('A', 'E', offCtx)).toBe(true)
+    expect(X_ONLY_TARGETING.canTarget('E', 'F', offCtx)).toBe(true)
+  })
+
+  it('막힌 이유 배지는 "X끼리만"이다', () => {
+    expect(X_ONLY_TARGETING.blockedBadge).toBe('X끼리만')
   })
 })

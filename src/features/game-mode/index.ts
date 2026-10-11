@@ -22,7 +22,13 @@ export type {
   XModulePolicy,
 } from './types'
 // 원점수 재료 — round-ledger의 정산 단계와 모드 스펙이 함께 쓴다
-export { ALL_ALLIES_TARGETING, ALLY_GROUP_TARGETING, TAIL_CHASE_TARGETING, nextPreyOf } from './targeting'
+export {
+  ALL_ALLIES_TARGETING,
+  ALLY_GROUP_TARGETING,
+  TAIL_CHASE_TARGETING,
+  X_ONLY_TARGETING,
+  nextPreyOf,
+} from './targeting'
 export {
   GROUP_ASSIST_POINTS,
   KILL_POINTS,

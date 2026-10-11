@@ -36,7 +36,7 @@ export interface RoundSnapshot {
   mode: GameModeId
   /** 완장 → 그 라운드의 팀원 uid 목록. 내보내기로 팀원이 모두 빠진 완장은 읽을 때 버린다 */
   teams: ArmbandMap<string[]>
-  /** X 겸직 완장 — 왕잡기에서 왕 팀(배율 근거) */
+  /** X 겸직 완장 — 왕잡기에서 왕 팀(배율 근거), 일반전에서 "X끼리만 사냥"(판정 시트 대상 제한 근거) */
   xTeams: string[]
   /** serverTimestamp가 반영되기 전 스냅샷은 null */
   confirmedAtMs: number | null

@@ -66,6 +66,8 @@ export interface TargetContext {
   teams: string[]
   /** 이미 탈락한 완장(hits ≥ 라이프) */
   outTeams: string[]
+  /** 특수 완장 X를 겸한 완장(편성 스냅샷) — X를 끈 라운드는 빈 배열 */
+  xTeams: string[]
 }
 
 /**
@@ -73,7 +75,7 @@ export interface TargetContext {
  * 시트가 그 팀을 비활성화하고 이유 배지를 붙인다. 점수 계산은 이 제한과 무관하게 판정 결과를 신뢰한다.
  */
 export interface TargetRule {
-  /** 제출 팀(attacker)이 이 팀(target)을 잡을 수 있는가 — 둘 다 이번 라운드 팀 완장. context는 판정 시점의 라운드 상황(팀 목록·탈락 팀) */
+  /** 제출 팀(attacker)이 이 팀(target)을 잡을 수 있는가 — 둘 다 이번 라운드 팀 완장. context는 판정 시점의 라운드 상황(팀 목록·탈락 팀·X 팀) */
   canTarget: (attacker: string, target: string, context: TargetContext) => boolean
   /** 막힌 팀 옆에 붙는 짧은 이유(예: '같은 그룹') */
   blockedBadge: string
