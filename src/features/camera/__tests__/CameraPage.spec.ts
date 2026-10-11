@@ -108,8 +108,11 @@ function createVenueMapMock() {
 }
 let venueMapMock = createVenueMapMock()
 
-vi.mock('@/features/waiting-room', () => {
+vi.mock('@/features/waiting-room', async () => {
+  // 지도 미리보기(누르면 크게 보기)는 실제 컴포넌트를 쓴다 — Firestore 를 쓰지 않는다
+  const { default: VenueMapPreview } = await import('@/features/waiting-room/components/VenueMapPreview.vue')
   return {
+    VenueMapPreview,
     useVenueMapStore: () => venueMapMock,
     normalizeRoomCode: (code: string) => code.trim().toUpperCase(),
     isAssignedInRound: (
