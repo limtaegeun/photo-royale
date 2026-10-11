@@ -50,11 +50,11 @@ afterEach(() => {
 })
 
 describe('VenueMapUploadSheet', () => {
-  it('파일 입력은 이미지만 고르게 하고, 화면에서는 숨겨 보조기기에도 버튼 하나만 보인다', async () => {
+  it('파일 입력은 이미지와 폰 사진(HEIC·HEIF)을 고르게 하고, 화면에서는 숨겨 보조기기에도 버튼 하나만 보인다', async () => {
     await mountSheet()
 
     const input = fileInput()
-    expect(input.accept).toBe('image/*')
+    expect(input.accept).toBe('image/*,.heic,.heif')
     expect(input.className).toContain('sr-only')
     expect(input.getAttribute('aria-hidden')).toBe('true')
     expect(input.tabIndex).toBe(-1)

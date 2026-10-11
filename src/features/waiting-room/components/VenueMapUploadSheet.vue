@@ -28,7 +28,7 @@ const emit = defineEmits<{
 
 const open = defineModel<boolean>('open', { default: false })
 
-/** 고른 파일을 읽지 못했을 때 — 손상된 파일, 이미지가 아닌 파일, 브라우저가 못 여는 형식(데스크톱의 HEIC 등) */
+/** 고른 파일을 읽지 못했을 때 — 손상된 파일, 이미지가 아닌 파일, 해독기로도 못 여는 형식(RAW 등), HEIC 해독기를 받지 못했을 때(오프라인) */
 const IMAGE_UNREADABLE_MESSAGE = '이미지를 불러오지 못했어요. 다른 이미지로 다시 골라 주세요.'
 
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -88,11 +88,13 @@ function save() {
       />
 
       <!-- 파일 선택은 보이지 않는 네이티브 입력이 맡고, 보이는 컨트롤은 아래 BaseButton 하나다.
-           display:none이 아니라 sr-only로 숨겨야 iOS Safari에서도 click()으로 사진 선택이 열린다 -->
+           display:none이 아니라 sr-only로 숨겨야 iOS Safari에서도 click()으로 사진 선택이 열린다.
+           HEIC·HEIF는 확장자로 더한다 — HEIC를 이미지로 등록하지 않은 PC(윈도 등)에서도 폰 사진이 목록에 보이게.
+           MIME(image/heic)으로 더하지 않는 건 사파리가 accept의 구체 형식에 맞춰 고른 사진을 바꿔 보낸 적이 있어서다 -->
       <input
         ref="fileInput"
         type="file"
-        accept="image/*"
+        accept="image/*,.heic,.heif"
         class="sr-only"
         tabindex="-1"
         aria-hidden="true"

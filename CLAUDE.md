@@ -92,7 +92,7 @@ path alias: `@` → `src/` (예: `@/features/photo-upload`)
 - 블록 사이 여백을 `mt-*` 체인으로 쌓지 말 것 → 컨테이너의 `flex flex-col gap-*`으로 준다(조건부 렌더에서 첫 블록 마진이 남는 문제 방지)
 - Tailwind 기본 스케일이라도 `0.5`/`1.5`(2px/6px)는 4px 그리드 위반 → `gap-1`/`gap-2`, `mt-1`처럼 정수 단계만 쓴다
 - **Base 컴포넌트는 Reka UI(headless) 기반으로 만든다** → 접근성·상호작용 행동(focus trap·roving tabindex·ARIA live region·포털 등)은 Reka primitive에 위임하고, 스타일은 프로젝트 시맨틱 유틸리티로만 작성한다. 원자는 `Primitive`(as/asChild), 행동형은 전용 primitive(Dialog/RadioGroup/Toast 등)를 쓴다.
-- 라이브러리 추가 전 반드시 사용자에게 확인 → 현재 런타임 의존성은 vue/pinia/vue-router/**reka-ui**/**sortablejs** + firebase(Auth/Firestore, 인증·세션 유지용) 6개다. reka-ui는 headless UI 기반으로 승인된 의존성, sortablejs는 배정 보드 드래그 앤 드롭용으로 승인된 의존성이며, 이 목록을 늘리지 않는 것이 기본값 (Tailwind v4는 빌드타임 devDependency라 런타임 의존성 아님)
+- 라이브러리 추가 전 반드시 사용자에게 확인 → 현재 런타임 의존성은 vue/pinia/vue-router/**reka-ui**/**sortablejs**/**heic-to** + firebase(Auth/Firestore, 인증·세션 유지용) 7개다. reka-ui는 headless UI 기반으로 승인된 의존성, sortablejs는 배정 보드 드래그 앤 드롭용으로 승인된 의존성, heic-to는 행사장 지도의 HEIC/HEIF 사진 해독용(브라우저가 못 읽을 때만 `import()`로 지연 로딩, LGPL-3.0)으로 승인된 의존성이며, 이 목록을 늘리지 않는 것이 기본값 (Tailwind v4는 빌드타임 devDependency라 런타임 의존성 아님)
 
 ## 알아둘 것
 

@@ -561,7 +561,7 @@ describe('WaitingRoomPage', () => {
 
       expect(document.body.querySelector('input[type="url"]')).toBeNull()
       const fileInput = document.body.querySelector<HTMLInputElement>('input[type="file"]')!
-      expect(fileInput.accept).toBe('image/*')
+      expect(fileInput.accept).toBe('image/*,.heic,.heif')
       expect(document.body.textContent).toContain('참가자 콕핏의 지도 버튼에 이 이미지가 보여요.')
       // 등록 전이라 미리보기가 없다
       expect(document.body.querySelector('img[alt="행사장 지도 미리보기"]')).toBeNull()
