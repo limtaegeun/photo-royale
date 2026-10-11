@@ -15,6 +15,33 @@ export interface JpegEncodeStep {
 const JPEG_BACKGROUND_COLOR = '#ffffff'
 
 /**
+ * 이미 읽어 둔 비트맵을 단계별로 줄여 가며 JPEG 데이터 URL로 인코딩한다 — 결과가 maxLength(문자 수) 안에 드는
+ * 첫 단계를 돌려준다. 어떤 단계로도 상한을 못 맞추면 null — rules가 거부할 값은 돌려주지 않는다.
+ * 비트맵은 닫지 않는다: 읽은 쪽이 닫는다(브라우저가 못 읽는 형식을 다른 해독기로 읽는 행사장 지도가 이 경로를 쓴다).
+ */
+export function encodeBitmapAsJpegDataUrl(
+  bitmap: ImageBitmap,
+  steps: readonly JpegEncodeStep[],
+  maxLength: number,
+): string | null {
+  for (const step of steps) {
+    const scale = Math.min(1, step.maxEdge / Math.max(bitmap.width, bitmap.height))
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale))
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale))
+    const context = canvas.getContext('2d')
+    if (!context) return null
+    context.fillStyle = JPEG_BACKGROUND_COLOR
+    context.fillRect(0, 0, canvas.width, canvas.height)
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    const dataUrl = canvas.toDataURL('image/jpeg', step.quality)
+    // jsdom 등 JPEG 인코딩이 안 되는 환경은 다른 접두를 돌려준다
+    if (dataUrl.startsWith(JPEG_DATA_URL_PREFIX) && dataUrl.length <= maxLength) return dataUrl
+  }
+  return null
+}
+
+/**
  * 이미지를 단계별로 줄여 가며 JPEG 데이터 URL로 인코딩한다 — 결과가 maxLength(문자 수) 안에 드는
  * 첫 단계를 돌려준다. Firestore 문서 한도(1MiB) 안에 이미지를 담아야 하는 기능(킬샷 제출·행사장 지도)이
  * 함께 쓴다. 이미지를 읽지 못하거나(손상·미지원 형식) 어떤 단계로도 상한을 못 맞추면 null —
@@ -32,21 +59,7 @@ export async function encodeJpegDataUrl(
     return null
   }
   try {
-    for (const step of steps) {
-      const scale = Math.min(1, step.maxEdge / Math.max(bitmap.width, bitmap.height))
-      const canvas = document.createElement('canvas')
-      canvas.width = Math.max(1, Math.round(bitmap.width * scale))
-      canvas.height = Math.max(1, Math.round(bitmap.height * scale))
-      const context = canvas.getContext('2d')
-      if (!context) return null
-      context.fillStyle = JPEG_BACKGROUND_COLOR
-      context.fillRect(0, 0, canvas.width, canvas.height)
-      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
-      const dataUrl = canvas.toDataURL('image/jpeg', step.quality)
-      // jsdom 등 JPEG 인코딩이 안 되는 환경은 다른 접두를 돌려준다
-      if (dataUrl.startsWith(JPEG_DATA_URL_PREFIX) && dataUrl.length <= maxLength) return dataUrl
-    }
-    return null
+    return encodeBitmapAsJpegDataUrl(bitmap, steps, maxLength)
   } finally {
     bitmap.close()
   }

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { JPEG_DATA_URL_PREFIX, encodeJpegDataUrl } from '../encodeJpegDataUrl'
+import { JPEG_DATA_URL_PREFIX, encodeBitmapAsJpegDataUrl, encodeJpegDataUrl } from '../encodeJpegDataUrl'
 
 const STEPS = [
   { maxEdge: 2000, quality: 0.8 },
@@ -115,5 +115,19 @@ describe('encodeJpegDataUrl', () => {
     )
 
     await expect(encodeJpegDataUrl(source, STEPS, 100)).resolves.toBeNull()
+  })
+})
+
+describe('encodeBitmapAsJpegDataUrl', () => {
+  it('이미 읽은 비트맵을 같은 단계로 줄이고, 비트맵은 닫지 않는다 — 읽은 쪽(다른 해독기)이 닫는다', () => {
+    const close = vi.fn<() => void>()
+    const bitmap = { width: 4000, height: 3000, close } as unknown as ImageBitmap
+    const { context } = stubCanvasContext()
+    const oversized = `${JPEG_DATA_URL_PREFIX}${'a'.repeat(100)}`
+    stubToDataURL(oversized, `${JPEG_DATA_URL_PREFIX}retried`)
+
+    expect(encodeBitmapAsJpegDataUrl(bitmap, STEPS, 100)).toBe(`${JPEG_DATA_URL_PREFIX}retried`)
+    expect(context.drawImage).toHaveBeenLastCalledWith(bitmap, 0, 0, 1000, 750)
+    expect(close).not.toHaveBeenCalled()
   })
 })
