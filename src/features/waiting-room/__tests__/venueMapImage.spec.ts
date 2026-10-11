@@ -71,6 +71,21 @@ describe('encodeVenueMapImage', () => {
     expect(close).toHaveBeenCalledTimes(1)
   })
 
+  it('크기를 줄이기 전에 2000px에서 품질부터 낮춰 본다 — 사파리는 같은 품질에서 JPEG가 커서 바로 줄이면 아이폰 지도만 작아진다', async () => {
+    vi.stubGlobal('createImageBitmap', vi.fn(async () => fakeBitmap().bitmap))
+    encodeBitmapMock.mockReturnValue(ENCODED)
+
+    await encodeVenueMapImage(new File(['jpeg'], 'map.jpg'))
+
+    const steps = encodeBitmapMock.mock.calls[0]![1]
+    expect(steps.slice(0, 3)).toEqual([
+      { maxEdge: 2000, quality: 0.8 },
+      { maxEdge: 2000, quality: 0.6 },
+      { maxEdge: 2000, quality: 0.5 },
+    ])
+    // 크기는 단계가 지날수록 커지지 않는다
+    expect(steps.map((step) => step.maxEdge)).toEqual(steps.map((step) => step.maxEdge).sort((a, b) => b - a))
+  })
 
   it('브라우저가 못 읽는 HEIC(안드로이드·PC 크롬)는 해독기로 읽어 같은 단계로 줄인다', async () => {
     stubNativeDecodeFailure()

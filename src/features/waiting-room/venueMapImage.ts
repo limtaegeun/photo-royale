@@ -3,13 +3,19 @@ import { VENUE_MAP_IMAGE_MAX_LENGTH } from './api/venueMap'
 import { loadHeicDecoder } from './heicDecoder'
 
 /**
- * 지도 압축 단계(P08 §2.2) — 긴 변 2000px부터 시도한다. 폰에서 손가락으로 키워 지도 글씨를 읽을 수 있는
- * 크기를 먼저 쓰고, 문서 상한을 넘는 복잡한 이미지만 더 줄인다.
+ * 지도 압축 단계(P08 §2.2) — 긴 변 2000px를 먼저 지키고 품질부터 낮춰 본다. 폰에서 손가락으로 키워 지도 글씨를
+ * 읽으려면 크기가 품질보다 중요하다. 그래도 문서 상한을 넘는 복잡한 이미지만 1600·1280px로 줄인다.
+ * 사파리(아이폰 브라우저 전부)는 같은 품질 값에서 JPEG가 크롬보다 2~2.7배 커서, 단계마다 크기와 품질을 함께
+ * 내리면 아이폰에서 올린 지도만 1280px까지 내려갔다(2026-10-11 실측 — 같은 지도 사진이 크롬은 2000px).
  */
 const VENUE_MAP_ENCODE_STEPS: readonly JpegEncodeStep[] = [
   { maxEdge: 2000, quality: 0.8 },
-  { maxEdge: 1600, quality: 0.7 },
+  { maxEdge: 2000, quality: 0.6 },
+  { maxEdge: 2000, quality: 0.5 },
+  { maxEdge: 1600, quality: 0.6 },
+  { maxEdge: 1600, quality: 0.5 },
   { maxEdge: 1280, quality: 0.6 },
+  { maxEdge: 1280, quality: 0.5 },
 ]
 
 /**
