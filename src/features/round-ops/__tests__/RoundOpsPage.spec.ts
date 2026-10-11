@@ -1817,6 +1817,68 @@ describe('RoundOpsPage', () => {
       const sameGroupTeam = document.body.querySelector<HTMLButtonElement>('button[data-team="F"]')!
       expect(sameGroupTeam.disabled).toBe(false)
       expect(sameGroupTeam.textContent).not.toContain('같은 그룹')
+      // X를 끈 라운드(원장 xTeams 없음) — X끼리만 제한도 걸리지 않는다
+      expect(document.body.textContent).not.toContain('X끼리만')
+    })
+
+    /**
+     * 일반전 특수 완장 X(규칙서 §3.1 "오직 X끼리만 서로를 사냥") — 원장의 X 팀과 X 여부가 다른 팀은
+     * 대상에서 비활성화되고 'X끼리만' 배지가 붙는다. X는 그룹마다 1팀: 파랑 A·E 중 A, 주황 B·F 중 B
+     */
+    async function openNormalXRound(submission: Submission) {
+      const { deliver, wrapper } = await openJudgeTab()
+      deliver.participants([
+        assigned('u1', 'A'),
+        assigned('u2', 'E'),
+        assigned('u3', 'B'),
+        assigned('u4', 'F'),
+      ])
+      deliver.submissions([submission])
+      deliver.ledger({
+        roundNo: 2,
+        mode: 'normal',
+        teams: { A: ['u1'], B: ['u3'], E: ['u2'], F: ['u4'] },
+        xTeams: ['A', 'B'],
+        confirmedAtMs: 0,
+        tally: null,
+        hits: null,
+        tails: null,
+        credits: null,
+        result: null,
+      })
+      await flushPromises()
+      await wrapper.find(`button[data-submission="${submission.id}"]`).trigger('click')
+      await flushPromises()
+    }
+
+    function teamOption(armband: string) {
+      return document.body.querySelector<HTMLButtonElement>(`button[data-team="${armband}"]`)!
+    }
+
+    it('일반전 X 라운드에서 X 팀의 킬샷은 다른 X 팀만 고를 수 있다', async () => {
+      await openNormalXRound(pendingSubmission())
+
+      expect(teamOption('A').disabled).toBe(false)
+      expect(teamOption('A').textContent).not.toContain('X끼리만')
+      for (const armband of ['E', 'F']) {
+        expect(teamOption(armband).disabled).toBe(true)
+        expect(teamOption(armband).textContent).toContain('X끼리만')
+      }
+
+      teamOption('A').click()
+      await flushPromises()
+      expect(sheetButton('판정 확정')!.hasAttribute('disabled')).toBe(false)
+    })
+
+    it('일반전 X 라운드에서 일반 팀의 킬샷은 X 팀을 고를 수 없고 일반 팀은 고를 수 있다', async () => {
+      await openNormalXRound(pendingSubmission({ id: 's2', uid: 'u2', team: 'E' }))
+
+      for (const armband of ['A', 'B']) {
+        expect(teamOption(armband).disabled).toBe(true)
+        expect(teamOption(armband).textContent).toContain('X끼리만')
+      }
+      expect(teamOption('F').disabled).toBe(false)
+      expect(teamOption('F').textContent).not.toContain('X끼리만')
     })
 
     it('일반전이 아니면 낙오 포착 토글이 없다', async () => {

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, it, expect } from 'vitest'
 import { DEFAULT_GAME_MODE, GAME_MODE_IDS, GAME_MODES, isGameModeId } from '../registry'
-import { ALL_ALLIES_TARGETING, TAIL_CHASE_TARGETING } from '../targeting'
+import { ALL_ALLIES_TARGETING, TAIL_CHASE_TARGETING, X_ONLY_TARGETING } from '../targeting'
 import type { GameModeId } from '../types'
 
 describe('game-mode registry', () => {
@@ -71,8 +71,8 @@ describe('game-mode registry', () => {
     }
   })
 
-  it('그룹전·왕잡기는 같은 그룹을 잡을 수 없는 대상 제한을 공유하고, 꼬리잡기는 다음 알파벳만, 스태프 추격전은 전원 동맹으로 막으며, 나머지는 제한이 없다', () => {
-    const context = { teams: ['A', 'B', 'F'], outTeams: [] }
+  it('그룹전·왕잡기는 같은 그룹을 잡을 수 없는 대상 제한을 공유하고, 꼬리잡기는 다음 알파벳만, 스태프 추격전은 전원 동맹, 일반전은 X끼리만으로 막으며, 나머지는 제한이 없다', () => {
+    const context = { teams: ['A', 'B', 'F'], outTeams: [], xTeams: [] }
     for (const id of ['group', 'king-hunt'] as const) {
       const targeting = GAME_MODES[id].targeting!
       expect(targeting.blockedBadge).toBe('같은 그룹')
@@ -86,8 +86,15 @@ describe('game-mode registry', () => {
     expect(GAME_MODES['staff-chase'].targeting!.blockedBadge).toBe('동맹')
     expect(GAME_MODES['staff-chase'].targeting!.canTarget('A', 'B', context)).toBe(false)
 
+    expect(GAME_MODES.normal.targeting).toBe(X_ONLY_TARGETING)
+
     for (const id of GAME_MODE_IDS.filter(
-      (id) => id !== 'group' && id !== 'king-hunt' && id !== 'tail-chase' && id !== 'staff-chase',
+      (id) =>
+        id !== 'group' &&
+        id !== 'king-hunt' &&
+        id !== 'tail-chase' &&
+        id !== 'staff-chase' &&
+        id !== 'normal',
     )) {
       expect(GAME_MODES[id].targeting).toBeUndefined()
     }

@@ -34,3 +34,13 @@ export const ALL_ALLIES_TARGETING: TargetRule = {
   canTarget: () => false,
   blockedBadge: '동맹',
 }
+
+/**
+ * 일반전 특수 완장 X — 규칙서 §3.1 "오직 X끼리만 서로를 사냥할 수 있습니다". X 팀은 X 팀만, 일반 팀은
+ * 일반 팀만 잡는다. X를 끈 라운드는 xTeams가 비어 있어 아무것도 막지 않는다(클라이언트만, rules는 막지 않는다).
+ */
+export const X_ONLY_TARGETING: TargetRule = {
+  canTarget: (attacker, target, context) =>
+    context.xTeams.includes(attacker) === context.xTeams.includes(target),
+  blockedBadge: 'X끼리만',
+}

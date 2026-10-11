@@ -711,6 +711,7 @@ onUnmounted(() => {
       :now-ms="nowMs"
       :allow-triple-kill="room?.gameMode === 'normal'"
       :out-teams="outTeams"
+      :x-teams="currentLedger?.xTeams ?? []"
       :target-rule="targetRule"
       @approve="approveKillshot"
       @reject="rejectKillshot"
