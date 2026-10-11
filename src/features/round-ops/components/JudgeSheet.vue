@@ -38,8 +38,13 @@ interface Props {
    */
   outTeams?: string[]
   /**
+   * 특수 완장 X를 겸한 팀 완장(편성 스냅샷) — 일반전의 "X끼리만 사냥" 대상 제한 근거. X를 끈 라운드나
+   * 원장이 없는 라운드면 빈 배열.
+   */
+  xTeams?: string[]
+  /**
    * 모드의 대상 제한(P07 M4) — 제출 팀이 잡을 수 없는 팀(그룹전의 같은 그룹 동맹, 꼬리잡기의 다음
-   * 알파벳이 아닌 팀)을 비활성화하고 이유 배지를 붙인다. 제한이 없는 모드면 null.
+   * 알파벳이 아닌 팀, 일반전의 X 여부가 다른 팀)을 비활성화하고 이유 배지를 붙인다. 제한이 없는 모드면 null.
    */
   targetRule?: TargetRule | null
 }
@@ -47,6 +52,7 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   allowTripleKill: false,
   outTeams: () => [],
+  xTeams: () => [],
   targetRule: null,
 })
 
@@ -104,7 +110,11 @@ function decorate(team: TeamSectionTeam, targetContext: TargetContext): TeamPick
 /** 이번 라운드 팀을 그룹 섹션으로 나누고 선택 가능 여부·배지를 얹는다 */
 const sections = computed<TeamPickSection[]>(() => {
   const base = groupTeamSections(props.participants, props.assignmentRound)
-  const targetContext = { teams: base.flatMap((s) => s.teams.map((t) => t.armband)), outTeams: props.outTeams }
+  const targetContext = {
+    teams: base.flatMap((s) => s.teams.map((t) => t.armband)),
+    outTeams: props.outTeams,
+    xTeams: props.xTeams,
+  }
   return base.map((section) => ({ ...section, teams: section.teams.map((team) => decorate(team, targetContext)) }))
 })
 
