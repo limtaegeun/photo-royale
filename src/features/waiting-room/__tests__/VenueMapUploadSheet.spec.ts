@@ -112,6 +112,21 @@ describe('VenueMapUploadSheet', () => {
     expect(bodyButton('저장').disabled).toBe(true)
   })
 
+  it('미리보기를 누르면 지도를 화면 전체로 크게 본다 — 고르고 저장하기 전 지도도 그대로 크게 본다', async () => {
+    encodeVenueMapImageMock.mockResolvedValue(PICKED_IMAGE)
+    await mountSheet(CURRENT_IMAGE)
+    await pickFile()
+
+    const previewButton = preview()!.closest('button')!
+    expect(previewButton.getAttribute('aria-label')).toBe('행사장 지도 크게 보기')
+    previewButton.click()
+    await flushPromises()
+
+    const viewerImage = document.body.querySelector<HTMLImageElement>('img[alt="행사장 지도"]')
+    expect(viewerImage?.getAttribute('src')).toBe(PICKED_IMAGE)
+    expect(document.body.querySelector('button[aria-label="확대"]')).not.toBeNull()
+  })
+
   it('저장 중에는 다른 이미지를 고를 수 없다', async () => {
     mount(VenueMapUploadSheet, { props: { currentImage: CURRENT_IMAGE, open: true, saving: true } })
     await flushPromises()

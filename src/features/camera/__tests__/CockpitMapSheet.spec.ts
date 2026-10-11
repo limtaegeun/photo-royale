@@ -28,15 +28,24 @@ describe('CockpitMapSheet', () => {
     expect(image!.getAttribute('src')).toBe(MAP_IMAGE)
   })
 
-  it('이미지는 스크롤·핀치 줌이 되는 상자 안에 있고 링크·다운로드 경로가 없다', async () => {
+  it('지도를 누르면 화면 전체로 크게 열리고, 링크·다운로드 경로는 없다', async () => {
     await mountSheet()
 
     const image = document.body.querySelector<HTMLImageElement>('img[alt="행사장 지도"]')!
-    const box = image.parentElement!
-    expect(box.className).toContain('overflow-auto')
-    expect(box.className).toContain('touch-pinch-zoom')
+    const preview = image.closest('button')!
+    expect(preview.getAttribute('aria-label')).toBe('행사장 지도 크게 보기')
     expect(document.body.querySelector('a')).toBeNull()
     expect(document.body.querySelector('[download]')).toBeNull()
+
+    preview.click()
+    await flushPromises()
+
+    // 시트 위에 크게 보기가 겹쳐 열린다 — 같은 지도를 그대로 그리고 확대·축소 버튼이 있다
+    const viewerImages = document.body.querySelectorAll<HTMLImageElement>('img[alt="행사장 지도"]')
+    expect(viewerImages).toHaveLength(2)
+    expect(viewerImages[1]!.getAttribute('src')).toBe(MAP_IMAGE)
+    expect(document.body.querySelector('button[aria-label="확대"]')).not.toBeNull()
+    expect(document.body.querySelector('button[aria-label="축소"]')).not.toBeNull()
   })
 
   it('닫혀 있으면 아무것도 렌더하지 않는다', async () => {
