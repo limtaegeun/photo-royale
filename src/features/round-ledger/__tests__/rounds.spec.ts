@@ -154,6 +154,7 @@ describe('addTallyToBatch (판정 집계)', () => {
     addTallyToBatch(batch as never, 'AB2C', 2, 'A', 'B', 1, false, {
       creditUids: ['u1', 'u2', 'u5'],
       absorbedUids: ['u3', 'u4'],
+      absorbedIntoTeams: [],
     })
 
     expect(batch.update).toHaveBeenCalledExactlyOnceWith(
@@ -169,10 +170,37 @@ describe('addTallyToBatch (판정 집계)', () => {
     )
   })
 
+  /**
+   * 공격 팀이 이미 잡혀 편입된 뒤 판정되는 킬(잡히기 전에 찍은 사진) — 합류 인원을 탈락한 공격 완장의 tails에만
+   * 남기면 그 뒤 킬 크레딧을 못 받는다(10/9 리허설 문제 6). 편입처(absorbedIntoTeams)의 tails에도 같이 넣는다.
+   */
+  it('absorbedIntoTeams가 있으면 합류 인원을 편입처 완장의 tails에도 같은 arrayUnion으로 얹는다', () => {
+    const batch = tallyBatch()
+
+    addTallyToBatch(batch as never, 'AB2C', 2, 'B', 'C', 1, false, {
+      creditUids: ['u3', 'u4'],
+      absorbedUids: ['u5', 'u6'],
+      absorbedIntoTeams: ['A'],
+    })
+
+    expect(batch.update.mock.calls[0]![1]).toEqual({
+      'tally.B.kills': { increment: 1 },
+      'hits.C': { increment: 1 },
+      'credits.u3': { increment: 1 },
+      'credits.u4': { increment: 1 },
+      'tails.B': { arrayUnion: ['u5', 'u6'] },
+      'tails.A': { arrayUnion: ['u5', 'u6'] },
+    })
+  })
+
   it('이 킬로 피격 팀이 아웃되지 않으면(합류 없음) credits만 올리고 tails는 쓰지 않는다 — 3배·왕 사냥과도 함께', () => {
     const batch = tallyBatch()
 
-    addTallyToBatch(batch as never, 'AB2C', 2, 'A', 'B', 3, true, { creditUids: ['u1'], absorbedUids: [] })
+    addTallyToBatch(batch as never, 'AB2C', 2, 'A', 'B', 3, true, {
+      creditUids: ['u1'],
+      absorbedUids: [],
+      absorbedIntoTeams: [],
+    })
 
     expect(batch.update.mock.calls[0]![1]).toEqual({
       'tally.A.tripleKills': { increment: 1 },

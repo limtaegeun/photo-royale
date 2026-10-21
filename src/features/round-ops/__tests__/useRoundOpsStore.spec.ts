@@ -124,7 +124,7 @@ interface ApprovalTallyArg {
   roundNo: number
   attackerTeam: string
   kingTarget?: boolean
-  absorb?: { creditUids: string[]; absorbedUids: string[] }
+  absorb?: { creditUids: string[]; absorbedUids: string[]; absorbedIntoTeams: string[] }
 }
 const approveSubmissionMock =
   vi.fn<
@@ -953,7 +953,7 @@ describe('useRoundOpsStore', () => {
           roundNo: 2,
           attackerTeam: 'B',
           kingTarget: false,
-          absorb: { creditUids: ['u3', 'u4', 'u5'], absorbedUids: ['u1', 'u2'] },
+          absorb: { creditUids: ['u3', 'u4', 'u5'], absorbedUids: ['u1', 'u2'], absorbedIntoTeams: [] },
         },
         1,
       )

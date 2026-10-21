@@ -147,6 +147,8 @@ describe('꼬리잡기 편입 (P07 §4.2, M4-6)', () => {
       )
 
       expect(effect.creditUids).toEqual(['a1', 'a2', 'b1', 'b2'])
+      // 자기 꼬리에 든 팀원(손상 데이터)은 편입처가 아니다
+      expect(effect.absorbedIntoTeams).toEqual([])
     })
 
     it('2인 팀은 첫 히트로 아웃 — 팀원과 그 팀이 끌던 꼬리가 잡은 팀에 합류한다(이 킬의 크레딧은 못 받는다)', () => {
@@ -169,6 +171,99 @@ describe('꼬리잡기 편입 (P07 §4.2, M4-6)', () => {
       expect(absorbKillEffect({ teams: TC_TEAMS, hits: {} }, 'A', 'B')).toEqual({
         creditUids: ['a1', 'a2'],
         absorbedUids: ['b1', 'b2'],
+        absorbedIntoTeams: [],
+      })
+    })
+
+    /**
+     * 10/9 리허설 문제 6 — A→B 사진을 먼저 인정하고 B→C 사진(B가 잡히기 전에 찍은 것)을 나중에 인정하면
+     * C 두 명이 이미 탈락한 B의 꼬리에만 남아 그 뒤 A의 킬 크레딧을 못 받았다(판정 순서가 반대면 10점).
+     */
+    it('공격 팀이 이미 잡혀 편입된 뒤의 킬이면 공격 팀원을 꼬리에 끌고 있는 완장을 absorbedIntoTeams로 돌려준다', () => {
+      const effect = absorbKillEffect(
+        { teams: TC_TEAMS, hits: { B: 1 }, tails: { A: ['b1', 'b2'] } },
+        'B',
+        'C',
+      )
+
+      // 크레딧은 여전히 B 몫(찍을 때 살아 있었다), 합류 인원은 B 꼬리와 함께 A 꼬리에도 간다
+      expect(effect).toEqual({
+        creditUids: ['b1', 'b2'],
+        absorbedUids: ['c1', 'c2'],
+        absorbedIntoTeams: ['A'],
+      })
+    })
+
+    it('편입이 연쇄됐으면(A가 B를 잡은 뒤 D가 A를 잡음) B 팀원을 끌고 있는 A·D 모두가 편입처다', () => {
+      const ledger = {
+        teams: TC_TEAMS,
+        hits: { A: 1, B: 1 },
+        tails: { A: ['b1', 'b2'], D: ['a1', 'a2', 'b1', 'b2'] },
+      }
+
+      expect(absorbKillEffect(ledger, 'B', 'C').absorbedIntoTeams).toEqual(['A', 'D'])
+      expect(absorbKillEffect(ledger, 'A', 'C').absorbedIntoTeams).toEqual(['D'])
+    })
+  })
+
+  describe('판정 순서와 원장 (10/9 리허설 문제 6)', () => {
+    /** 2인 팀 4개 — A→B→C→D→A 순으로 사냥한다 */
+    const RING_TEAMS = { A: ['a1', 'a2'], B: ['b1', 'b2'], C: ['c1', 'c2'], D: ['d1', 'd2'] }
+    interface Ledger {
+      hits: Record<string, number>
+      tails: Record<string, string[]>
+      credits: Record<string, number>
+    }
+    const EMPTY_LEDGER: Ledger = { hits: {}, tails: {}, credits: {} }
+
+    /** 판정 배치(round-ledger addTallyToBatch)가 원장에 남기는 것을 메모리에서 그대로 — credits increment, tails arrayUnion */
+    function judge(ledger: Ledger, attacker: string, target: string): Ledger {
+      const effect = absorbKillEffect(
+        { teams: RING_TEAMS, hits: ledger.hits, tails: ledger.tails },
+        attacker,
+        target,
+      )
+      const hits = { ...ledger.hits, [target]: (ledger.hits[target] ?? 0) + 1 }
+      const credits = { ...ledger.credits }
+      for (const uid of effect.creditUids) credits[uid] = (credits[uid] ?? 0) + 1
+      const tails = { ...ledger.tails }
+      if (effect.absorbedUids.length > 0) {
+        for (const armband of [attacker, ...effect.absorbedIntoTeams]) {
+          tails[armband] = [...new Set([...(tails[armband] ?? []), ...effect.absorbedUids])]
+        }
+      }
+      return { hits, tails, credits }
+    }
+
+    it('A→B 사진을 먼저 인정해도 B→C 먼저와 원장이 같다 — C 두 명이 그 뒤 A→D 킬의 크레딧을 받는다', () => {
+      // B→C 사진은 B가 A에게 잡히기 전에 찍혀 A→B 사진과 함께 판정을 기다리던 것
+      const natural = judge(judge(judge(EMPTY_LEDGER, 'B', 'C'), 'A', 'B'), 'A', 'D')
+      const reversed = judge(judge(judge(EMPTY_LEDGER, 'A', 'B'), 'B', 'C'), 'A', 'D')
+
+      expect(reversed).toEqual(natural)
+      expect(reversed.tails.A).toEqual(['b1', 'b2', 'c1', 'c2', 'd1', 'd2'])
+      expect(reversed.credits).toEqual({ a1: 2, a2: 2, b1: 2, b2: 2, c1: 1, c2: 1 })
+    })
+
+    it('정산도 같다 — 개인 원점수 A 25 · B 20 · C 10 · D 0', () => {
+      const ledger = judge(judge(judge(EMPTY_LEDGER, 'A', 'B'), 'B', 'C'), 'A', 'D')
+      const output = tailChaseScoring({
+        teams: RING_TEAMS,
+        xTeams: [],
+        tally: { A: { kills: 2, tripleKills: 0 }, B: { kills: 1, tripleKills: 0 } },
+        hits: ledger.hits,
+        credits: ledger.credits,
+      })
+
+      expect(output.playerScores).toEqual({
+        a1: 25,
+        a2: 25,
+        b1: 20,
+        b2: 20,
+        c1: 10,
+        c2: 10,
+        d1: 0,
+        d2: 0,
       })
     })
   })

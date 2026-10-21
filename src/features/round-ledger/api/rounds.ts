@@ -84,7 +84,9 @@ export function addSnapshotRemovalToBatch(
  *
  * absorb(편입 모드 — 꼬리잡기, P07 §4.2)가 있으면 킬 시점의 사냥 팀 소속 전원에게 credits를 1씩
  * 올리고, 이 킬로 피격 팀이 아웃되면 그 인원을 공격 완장의 tails에 합류시킨다(arrayUnion이라 재판정
- * 없이도 중복이 안 쌓인다). rules ②가 tally·hits와 함께 두 키를 map으로 허용한다 — 이 키를 쓰려면
+ * 없이도 중복이 안 쌓인다). 공격 팀이 이미 잡혀 편입된 뒤의 판정(absorbedIntoTeams — 잡히기 전에 찍은
+ * 사진)이면 그 편입처 완장의 tails에도 같이 넣는다 — 탈락한 팀 꼬리에만 남으면 그 뒤 킬 크레딧을 못 받는다
+ * (10/9 리허설 문제 6). rules ②가 tally·hits와 함께 두 키를 map으로 허용한다 — 이 키를 쓰려면
  * rules **선배포**가 필요하다(옛 rules는 hasOnly(['tally','hits'])로 배치 전체를 거부한다).
  * credits의 dot-path 키는 uid다 — Firebase Auth uid는 영숫자라 필드 경로 구분자(.)가 들어가지 않는다.
  */
@@ -102,7 +104,9 @@ export function addTallyToBatch(
   const absorbUpdates: Record<string, unknown> = {}
   for (const uid of absorb?.creditUids ?? []) absorbUpdates[`credits.${uid}`] = increment(1)
   if (absorb !== undefined && absorb.absorbedUids.length > 0) {
-    absorbUpdates[`tails.${attackerTeam}`] = arrayUnion(...absorb.absorbedUids)
+    for (const armband of [attackerTeam, ...absorb.absorbedIntoTeams]) {
+      absorbUpdates[`tails.${armband}`] = arrayUnion(...absorb.absorbedUids)
+    }
   }
   batch.update(roundLedgerDoc(code, roundNo), {
     [`tally.${attackerTeam}.${killField}`]: increment(1),
