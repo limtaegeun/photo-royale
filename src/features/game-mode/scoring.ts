@@ -137,6 +137,12 @@ export interface AbsorbKillEffect {
   creditUids: string[]
   /** 이 킬로 target이 아웃될 때만 채워진다(target 팀원 + target이 끌던 꼬리). 아니면 빈 배열 */
   absorbedUids: string[]
+  /**
+   * 공격 팀원을 꼬리에 끌고 있는 완장 — 공격 팀이 이 판정 전에 이미 잡혀 편입된 곳(연쇄 편입이면 전부).
+   * 합류 인원을 공격 완장의 tails와 함께 이 완장들의 tails에도 넣어야, 잡히기 전에 찍은 사진을 나중에
+   * 판정해도 먼저 판정한 것과 원장이 같아진다. 공격 팀이 살아 있으면 빈 배열
+   */
+  absorbedIntoTeams: string[]
 }
 
 /** 두 uid 목록의 합집합 — 같은 uid가 두 번 쓰이지 않게(팀원이 꼬리에도 들어간 손상 데이터 방어) */
@@ -148,6 +154,8 @@ function unionUids(members: string[] | undefined, tails: string[] | undefined): 
  * 킬 1건의 편입 효과(P07 §4.2 "킬 +10 → 킬 시점의 사냥 팀 소속 전원 — 편입돼 있던 인원 포함").
  * 크레딧은 공격 팀의 현재 소속(팀원 ∪ 꼬리), 합류는 이 킬로 target의 hits가 라이프에 닿을 때만 —
  * 1인 팀은 라이프 2라 첫 히트로는 합류하지 않는다. 판정 시점의 원장(hits·tails)을 넘긴다.
+ * 공격 팀이 이미 잡힌 뒤 판정되는 킬(잡히기 전에 찍은 사진)은 합류 인원이 탈락한 팀 꼬리에만 남아 그 뒤
+ * 크레딧을 못 받았다(10/9 리허설 문제 6) — 공격 팀원이 든 꼬리의 주인을 absorbedIntoTeams로 같이 돌려준다.
  */
 export function absorbKillEffect(
   input: Pick<ModeScoringInput, 'teams' | 'hits' | 'tails'>,
@@ -156,9 +164,17 @@ export function absorbKillEffect(
 ): AbsorbKillEffect {
   const tails = input.tails ?? {}
   const targetOutAfterKill = (input.hits[target] ?? 0) + 1 >= livesOf(input.teams, target)
+  const attackerMembers = input.teams[attacker] ?? []
   return {
     creditUids: unionUids(input.teams[attacker], tails[attacker]),
     absorbedUids: targetOutAfterKill ? unionUids(input.teams[target], tails[target]) : [],
+    absorbedIntoTeams: Object.entries(tails)
+      .filter(
+        ([armband, uids]) =>
+          armband !== attacker && uids.some((uid) => attackerMembers.includes(uid)),
+      )
+      .map(([armband]) => armband)
+      .sort(),
   }
 }
 

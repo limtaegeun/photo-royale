@@ -506,7 +506,7 @@ describe('판정 쓰기', () => {
       {
         roundNo: 2,
         attackerTeam: 'A',
-        absorb: { creditUids: ['u1', 'u2'], absorbedUids: ['u3', 'u4'] },
+        absorb: { creditUids: ['u1', 'u2'], absorbedUids: ['u3', 'u4'], absorbedIntoTeams: [] },
       },
     )
 
