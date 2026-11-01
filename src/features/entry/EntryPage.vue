@@ -65,27 +65,32 @@ onMounted(() => {
          비로그인이면 로그인 유도. 코드로 들어오는 게스트가 다수라 입장 경로를 주인공으로 둔다 -->
     <div class="pt-5 pb-6">
       <template v-if="authStore.isLoggedIn">
-        <BaseInput
-          v-model="inviteCodeInput"
-          size="lg"
-          class="text-center font-semibold tracking-widest uppercase"
-          placeholder="초대 코드를 입력해주세요"
-          :maxlength="ROOM_CODE_LENGTH"
-          autocapitalize="characters"
-          autocomplete="off"
-          spellcheck="false"
-          :disabled="isSubmitting"
-        />
-        <BaseButton
-          variant="primary"
-          size="md"
-          class="mt-3 w-full"
-          :loading="pendingAction === 'join'"
-          :disabled="pendingAction === 'create'"
-          @click="joinWithCode(inviteCodeInput)"
-        >
-          입장하기
-        </BaseButton>
+        <!-- 폼으로 묶어 모바일 키보드의 '이동'(Enter)도 입장하기와 같게 제출한다 — 버튼 클릭만 받으면
+             Enter 가 아무 반응도 없고 틀린 코드 안내도 안 떴다(11/01 QA 탐색 EX-02) -->
+        <form class="flex flex-col gap-3" @submit.prevent="joinWithCode(inviteCodeInput)">
+          <BaseInput
+            v-model="inviteCodeInput"
+            size="lg"
+            class="text-center font-semibold tracking-widest uppercase"
+            placeholder="초대 코드를 입력해주세요"
+            :maxlength="ROOM_CODE_LENGTH"
+            autocapitalize="characters"
+            autocomplete="off"
+            spellcheck="false"
+            enterkeyhint="go"
+            :disabled="isSubmitting"
+          />
+          <BaseButton
+            type="submit"
+            variant="primary"
+            size="md"
+            class="w-full"
+            :loading="pendingAction === 'join'"
+            :disabled="pendingAction === 'create'"
+          >
+            입장하기
+          </BaseButton>
+        </form>
         <p v-if="actionError" class="mt-2 text-caption text-danger" role="alert">
           {{ actionError }}
         </p>
