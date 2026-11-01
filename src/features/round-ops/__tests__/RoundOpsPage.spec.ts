@@ -1447,6 +1447,33 @@ describe('RoundOpsPage', () => {
       expect(document.body.textContent).toContain('판정하지 않은 킬샷이 있어요')
     })
 
+    /** 같은 프레임에 두 번 누르면 두 번째 탭이 진행 중 가드에 걸린다 — 그걸 실패로 알리면 안내가 엇갈린다 */
+    it('그대로 라운드 종료를 연타해도 종료는 한 번이고 실패 안내가 뜨지 않는다', async () => {
+      const { wrapper } = await openEndedRound(1)
+
+      await findButton(wrapper, '라운드 종료')!.trigger('click')
+      await flushPromises()
+      const request = deferred()
+      endGameMock.mockReturnValueOnce(request.promise)
+      const confirm = [...document.body.querySelectorAll<HTMLElement>('button')].find(
+        (button) => button.textContent?.trim() === '그대로 라운드 종료',
+      )!
+      confirm.click()
+      confirm.click()
+      request.resolve()
+      await flushPromises()
+
+      expect(endGameMock).toHaveBeenCalledTimes(1)
+      expect(toastMock).not.toHaveBeenCalledWith({
+        title: '라운드를 종료하지 못했어요. 다시 시도해 주세요.',
+        tone: 'danger',
+      })
+      expect(toastMock).toHaveBeenCalledWith({
+        title: '라운드를 종료했어요. 대기실에서 다음 라운드를 배정해 주세요.',
+        tone: 'success',
+      })
+    })
+
     /** 종료가 서버까지 가지도 못하는 경로 — 야외 오프라인에서는 앞선 쓰기가 오래 매달린다 */
     it('다른 쓰기가 끝나기 전에 누른 종료도 실패를 알린다', async () => {
       const { wrapper } = await openEndedRound(0)

@@ -230,6 +230,10 @@ watch([activeTab, phase], ([tab, currentPhase]) => {
  * 그대로 열어 둔 채 원인을 알려야 호스트가 같은 자리에서 다시 누를 수 있다.
  */
 async function endGame() {
+  // 이미 보낸 종료가 진행 중이면 두 번째 탭은 아무 일도 하지 않는다 — 결과는 먼저 보낸 요청이 알린다.
+  // 그대로 store까지 보내면 진행 중 가드의 false를 실패로 읽어, 성공 안내와 실패 안내가 같이 떴다
+  // (10/28 최종 QA EX-05). 다른 쓰기가 매달려 있을 때 누른 종료는 여전히 실패를 알린다.
+  if (pendingAction.value === 'end') return
   const ended = await store.finishGame()
   if (!ended) {
     toast({ title: END_GAME_ERROR_MESSAGE, tone: 'danger' })
@@ -250,6 +254,8 @@ async function endGame() {
  * 남지 않는다. 진행자는 라운드가 닫힌 줄 알고 다음 순서로 넘어간다.
  */
 async function finishRound() {
+  // 연타 — endGame과 같은 이유로 진행 중인 종료에 겹친 탭은 버린다
+  if (pendingAction.value === 'end') return
   const finished = await store.finishGame()
   if (!finished) {
     toast({ title: END_ROUND_ERROR_MESSAGE, tone: 'danger' })
