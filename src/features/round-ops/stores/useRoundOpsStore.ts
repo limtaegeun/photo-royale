@@ -391,11 +391,15 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     ) {
       return false
     }
-    // 정산(P07)은 종료와 같은 배치에 실린다. 원장이 있는 라운드만 — 클릭 순간의 집계로 계산하고,
-    // 같은 차수를 재시작해 다시 종료하면 result를 덮어쓴다(마지막 종료가 정본).
+    // 정산(P07)은 종료와 같은 배치에 실린다. 원장이 있고 **라운드를 시작한 차수만** — 클릭 순간의
+    // 집계로 계산하고, 같은 차수를 재시작해 다시 종료하면 result를 덮어쓴다(마지막 종료가 정본).
+    // 라운드 시작 전(round 없음)에 끝내면 아무도 뛰지 않았는데 일반전 기준 전원 생존으로 점수가
+    // 들어가 누적 순위에 유령 라운드가 남았다(10/28 최종 QA D6) — 그때는 정산 없이 종료만 한다.
     const ledger = currentLedger.value
     const settlement =
-      ledger === null ? undefined : { roundNo: ledger.roundNo, result: settleRound(ledger) }
+      ledger === null || round.value === null
+        ? undefined
+        : { roundNo: ledger.roundNo, result: settleRound(ledger) }
     return runAction('end', () => endGame(roomCode.value!, settlement), false)
   }
 
