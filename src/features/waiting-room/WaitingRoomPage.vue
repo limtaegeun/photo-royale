@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch, watchEffect } from 'vue'
 import { storeToRefs } from 'pinia'
-import { useRoute, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
+import { closeOpenSheetOnHistoryBack } from '@/shared/utils/closeOpenSheetOnHistoryBack'
 import BaseBadge from '@/shared/components/BaseBadge.vue'
 import BaseButton from '@/shared/components/BaseButton.vue'
 import BaseCard from '@/shared/components/BaseCard.vue'
@@ -316,6 +317,9 @@ onUnmounted(() => {
  * 진입 시점의 미인증은 라우트 가드(authGuard)가 `whenReady()`로 인증 복원을 기다린 뒤 이미 걸러낸다.
  * 그래서 여기가 잡는 것은 **화면에 머무는 동안 로그인이 사라지는 전이**뿐이다.
  */
+// 뒤로가기는 열린 시트(누적 순위 전체·지도 등)만 닫고 대기실에 머문다(11/01 QA 탐색 EX-01)
+onBeforeRouteLeave((to) => !closeOpenSheetOnHistoryBack(to))
+
 watch(myId, (id) => {
   if (id !== null) return
   router.replace({ name: 'login', query: { redirect: route.fullPath } })
