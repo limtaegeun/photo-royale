@@ -250,6 +250,7 @@ describe('AssignmentBoard', () => {
   it('칩을 선택한 뒤 팀 카드를 터치하면 해당 팀으로 이동한다', async () => {
     const { wrapper, store } = mountBoard()
     store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+    store.moveMember('m2', null) // B[f2] — 2명인 팀은 받지 않으므로 자리를 비워 둔다
     await flushPromises()
 
     await wrapper.find('[data-member="m1"]').trigger('click')
@@ -260,8 +261,32 @@ describe('AssignmentBoard', () => {
     const teamA = store.draftTeams.find((team) => team.armband === 'A')!
     const teamB = store.draftTeams.find((team) => team.armband === 'B')!
     expect(teamA.members.map((m) => m.id)).toEqual(['f1'])
-    expect(teamB.members.map((m) => m.id)).toEqual(['m2', 'f2', 'm1'])
+    expect(teamB.members.map((m) => m.id)).toEqual(['f2', 'm1'])
     expect(store.selectedMemberId).toBeNull()
+  })
+
+  /** 규칙서 §1 팀당 1~2명 — 2명인 팀은 이동 타겟이 아니다(10/28 최종 QA D3) */
+  it('칩을 선택해도 이미 2명인 팀 카드는 이동 타겟이 아니고, 터치해도 옮기지 않는다', async () => {
+    const { wrapper, store } = mountBoard()
+    store.startDraft(mixedFour(), 1, 'normal', identityRandom) // A[m1,f1] · B[m2,f2]
+    store.addTeam() // C[]
+    await flushPromises()
+
+    await wrapper.find('[data-member="m1"]').trigger('click')
+
+    const cardB = wrapper.find('[data-team="B"]')
+    const cardC = wrapper.find('[data-team="C"]')
+    expect(cardB.attributes('role')).toBeUndefined()
+    expect(cardB.classes()).not.toContain('border-brand')
+    expect(cardC.attributes('role')).toBe('button')
+    expect(cardC.classes()).toContain('border-brand')
+
+    await cardB.trigger('click')
+
+    const teamB = store.draftTeams.find((team) => team.armband === 'B')!
+    expect(teamB.members.map((m) => m.id)).toEqual(['m2', 'f2'])
+    // 선택은 남는다 — 받을 수 있는 다른 팀을 바로 고를 수 있다
+    expect(store.selectedMemberId).toBe('m1')
   })
 
   it('미배정 대기자 섹션을 표시하고, 선택 칩을 대기열로 보낸다', async () => {
@@ -430,11 +455,34 @@ describe('AssignmentBoard', () => {
       // 팀 A·B·C 컨테이너 3개 + 상시 존재하는 대기자 컨테이너 1개 = 4개에 붙는다
       expect(createMock).toHaveBeenCalledTimes(4)
       for (const call of createMock.mock.calls) {
-        expect(call[1]!.group).toBe('assignment-members')
+        expect(call[1]!.group).toMatchObject({ name: 'assignment-members' })
         expect(call[1]!.draggable).toBe('[data-member]')
         expect(call[1]!.delay).toBe(150)
         expect(call[1]!.delayOnTouchOnly).toBe(true)
       }
+    })
+
+    /** 끌어 놓기도 탭 이동과 같은 기준이다 — 2명인 팀 컨테이너는 칩을 받지 않는다(10/28 최종 QA D3) */
+    it('끌어 놓기는 2명인 팀 컨테이너에 들어가지 않고 대기열·빈 자리에는 들어간다', async () => {
+      const { wrapper, store } = mountBoard()
+      store.startDraft(mixedFour(), 1, 'normal', identityRandom) // A[m1,f1] · B[m2,f2]
+      store.addTeam() // C[]
+      await flushPromises()
+
+      const calls = vi.mocked(Sortable.create).mock.calls
+      const optionsFor = (target: string) =>
+        [...calls].reverse().find((call) => (call[0] as HTMLElement).getAttribute('data-drop-target') === target)![1]!
+      const put = (target: string) => {
+        const group = optionsFor(target).group as unknown as {
+          put: (to: unknown, from: unknown, el: HTMLElement) => boolean
+        }
+        const to = { el: wrapper.find(`[data-drop-target="${target}"]`).element }
+        return group.put(to, null, wrapper.find('[data-member="m1"]').element as HTMLElement)
+      }
+
+      expect(put('B')).toBe(false)
+      expect(put('C')).toBe(true)
+      expect(put('waiting')).toBe(true)
     })
 
     it('미배정 대기자 컨테이너도 드롭 대상으로 포함한다', async () => {
@@ -562,14 +610,16 @@ describe('AssignmentBoard', () => {
       await flushPromises()
       expect(wrapper.find('[data-drop-target="A"]').element.children).toHaveLength(2)
 
-      // m1을 A→B로 이동 → A는 1인, B는 3인. 재마운트로 옛 노드가 유령으로 남지 않아야 한다
+      // m2를 대기열로 빼 B를 1명으로 만든 뒤 m1을 A→B로 이동 → A는 1인, B는 2인.
+      // 재마운트로 옛 노드가 유령으로 남지 않아야 한다
+      store.moveMember('m2', null)
       store.moveMember('m1', 'B')
       await flushPromises()
 
       const dropA = wrapper.find('[data-drop-target="A"]')
       const dropB = wrapper.find('[data-drop-target="B"]')
       expect(dropA.element.children).toHaveLength(1)
-      expect(dropB.element.children).toHaveLength(3)
+      expect(dropB.element.children).toHaveLength(2)
       expect(dropA.find('[data-member="m1"]').exists()).toBe(false)
       expect(dropB.find('[data-member="m1"]').exists()).toBe(true)
     })

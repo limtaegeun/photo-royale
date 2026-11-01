@@ -2,7 +2,7 @@
 export { assignTeams, deriveCarryover, MIN_TEAM_CANDIDATES } from './teamAssignment'
 export type { TeamCandidate, AssignedTeam, TeamAssignmentResult } from './teamAssignment'
 // 완장 → 그룹 색 규칙(TeamGroup·groupForArmband·GROUP_LABELS)은 game-mode가 소유한다
-export { ARMBAND_LABELS, MAX_ASSIGNABLE_MEMBERS, armbandForTeamIndex } from './armbands'
+export { ARMBAND_LABELS, MAX_ASSIGNABLE_MEMBERS, MAX_TEAM_MEMBERS, armbandForTeamIndex } from './armbands'
 // 완장 → 그룹 색 유틸리티 클래스 매핑의 단일 소스 — 그룹 색을 쓰는 모든 화면이 여기서 가져간다
 export {
   displayGroup,

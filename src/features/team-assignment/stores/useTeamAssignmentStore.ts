@@ -9,7 +9,7 @@ import {
   type XModulePolicy,
 } from '@/features/game-mode'
 import { assignTeams, deriveCarryover } from '../teamAssignment'
-import { ARMBAND_LABELS, armbandForTeamIndex } from '../armbands'
+import { ARMBAND_LABELS, MAX_TEAM_MEMBERS, armbandForTeamIndex } from '../armbands'
 import { pickXTeams } from '../xRole'
 import { confirmAssignment, type ConfirmedTeamWrite } from '../api/assignment'
 
@@ -205,6 +205,8 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
     } else {
       const target = draftTeams.value.find((team) => team.armband === targetArmband)
       if (target?.members.some((member) => member.id === memberId)) return
+      // 이미 2명인 팀에는 넣지 않는다 — 기획에 없는 3인 팀이 그대로 확정됐다(10/28 최종 QA D3)
+      if (!canMoveTo(memberId, targetArmband)) return
     }
 
     let moved: DraftMember | undefined
@@ -235,6 +237,18 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
     }
     // 빈 팀이 되어 X가 풀린 그룹을 다시 채운다 — X 모듈이 켜져 있을 때만
     if (xModuleEnabled.value) repairXModule(random)
+  }
+
+  /**
+   * 멤버를 대상 팀(null이면 대기열)으로 옮길 수 있는가 — 보드가 이동 타겟 강조·끌어 놓기 허용을
+   * 같은 기준으로 가르게 한 곳에 둔다. 대기열과 이미 그 팀 소속인 멤버(제자리 = 선택 해제)는 언제나 된다.
+   */
+  function canMoveTo(memberId: string, targetArmband: string | null): boolean {
+    if (targetArmband === null) return true
+    const target = draftTeams.value.find((team) => team.armband === targetArmband)
+    if (target === undefined) return true
+    if (target.members.some((member) => member.id === memberId)) return true
+    return target.members.length < MAX_TEAM_MEMBERS
   }
 
   /**
@@ -365,6 +379,7 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
     addToWaitingPool,
     selectMember,
     moveMember,
+    canMoveTo,
     moveSelectedTo,
     addTeam,
     setGameMode,

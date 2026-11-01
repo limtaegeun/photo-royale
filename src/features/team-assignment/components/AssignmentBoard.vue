@@ -129,10 +129,21 @@ function handleDragEnd(evt: Sortable.SortableEvent) {
   from.insertBefore(item, reference)
 }
 
+/**
+ * 끌어 놓기 허용 — 칩 탭 이동과 같은 기준(store.canMoveTo)이다. 이미 2명인 팀 컨테이너는 받지 않아
+ * Sortable이 그 자리에 칩을 넣지 않고, 놓으면 원래 컨테이너로 돌아간다(handleDragEnd의 되돌리기 갈래).
+ */
+function acceptsDrop(to: Sortable, dragEl: HTMLElement): boolean {
+  const memberId = dragEl.getAttribute('data-member')
+  const dropTarget = to.el.getAttribute('data-drop-target')
+  if (memberId === null || dropTarget === null) return false
+  return store.canMoveTo(memberId, dropTarget === 'waiting' ? null : dropTarget)
+}
+
 /** 컨테이너 하나에 Sortable을 붙인다 — 팀 칩 영역/대기자 칩 영역 공통 옵션 */
 function createSortable(el: HTMLElement): Sortable {
   return Sortable.create(el, {
-    group: 'assignment-members',
+    group: { name: 'assignment-members', put: (to, _from, dragEl) => acceptsDrop(to, dragEl) },
     // 래퍼 버튼(data-member)만 드래그 대상 — 팀 상태 배지·"비어 있음" 문구는 끌리지 않는다
     draggable: '[data-member]',
     // 모바일: 150ms 롱프레스로 드래그 시작 → 짧은 탭은 그대로 click(선택 토글)으로 통과한다.
@@ -258,6 +269,7 @@ async function onConfirm() {
           :team="team"
           :has-selection="hasSelection"
           :selected-member-id="selectedMemberId"
+          :can-receive="selectedMemberId === null || store.canMoveTo(selectedMemberId, team.armband)"
           @move-here="store.moveSelectedTo(team.armband)"
           @select-member="store.selectMember"
         />
