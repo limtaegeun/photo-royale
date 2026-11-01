@@ -20,7 +20,10 @@ export interface StandingRow extends Standing {
 interface Props {
   /** 순위순(round-ledger가 정렬) */
   rows: StandingRow[]
-  /** 정산이 끝난 라운드 수 — "N라운드 정산" 근거 */
+  /**
+   * 정산이 끝난 라운드 수 — "N개 라운드 정산" 근거. 차수 번호가 아니라 개수다: 시작 전에 끝낸 차수는 정산이 없어
+   * 번호가 빌 수 있다(1·2·4·5R). "4라운드 정산"은 "4라운드까지"로 읽혀 헷갈렸다(11/01 QA 탐색 EX-03)
+   */
   settledRoundCount: number
 }
 
@@ -50,7 +53,7 @@ function formatRounds(row: StandingRow): string {
     <div class="flex flex-col gap-3">
       <div class="flex items-baseline justify-between gap-3">
         <h2 class="text-label text-content">누적 순위</h2>
-        <p class="text-caption text-content-secondary">{{ settledRoundCount }}라운드 정산</p>
+        <p class="text-caption text-content-secondary">{{ settledRoundCount }}개 라운드 정산</p>
       </div>
 
       <!-- 순위·이름·포인트 3열. 포인트는 tabular로 자리 정렬 -->
