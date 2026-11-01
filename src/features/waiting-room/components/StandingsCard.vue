@@ -102,9 +102,9 @@ function formatRounds(row: StandingRow): string {
               <p class="truncate text-body" :class="{ 'font-semibold': row.isMe }">
                 {{ row.name }}<span v-if="row.isMe" class="text-caption text-content-tertiary"> (나)</span>
               </p>
-              <!-- 라운드별 등급 — 동점일 때 "왜 이 순서인가"의 근거(원점수 합)까지는 여기서 보이지
-                   않지만, 등급 내역만으로 대부분 설명된다 -->
-              <p class="truncate text-caption text-content-tertiary">
+              <!-- 라운드별 등급 + 원점수 합 — 원점수는 동점 순서의 근거다. 말줄임하면 4~5라운드부터
+                   줄 끝의 원점수가 가장 먼저 잘려 누구도 볼 수 없으므로, 자르지 않고 줄바꿈한다 -->
+              <p class="text-caption text-pretty break-keep text-content-tertiary">
                 {{ formatRounds(row) }} · 원점수 {{ row.rawScore }}
               </p>
             </div>
