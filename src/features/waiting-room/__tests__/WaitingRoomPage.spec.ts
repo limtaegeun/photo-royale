@@ -95,9 +95,14 @@ vi.mock('@/shared/composables/useToast', () => ({
 
 const replaceMock = vi.fn<() => void>()
 const pushMock = vi.fn<() => void>()
+type LeaveGuard = (to: { fullPath: string }) => unknown
+let leaveGuard: LeaveGuard | null = null
 vi.mock('vue-router', () => ({
   useRoute: () => ({ params: { roomCode: 'ab2c' }, fullPath: '/waiting-room/ab2c' }),
   useRouter: () => ({ replace: replaceMock, push: pushMock }),
+  onBeforeRouteLeave: (guard: LeaveGuard) => {
+    leaveGuard = guard
+  },
 }))
 
 import { RoomNotFoundError } from '../api/rooms'
@@ -239,6 +244,23 @@ describe('WaitingRoomPage', () => {
 
   afterEach(() => {
     while (mounted.length > 0) mounted.pop()!.unmount()
+  })
+
+  /** 11/01 QA 탐색 EX-01 — 누적 순위 시트를 연 채 뒤로가기를 누르면 방을 나갔다 */
+  it('뒤로가기로 떠날 때 열린 시트가 있으면 시트만 닫고 대기실에 머문다', async () => {
+    mountPage()
+    await flushPromises()
+    const sheet = document.createElement('div')
+    sheet.setAttribute('role', 'dialog')
+    sheet.setAttribute('data-state', 'open')
+    document.body.appendChild(sheet)
+    window.history.replaceState({ current: '/' }, '')
+
+    expect(leaveGuard!({ fullPath: '/' })).toBe(false)
+
+    sheet.remove()
+    expect(leaveGuard!({ fullPath: '/' })).toBe(true)
+    window.history.replaceState(null, '')
   })
 
   it('라우트의 초대 코드를 정규화해 입장하고 룸 카드와 명단을 렌더한다', async () => {

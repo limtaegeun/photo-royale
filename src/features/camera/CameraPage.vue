@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
+import { closeOpenSheetOnHistoryBack } from '@/shared/utils/closeOpenSheetOnHistoryBack'
 import BaseButton from '@/shared/components/BaseButton.vue'
 import BaseBadge from '@/shared/components/BaseBadge.vue'
 import {
@@ -213,9 +214,12 @@ function exitCockpit(to: RouteLocationRaw) {
  * - 뛸 시간이 남은 라운드면 떠나지 않는다 — 대기실로 보내도 곧바로 콕핏으로 되돌아온다
  * - 라운드가 끝났으면(0:00) 첫 화면 대신 대기실로 보낸다 — '대기실로 돌아가기'와 같은 목적지다
  * - 세션 상실로 가는 로그인 화면, 게임이 끝난 뒤의 이동은 그대로 둔다
+ * - 기록·지도 시트가 열려 있으면 그 시트만 닫는다
  */
 onBeforeRouteLeave((to) => {
   if (isCockpitExit || to.name === 'login') return true
+  // 기록·지도 시트가 열려 있으면 그것만 닫는다(대기실 시트와 같은 규칙 — 11/01 QA 탐색 EX-01)
+  if (closeOpenSheetOnHistoryBack(to)) return false
   if (photo.value !== null || isSubmitting.value) return false
   if (room.value?.status !== 'playing') return true
   if (!isRoundEnded.value) return false
