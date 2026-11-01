@@ -195,10 +195,12 @@ const CREATE_ROOM_MAX_ATTEMPTS = 5
 
 /**
  * 사용자가 입력한 초대 코드를 문서 ID와 같은 형태로 정규화한다.
- * 코드는 대문자로 생성되므로 소문자 입력도 같은 방을 가리켜야 한다.
+ * 코드는 대문자로 생성되므로 소문자 입력도 같은 방을 가리켜야 한다. 가운데 공백(`QG E5`)과
+ * 한글 자판의 전각 문자(`ＱＧＥ５`)도 같은 방을 가리키게 NFKC 로 반각으로 바꾸고 공백을 모두 뺀다
+ * (11/01 QA 탐색 EX-04 — 앞뒤 공백·소문자만 정리해 '방을 찾을 수 없어요'로 끝났다).
  */
 export function normalizeRoomCode(rawCode: string): string {
-  return rawCode.trim().toUpperCase()
+  return rawCode.normalize('NFKC').replace(/\s+/g, '').toUpperCase()
 }
 
 function generateRoomCode(): string {

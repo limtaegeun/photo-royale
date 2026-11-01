@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import BaseBadge from '@/shared/components/BaseBadge.vue'
 import BaseButton from '@/shared/components/BaseButton.vue'
@@ -17,6 +17,21 @@ const { pendingAction, isSubmitting, actionError, createAndEnter, joinWithCode }
 const nickname = computed(() => authStore.user?.displayName ?? '')
 
 const inviteCodeInput = ref('')
+
+/**
+ * 입력 중에도 공백을 빼고 전각을 반각으로 바꾼다 — 칸 길이가 코드 길이(4)라, 공백 한 칸이 자리를 먹으면
+ * 마지막 글자를 칠 수 없었다(11/01 QA 탐색 EX-04). 대문자화는 제출 시 정규화와 화면 uppercase 가 맡는다.
+ */
+async function onInviteCodeInput(value: string | undefined) {
+  const raw = value ?? ''
+  const cleaned = raw.normalize('NFKC').replace(/\s+/g, '')
+  // 친 값을 먼저 받고 다음 틱에 정리한다 — 정리한 값이 직전 값과 같으면(공백만 친 경우) 바인딩이 바뀌지 않아
+  // 입력칸에 공백이 그대로 남기 때문이다
+  inviteCodeInput.value = raw
+  if (cleaned === raw) return
+  await nextTick()
+  inviteCodeInput.value = cleaned
+}
 
 /** 공유 링크(?code=)의 초대 코드 — 로그인 상태면 바로 입장, 비로그인이면 인증 후 돌아와 입장 */
 const sharedCode = computed(() => {
@@ -69,7 +84,8 @@ onMounted(() => {
              Enter 가 아무 반응도 없고 틀린 코드 안내도 안 떴다(11/01 QA 탐색 EX-02) -->
         <form class="flex flex-col gap-3" @submit.prevent="joinWithCode(inviteCodeInput)">
           <BaseInput
-            v-model="inviteCodeInput"
+            :model-value="inviteCodeInput"
+            @update:model-value="onInviteCodeInput"
             size="lg"
             class="text-center font-semibold tracking-widest uppercase"
             placeholder="초대 코드를 입력해주세요"

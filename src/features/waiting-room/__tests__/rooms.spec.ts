@@ -104,6 +104,12 @@ describe('normalizeRoomCode', () => {
   it('공백을 제거하고 대문자로 만들어 소문자 입력도 같은 방을 가리키게 한다', () => {
     expect(normalizeRoomCode('  ab2c ')).toBe('AB2C')
   })
+
+  it('가운데 공백과 전각 문자도 같은 방을 가리키게 한다', () => {
+    expect(normalizeRoomCode('QG E5')).toBe('QGE5')
+    expect(normalizeRoomCode('ＱＧＥ５')).toBe('QGE5')
+    expect(normalizeRoomCode('ｑｇ\u3000ｅ５')).toBe('QGE5')
+  })
 })
 
 describe('createRoom', () => {
