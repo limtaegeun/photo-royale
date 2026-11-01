@@ -264,20 +264,21 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
         ledgers.value = []
       },
     )
+    // 이 구독에서 내 참가자 문서를 한 번이라도 봤는가 — 강퇴 판정의 래치(아래)
+    let hasSeenMyDoc = false
     unsubscribeParticipants = subscribeToParticipants(code, (nextParticipants) => {
       allParticipants.value = nextParticipants
-      // 강퇴 감지 — 게스트 입장(joinRoom)은 구독 시작보다 먼저 끝나므로, joined 이후 명단에
-      // 내가 없다는 것은 내 참가자 문서가 삭제됐다(진행자가 내보냈다)는 뜻이다. 호스트는
-      // 참가자로 등록되지 않아(진행자 모델) 명단 부재가 정상이므로 대상에서 뺀다.
-      // 이 판정은 기본 메모리 캐시 전제다 — persistentLocalCache를 켜면 재입장 첫 캐시
-      // 스냅샷이 (트랜잭션 쓰기라 지연 보상이 없는) 내 문서만 빠뜨려 오탐할 수 있으니,
-      // 캐시 영속화를 도입하는 날에는 "내 문서를 본 적 있다" 래치를 함께 넣을 것.
-      if (
-        phase.value === 'joined' &&
-        myId.value !== null &&
-        !isHost.value &&
-        !nextParticipants.some((participant) => participant.id === myId.value)
-      ) {
+      const includesMe =
+        myId.value !== null && nextParticipants.some((participant) => participant.id === myId.value)
+      if (includesMe) hasSeenMyDoc = true
+      // 강퇴 감지 — **내 문서를 본 뒤에** 명단에서 내가 빠지면 진행자가 내 참가자 문서를 지운
+      // 것이다. 호스트는 참가자로 등록되지 않아(진행자 모델) 명단 부재가 정상이므로 대상에서 뺀다.
+      //
+      // "본 뒤에"가 필요한 이유: 내보내진 폰이 같은 코드로 다시 들어오면 재입장(joinRoom 트랜잭션)
+      // 직후 첫 스냅샷이 아직 내 문서가 없는 명단으로 와서, 막 다시 들어온 사람을 또 '내보냈어요'로
+      // 판정하고 구독까지 끊었다(10/28 최종 QA D1 — 서버엔 새 참가자 문서가 있는데 그 폰만 강퇴 화면,
+      // 새로고침해야 풀렸다). 트랜잭션 쓰기는 지연 보상이 없어 첫 스냅샷이 그 쓰기를 못 볼 수 있다.
+      if (phase.value === 'joined' && hasSeenMyDoc && !isHost.value && !includesMe) {
         markKicked()
       }
     })
