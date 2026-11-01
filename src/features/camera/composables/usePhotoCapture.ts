@@ -55,7 +55,14 @@ export function usePhotoCapture() {
     photo.value = null
   }
 
+  /** 이미 있는 사진을 확인 화면에 다시 올린다 — 끊긴 채 보내지 못한 킬샷을 다시 열었을 때 */
+  function adopt(blob: Blob, width: number, height: number) {
+    failed.value = false
+    clear()
+    photo.value = { blob, url: URL.createObjectURL(blob), width, height }
+  }
+
   onScopeDispose(clear)
 
-  return { photo, failed: readonly(failed), capture, clear }
+  return { photo, failed: readonly(failed), capture, clear, adopt }
 }

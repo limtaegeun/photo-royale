@@ -33,7 +33,7 @@ import CockpitMapSheet from './components/CockpitMapSheet.vue'
 import CockpitRecordSheet from './components/CockpitRecordSheet.vue'
 import { useCameraStream } from './composables/useCameraStream'
 import { useJudgmentFeedback } from './composables/useJudgmentFeedback'
-import { useKillshotSubmit } from './composables/useKillshotSubmit'
+import { discardPendingKillshot, useKillshotSubmit } from './composables/useKillshotSubmit'
 import { usePhotoCapture } from './composables/usePhotoCapture'
 
 const route = useRoute()
@@ -41,8 +41,8 @@ const router = useRouter()
 const authStore = useAuthStore()
 const { toast } = useToast()
 const { status, stream, start } = useCameraStream()
-const { photo, failed, capture, clear } = usePhotoCapture()
-const { isSubmitting, submit } = useKillshotSubmit()
+const { photo, failed, capture, clear, adopt } = usePhotoCapture()
+const { isSubmitting, isSlow: isSubmitSlow, submit, resumePending } = useKillshotSubmit()
 const videoRef = ref<HTMLVideoElement | null>(null)
 const room = ref<RoomInfo | null>(null)
 const participants = ref<Participant[]>([])
@@ -314,6 +314,59 @@ watch([stream, videoRef], ([media, video]) => {
   }
 })
 
+/**
+ * 되살린 킬샷의 문서 id — 끊긴 채 닫았다가 다시 연 콕핏이 확인 화면에 올린 사진이면 처음 정한 id로
+ * 다시 보낸다(먼저 보낸 쪽이 늦게 도착해도 두 장이 되지 않는다). 새로 찍거나 버리면 비운다.
+ */
+let restoredSubmissionId: string | null = null
+let pendingKillshotChecked = false
+
+/**
+ * 끊긴 채 '킬샷 제출'을 누르고 앱·탭을 닫으면 그 킬샷은 다시 열어도 서버에 없었고, 참가자는
+ * 사라진 줄 몰랐다(10/28 최종 QA D4). 이번 라운드에 배정된 내가 확인되면 한 번 살펴, 남은 킬샷을
+ * 확인 화면으로 되살린다. 닫기 전에 도착해 있었으면 제출 완료를, 지난 차수 것이면 낼 수 없음을 알린다.
+ */
+watch(
+  [me, room],
+  async ([myParticipant, currentRoom]) => {
+    if (pendingKillshotChecked || myParticipant === null || currentRoom === null) return
+    if (currentRoom.status !== 'playing') return
+    pendingKillshotChecked = true
+    const resumed = await resumePending(roomCode, myParticipant.id, currentRoom.assignmentRound)
+    if (resumed.status === 'landed') {
+      toast({ title: '킬샷을 제출했어요.', tone: 'success' })
+    } else if (resumed.status === 'expired') {
+      toast({ title: '라운드가 종료되어 제출할 수 없어요.', tone: 'danger' })
+    } else if (resumed.status === 'restored') {
+      // 그 사이 새로 찍은 사진이 있으면 덮지 않는다 — 남은 킬샷은 다음에 다시 열 때 살핀다
+      if (photo.value !== null) return
+      adopt(resumed.blob, resumed.width, resumed.height)
+      restoredSubmissionId = resumed.submissionId
+      toast({ title: '보내지 못한 킬샷을 다시 불러왔어요. 제출해 주세요.', tone: 'neutral' })
+    }
+  },
+  { immediate: true },
+)
+
+/** 확인 화면을 닫는다(다시 찍기·돌아가기) — 되살린 킬샷이었으면 남겨 둔 자리도 비운다 */
+function discardPhoto() {
+  if (restoredSubmissionId !== null) {
+    discardPendingKillshot()
+    restoredSubmissionId = null
+  }
+  clear()
+}
+
+/**
+ * 제출 중에 탭을 닫거나 새로고침하려 하면 브라우저 확인을 띄운다 — 끊긴 동안 매달린 쓰기는 닫으면
+ * 사라진다(남겨 둔 사진은 다시 열면 되살아나지만, 닫지 않고 기다리면 연결될 때 그대로 제출된다).
+ */
+function warnBeforeUnload(event: BeforeUnloadEvent) {
+  if (!isSubmitting.value) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+
 async function shoot() {
   if (!videoRef.value) return
   await capture(videoRef.value)
@@ -358,7 +411,9 @@ async function submitPhoto() {
     team: submitter.team,
     round: currentRoom.assignmentRound,
     photo: killshot,
+    submissionId: restoredSubmissionId ?? undefined,
   })
+  restoredSubmissionId = null
   if (!submitted) {
     // 실패 시 사진을 보존한다 — 현장에서 같은 장면을 다시 만들 수 없다
     toast({ title: '제출에 실패했어요. 다시 시도해 주세요.', tone: 'danger' })
@@ -374,6 +429,7 @@ onMounted(() => {
     noticeResizeObserver = new ResizeObserver(measureNoticeOverflow)
   }
   window.addEventListener('resize', measureNoticeOverflow)
+  window.addEventListener('beforeunload', warnBeforeUnload)
   start()
   // 새로고침·재접속으로 대기실을 거치지 않고 들어온 경우에도 지도를 받는다(이미 받는 중이면 그대로 둔다)
   venueMap.track(roomCode)
@@ -414,6 +470,7 @@ onUnmounted(() => {
   noticeResizeObserver?.disconnect()
   noticeResizeObserver = null
   window.removeEventListener('resize', measureNoticeOverflow)
+  window.removeEventListener('beforeunload', warnBeforeUnload)
   unsubscribeRoom?.()
   unsubscribeParticipants?.()
   unsubscribeNotice?.()
@@ -700,7 +757,15 @@ function subscribeToCurrentRoundLedger(roundNumber: number) {
       </div>
       <!-- 화면 전체가 이미 canvas 서피스라 별도 밴드(bg-elevated) 없이 버튼을 바로 올린다 -->
       <div class="flex flex-col gap-3 px-5 pt-4 pb-[calc(var(--pr-inset-bottom-safe)+1.25rem)]">
-        <p v-if="me === null" class="text-center text-caption break-keep text-content-secondary">
+        <!-- 끊긴 채 제출이 매달린 상태 — 쓰기는 연결되면 이어서 가므로 기다리라고만 알린다(10/28 최종 QA D4) -->
+        <p
+          v-if="isSubmitting && isSubmitSlow"
+          role="status"
+          class="text-center text-caption text-pretty break-keep text-warning"
+        >
+          연결이 불안정해 킬샷 제출을 확인하지 못했어요. 이 화면에서 기다리면 연결될 때 자동으로 제출돼요.
+        </p>
+        <p v-else-if="me === null" class="text-center text-caption break-keep text-content-secondary">
           이번 라운드 팀 배정을 확인하는 중이에요. 배정이 확인되면 제출할 수 있어요.
         </p>
         <p
@@ -728,7 +793,7 @@ function subscribeToCurrentRoundLedger(roundNumber: number) {
             size="lg"
             class="w-full"
             :disabled="isSubmitting"
-            @click="clear"
+            @click="discardPhoto"
           >
             {{ isRoundEnded ? '돌아가기' : '다시 찍기' }}
           </BaseButton>

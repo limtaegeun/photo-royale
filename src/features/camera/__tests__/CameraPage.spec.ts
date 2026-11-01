@@ -28,6 +28,7 @@ const subscribeNoticeMock =
     ) => () => void
   >()
 const submitKillshotMock = vi.fn<(code: string, input: Record<string, unknown>) => Promise<void>>()
+const submissionExistsMock = vi.fn<(code: string, id: string) => Promise<boolean>>()
 /** 판정 결과 토스트(useJudgmentFeedback)가 구독하는 대상 — 이 파일의 테스트는 그 동작 자체를
  * 검증하지 않으므로(별도 useJudgmentFeedback.spec.ts) 크래시만 나지 않게 최소한으로 스텁한다 */
 const unsubscribeMySubmissionsMock = vi.fn<() => void>()
@@ -54,6 +55,8 @@ vi.mock('@/features/round-ops', async () => {
     // 공지·기록 시트의 시각 표기 — 기록 시트 내용은 이 파일이 검증하지 않는다(별도 CockpitRecordSheet.spec)
     formatRelativeTime: (createdAtMs: number | null, nowMs: number) =>
       formatRelativeTimeMock(createdAtMs, nowMs),
+    newSubmissionId: () => 'sub-new',
+    submissionExists: (code: string, id: string) => submissionExistsMock(code, id),
     submitKillshot: (code: string, input: Record<string, unknown>) =>
       submitKillshotMock(code, input),
     subscribeToMySubmissions: (
@@ -356,6 +359,8 @@ beforeEach(() => {
   unsubscribeMySubmissionsMock.mockReset()
   subscribeMySubmissionsMock.mockReset().mockReturnValue(unsubscribeMySubmissionsMock)
   submitKillshotMock.mockReset().mockResolvedValue(undefined)
+  submissionExistsMock.mockReset().mockResolvedValue(false)
+  localStorage.clear()
   mockDisplayState.value = 'running'
   formatRelativeTimeMock.mockReset().mockReturnValue('방금')
 })
@@ -1311,6 +1316,119 @@ describe('CameraPage', () => {
     // 미리보기가 닫히고 콕핏으로 돌아가 다음 킬샷을 이어서 찍을 수 있다
     expect(findShutter(wrapper).exists()).toBe(true)
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:preview')
+  })
+
+  /** 10/28 최종 QA D4 — 끊긴 채 제출하면 확인 화면에 안내 없이 스피너만 돌았다 */
+  it('제출이 오래 매달리면 확인 화면에 연결 불안정 안내를 띄운다', async () => {
+    stubCanvas()
+    stubKillshotEncoding()
+    deliverAssignedParticipants()
+    submitKillshotMock.mockReturnValue(new Promise<void>(() => {}))
+    const deliverRoom = captureRoomSnapshot()
+    const wrapper = await mountWithActiveCamera()
+    deliverRoom(playingRoom())
+    await flushPromises()
+    await findShutter(wrapper).trigger('click')
+    await flushPromises()
+
+    vi.useFakeTimers()
+    try {
+      await findButtonByText(wrapper, '킬샷 제출')!.trigger('click')
+      await vi.advanceTimersByTimeAsync(7_999)
+      expect(wrapper.text()).not.toContain('연결이 불안정해 킬샷 제출을 확인하지 못했어요')
+      await vi.advanceTimersByTimeAsync(1)
+      expect(wrapper.text()).toContain(
+        '연결이 불안정해 킬샷 제출을 확인하지 못했어요. 이 화면에서 기다리면 연결될 때 자동으로 제출돼요.',
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('끊긴 채 닫았다가 다시 열면 남은 킬샷을 확인 화면에 되살리고, 같은 문서 id 로 다시 보낸다', async () => {
+    stubCanvas()
+    stubKillshotEncoding()
+    localStorage.setItem(
+      'pr:pending-killshot',
+      JSON.stringify({
+        roomCode: 'AB2C',
+        uid: 'player1',
+        team: 'A',
+        round: 1,
+        submissionId: 'sub-old',
+        photo: 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2w==',
+        width: 640,
+        height: 480,
+      }),
+    )
+    deliverAssignedParticipants()
+    const deliverRoom = captureRoomSnapshot()
+    const wrapper = await mountWithActiveCamera()
+    deliverRoom(playingRoom())
+    await flushPromises()
+
+    expect(submissionExistsMock).toHaveBeenCalledWith('AB2C', 'sub-old')
+    expect(wrapper.text()).toContain('킬샷 확인')
+    expect(toastMock).toHaveBeenCalledWith({
+      title: '보내지 못한 킬샷을 다시 불러왔어요. 제출해 주세요.',
+      tone: 'neutral',
+    })
+
+    await findButtonByText(wrapper, '킬샷 제출')!.trigger('click')
+    await flushPromises()
+
+    expect(submitKillshotMock).toHaveBeenCalledTimes(1)
+    expect(localStorage.getItem('pr:pending-killshot')).toBeNull()
+    expect(toastMock).toHaveBeenCalledWith({ title: '킬샷을 제출했어요.', tone: 'success' })
+  })
+
+  it('되살린 킬샷을 다시 찍기로 버리면 남겨 둔 자리도 비운다', async () => {
+    localStorage.setItem(
+      'pr:pending-killshot',
+      JSON.stringify({
+        roomCode: 'AB2C',
+        uid: 'player1',
+        team: 'A',
+        round: 1,
+        submissionId: 'sub-old',
+        photo: 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2w==',
+        width: 640,
+        height: 480,
+      }),
+    )
+    deliverAssignedParticipants()
+    const deliverRoom = captureRoomSnapshot()
+    const wrapper = await mountWithActiveCamera()
+    deliverRoom(playingRoom())
+    await flushPromises()
+
+    await findButtonByText(wrapper, '다시 찍기')!.trigger('click')
+
+    expect(wrapper.text()).not.toContain('킬샷 확인')
+    expect(localStorage.getItem('pr:pending-killshot')).toBeNull()
+  })
+
+  it('닫기 전에 이미 도착한 킬샷이면 되살리지 않고 제출 완료를 알린다', async () => {
+    localStorage.setItem(
+      'pr:pending-killshot',
+      JSON.stringify({
+        roomCode: 'AB2C',
+        uid: 'player1',
+        team: 'A',
+        round: 1,
+        submissionId: 'sub-old',
+        photo: 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2w==',
+      }),
+    )
+    submissionExistsMock.mockResolvedValue(true)
+    deliverAssignedParticipants()
+    const deliverRoom = captureRoomSnapshot()
+    const wrapper = await mountWithActiveCamera()
+    deliverRoom(playingRoom())
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('킬샷 확인')
+    expect(toastMock).toHaveBeenCalledWith({ title: '킬샷을 제출했어요.', tone: 'success' })
   })
 
   it('제출에 실패하면 사진을 보존한 채 다시 시도를 안내한다', async () => {

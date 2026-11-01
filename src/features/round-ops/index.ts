@@ -4,6 +4,8 @@ export { subscribeToLatestNotice, type Notice } from './api/notices'
 export {
   SUBMISSION_PHOTO_MAX_LENGTH,
   SUBMISSION_PHOTO_PREFIX,
+  newSubmissionId,
+  submissionExists,
   submitKillshot,
   subscribeToMySubmissions,
   type KillshotInput,
