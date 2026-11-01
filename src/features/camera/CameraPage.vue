@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 import BaseButton from '@/shared/components/BaseButton.vue'
 import BaseBadge from '@/shared/components/BaseBadge.vue'
 import {
@@ -194,15 +194,44 @@ const { mySubmissions } = useJudgmentFeedback({
   toast,
 })
 
+/**
+ * 콕핏이 스스로 내보내는 이동인가 — 아래 뒤로가기 가드가 이 이동은 막지 않게 표시한다.
+ * 콕핏을 떠나는 코드 경로(게임 종료·방 사라짐·구독 실패·미배정·대기실 출구)는 전부 여기로 지난다.
+ */
+let isCockpitExit = false
+function exitCockpit(to: RouteLocationRaw) {
+  isCockpitExit = true
+  void router.replace(to)
+}
+
+/**
+ * 뒤로가기(브라우저·안드로이드 뒤로 버튼·제스처) — 대기실 → 콕핏 전환이 replace라 바로 아래 기록이
+ * 첫 화면이다. 그대로 두면 게임 중에 첫 화면으로 나가 코드를 다시 넣어야 했고, 확인 화면의 사진은
+ * 경고 없이 사라졌다(10/28 최종 QA EX-01).
+ *
+ * - 확인 화면에 사진이 있거나 제출 중이면 떠나지 않는다 — 현장에서 같은 장면을 다시 만들 수 없다
+ * - 뛸 시간이 남은 라운드면 떠나지 않는다 — 대기실로 보내도 곧바로 콕핏으로 되돌아온다
+ * - 라운드가 끝났으면(0:00) 첫 화면 대신 대기실로 보낸다 — '대기실로 돌아가기'와 같은 목적지다
+ * - 세션 상실로 가는 로그인 화면, 게임이 끝난 뒤의 이동은 그대로 둔다
+ */
+onBeforeRouteLeave((to) => {
+  if (isCockpitExit || to.name === 'login') return true
+  if (photo.value !== null || isSubmitting.value) return false
+  if (room.value?.status !== 'playing') return true
+  if (!isRoundEnded.value) return false
+  if (to.name === 'waiting-room') return true
+  return { name: 'waiting-room', params: { roomCode }, replace: true }
+})
+
 function leaveCockpit(nextRoom: RoomInfo | null) {
   room.value = nextRoom
   if (nextRoom === null) {
     toast({ title: '방을 찾을 수 없어요.', tone: 'danger' })
-    router.replace({ name: 'entry' })
+    exitCockpit({ name: 'entry' })
     return
   }
   if (nextRoom.status !== 'playing' || nextRoom.round === null) {
-    router.replace({ name: 'waiting-room', params: { roomCode } })
+    exitCockpit({ name: 'waiting-room', params: { roomCode } })
   }
 }
 
@@ -213,14 +242,14 @@ function leaveCockpit(nextRoom: RoomInfo | null) {
  * replace라 뒤로가기로 죽은 콕핏에 다시 들어오지 않는다(leaveCockpit과 같은 규칙).
  */
 function returnToWaitingRoom() {
-  router.replace({ name: 'waiting-room', params: { roomCode } })
+  exitCockpit({ name: 'waiting-room', params: { roomCode } })
 }
 
 function handleSubscriptionError() {
   if (subscriptionFailed) return
   subscriptionFailed = true
   toast({ title: '게임 정보를 불러올 수 없어요. 다시 입장해주세요.', tone: 'danger' })
-  router.replace({ name: 'entry' })
+  exitCockpit({ name: 'entry' })
 }
 
 /**
@@ -238,7 +267,7 @@ watch([participantsLoaded, me, room], ([loaded, myParticipant, currentRoom]) => 
     return
   }
   unassignedRedirectSent = true
-  router.replace({ name: 'waiting-room', params: { roomCode } })
+  exitCockpit({ name: 'waiting-room', params: { roomCode } })
   toast({ title: '이번 라운드에는 배정되지 않았어요.', tone: 'neutral' })
 })
 

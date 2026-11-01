@@ -4,9 +4,14 @@ import { reactive, ref } from 'vue'
 import type { RoomInfo, RoundState } from '@/features/waiting-room'
 
 const replaceMock = vi.fn<(to: unknown) => void>()
+type LeaveGuard = (to: { name: string }) => unknown
+let leaveGuard: LeaveGuard | null = null
 vi.mock('vue-router', () => ({
   useRoute: () => ({ params: { roomCode: 'ab2c' } }),
   useRouter: () => ({ replace: replaceMock, push: vi.fn<() => void>() }),
+  onBeforeRouteLeave: (guard: LeaveGuard) => {
+    leaveGuard = guard
+  },
 }))
 
 vi.mock('@/features/auth', () => ({
@@ -575,6 +580,65 @@ describe('CameraPage 미배정 게스트 리다이렉트 (D-5)', () => {
  * 타이머가 00:00(ended)에 닿아도 셔터·제출이 계속 살아 있으면 게스트가 종료를 인지할 방법이
  * 없다. 확정 스펙(라운드당 20분)이 표시로만 존재하지 않도록 두 진입점을 모두 고정해 둔다.
  */
+/**
+ * 10/28 최종 QA EX-01 — 대기실 → 콕핏이 replace라 뒤로가기가 첫 화면으로 나가 코드를 다시 넣어야 했고,
+ * 확인 화면의 사진은 경고 없이 사라졌다. 콕핏을 떠나는 이동은 이 가드가 가른다.
+ */
+describe('CameraPage 뒤로가기', () => {
+  async function mountPlaying() {
+    const deliver = captureRoomSnapshot()
+    const wrapper = await mountWithActiveCamera()
+    deliver(playingRoom())
+    await flushPromises()
+    return wrapper
+  }
+
+  it('뛸 시간이 남은 라운드에서는 뒤로가기로 콕핏을 떠나지 않는다', async () => {
+    await mountPlaying()
+
+    expect(leaveGuard!({ name: 'entry' })).toBe(false)
+  })
+
+  it('라운드가 끝났으면 첫 화면 대신 대기실로 보낸다', async () => {
+    mockDisplayState.value = 'ended'
+    await mountPlaying()
+
+    expect(leaveGuard!({ name: 'entry' })).toEqual({
+      name: 'waiting-room',
+      params: { roomCode: 'AB2C' },
+      replace: true,
+    })
+    expect(leaveGuard!({ name: 'waiting-room' })).toBe(true)
+  })
+
+  it('확인 화면에 사진이 있으면 라운드가 끝났어도 떠나지 않는다 — 사진을 잃지 않게', async () => {
+    stubCanvas()
+    const wrapper = await mountPlaying()
+    await findShutter(wrapper).trigger('click')
+    await flushPromises()
+    mockDisplayState.value = 'ended'
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('킬샷 확인')
+    expect(leaveGuard!({ name: 'entry' })).toBe(false)
+  })
+
+  it('콕핏이 스스로 내보내는 이동(게임 종료 등)과 로그인 이동은 막지 않는다', async () => {
+    const deliver = captureRoomSnapshot()
+    await mountWithActiveCamera()
+    deliver(playingRoom())
+    await flushPromises()
+
+    expect(leaveGuard!({ name: 'login' })).toBe(true)
+
+    deliver({ ...playingRoom(), status: 'waiting', round: null })
+    await flushPromises()
+
+    expect(replaceMock).toHaveBeenCalledWith({ name: 'waiting-room', params: { roomCode: 'AB2C' } })
+    expect(leaveGuard!({ name: 'waiting-room' })).toBe(true)
+  })
+})
+
 describe('CameraPage 라운드 종료 게이트', () => {
   /**
    * 종료되면 셔터가 잠긴 채 남는 대신 출구 하나로 바뀐다 — 잠긴 버튼만 남기면
