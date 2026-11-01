@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
   createRoundAnchorObserver,
+  probeServerClock,
   resetServerClock,
   serverClockOffsetMs,
   serverNow,
@@ -14,9 +15,130 @@ const MINUTE = 60_000
 /** 테스트 하나 = 구독 하나. 관측 이력은 구독마다 새로 시작한다 */
 let observeRoundAnchor: RoundAnchorObserver
 
+/** HTTP Date 프로브 — 기본은 오프라인(실패)이라 기존 관측 테스트에 끼어들지 않는다 */
+const fetchMock = vi.fn<(input: string, init?: RequestInit) => Promise<Response>>()
+
 beforeEach(() => {
+  fetchMock.mockReset().mockRejectedValue(new TypeError('Failed to fetch'))
+  vi.stubGlobal('fetch', fetchMock)
   resetServerClock()
   observeRoundAnchor = createRoundAnchorObserver()
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
+function dateResponse(serverMs: number, ageSeconds?: number): Response {
+  const headers = new Headers({ date: new Date(serverMs).toUTCString() })
+  if (ageSeconds !== undefined) headers.set('age', String(ageSeconds))
+  return new Response(null, { status: 200, headers })
+}
+
+/**
+ * 10/28 최종 QA D5 — 진행 중 라운드에 새 탭으로 들어오면 첫 스냅샷은 샘플이 아니라서, 진행자의 다음
+ * 전이까지 기기 시계를 그대로 썼다. 시계가 5분 빠른 폰은 혼자 라운드가 먼저 끝났다.
+ */
+describe('probeServerClock (HTTP Date)', () => {
+  it('아직 못 쟀으면 첫 스냅샷에서 같은 출처 HEAD 를 보내 Date 헤더로 잰다', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(DEVICE_NOW)
+    try {
+      // 기기가 서버보다 5분 빠르다 — 서버 Date 는 5분 전
+      fetchMock.mockResolvedValueOnce(dateResponse(DEVICE_NOW - 5 * MINUTE))
+
+      observeRoundAnchor(DEVICE_NOW - 21 * MINUTE, false, DEVICE_NOW)
+      // 관측자는 프로브를 기다리지 않는다(void) — 응답 처리 마이크로태스크만 비운다(시계는 고정)
+      for (let tick = 0; tick < 5; tick++) await Promise.resolve()
+
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      const [url, init] = fetchMock.mock.calls[0]!
+      expect(url).toMatch(/^\/\?clock-probe=\d+$/)
+      expect(init).toMatchObject({ method: 'HEAD', cache: 'no-store' })
+      expect(serverClockOffsetMs()).toBe(-5 * MINUTE)
+      expect(serverNow()).toBe(DEVICE_NOW - 5 * MINUTE)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('캐시를 거친 응답이면 Age 만큼 더한다', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(DEVICE_NOW)
+    try {
+      fetchMock.mockResolvedValueOnce(dateResponse(DEVICE_NOW - 5 * MINUTE - 30_000, 30))
+
+      await probeServerClock()
+
+      expect(serverClockOffsetMs()).toBe(-5 * MINUTE)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('이미 잰 보정이 있으면 프로브를 보내지 않는다', async () => {
+    observeRoundAnchor(null, false, DEVICE_NOW)
+    observeRoundAnchor(DEVICE_NOW - 2 * MINUTE, false, DEVICE_NOW) // 시작을 함께 봤다 → 기기 2분 빠름
+    await Promise.resolve()
+    fetchMock.mockClear()
+
+    await probeServerClock()
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(serverClockOffsetMs()).toBe(-2 * MINUTE)
+  })
+
+  it('프로브가 전이 샘플보다 작으면 전이 샘플로 바뀐다 — 가장 큰 값 규칙', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(DEVICE_NOW)
+    try {
+      // Date 는 초 단위로 잘려 참값보다 최대 1초 작다
+      fetchMock.mockResolvedValueOnce(dateResponse(DEVICE_NOW - 5 * MINUTE - 900))
+      await probeServerClock()
+      expect(serverClockOffsetMs()).toBe(-5 * MINUTE - 1_000)
+
+      observeRoundAnchor(null, false, DEVICE_NOW)
+      observeRoundAnchor(DEVICE_NOW - 5 * MINUTE - 100, false, DEVICE_NOW)
+
+      expect(serverClockOffsetMs()).toBe(-5 * MINUTE - 100)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('실패하면 보정 없이 두고 다음 기회에 다시 보낸다', async () => {
+    await probeServerClock()
+    expect(serverClockOffsetMs()).toBeNull()
+
+    fetchMock.mockResolvedValueOnce(dateResponse(Date.now() - 5 * MINUTE))
+    await probeServerClock()
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(serverClockOffsetMs()).not.toBeNull()
+  })
+
+  it('2초 미만 차이는 보정하지 않는다 — 초 단위 Date 로는 맞는 시계와 가를 수 없다', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(DEVICE_NOW)
+    try {
+      fetchMock.mockResolvedValueOnce(dateResponse(DEVICE_NOW - 900))
+
+      await probeServerClock()
+
+      expect(serverClockOffsetMs()).toBeNull()
+      expect(serverNow()).toBe(DEVICE_NOW)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('Date 헤더가 없으면 재지 않는다', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 200 }))
+
+    await probeServerClock()
+
+    expect(serverClockOffsetMs()).toBeNull()
+  })
 })
 
 describe('observeRoundAnchor', () => {

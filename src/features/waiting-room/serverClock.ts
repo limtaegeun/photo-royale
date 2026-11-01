@@ -23,6 +23,13 @@
  *    `참값 - 전송지연`이라 지연이 클수록 작아진다(오프라인에서 몇 분 뒤 복구되면 크게 작아진다).
  *    그래서 샘플 중 **가장 큰 값**을 채택한다 — 가장 지연이 적었던 관측이 참값에 제일 가깝다.
  *
+ * 3. **새 탭은 다음 전이까지 잴 것이 없다.** 1번 때문에 진행 중 라운드에 새 탭으로 들어오면(카톡 링크
+ *    다시 열기·브라우저 재시작) 진행자의 다음 전이가 올 때까지 기기 시계를 그대로 써서, 시계가 5분 빠른
+ *    폰은 혼자 라운드가 먼저 끝났다(10/28 최종 QA D5). 그래서 아직 못 쟀으면 **같은 출처에 HEAD 요청을
+ *    한 번 보내 응답의 Date 헤더로** 먼저 잰다(probeServerClock). Date는 초 단위로 잘리고 응답 지연만큼
+ *    늦게 받으므로 이 샘플도 참값보다 작거나 같다 — 2번의 "가장 큰 값" 규칙과 그대로 맞물려, 뒤에 오는
+ *    전이 샘플이 더 정확하면 그것으로 바뀐다. 해상도가 1초라 2초 미만 차이는 보정하지 않는다.
+ *
  * 한 번도 재지 못했으면 보정 없이(0) 동작한다 — 기존 동작 그대로라 나빠지지 않는다.
  * 저장은 sessionStorage best-effort다(새로고침 유지, 접근이 막힌 환경에서는 조용히 포기한다).
  */
@@ -51,6 +58,52 @@ function persist(value: number): void {
     sessionStorage.setItem(OFFSET_STORAGE_KEY, String(value))
   } catch {
     // 저장 실패는 이번 세션 안에서만 손해다(메모리 값은 그대로 쓴다)
+  }
+}
+
+/** 샘플 채택 — 모든 샘플은 참값보다 작거나 같으므로(지연·절삭) 가장 큰 값을 남긴다 */
+function recordSample(sample: number): void {
+  if (offsetMs === null || sample > offsetMs) {
+    offsetMs = sample
+    persist(sample)
+  }
+}
+
+/** HTTP Date 프로브가 진행 중이거나 이미 성공했는가 — 한 페이지에서 한 번만 보낸다(실패하면 다시 시도한다) */
+let probeStarted = false
+
+/**
+ * 프로브로 보정할 최소 차이 — Date 헤더는 초 단위로 잘려 시계가 맞는 기기에서도 -0.5초 안팎이 나온다
+ * (실측 -579ms). 그 값을 보정으로 쓰면 맞는 기기가 마감을 서버보다 늦게 보게 되므로, 프로브가 가를 수
+ * 없는 2초 미만은 보정하지 않고 기기 시계를 그대로 둔다(이전 동작). 몇 분씩 틀린 기기만 바로잡는다.
+ */
+const PROBE_MIN_SKEW_MS = 2000
+
+/**
+ * 아직 보정을 못 쟀으면 같은 출처에 HEAD 요청을 한 번 보내 응답 Date 헤더로 잰다(맨 위 3번).
+ * 쿼리를 붙이고 `no-store`로 보내 CDN·브라우저 캐시가 옛 Date를 돌려주지 않게 한다. 캐시를 거친
+ * 응답이면 Age(초)만큼 더한다. 실패(오프라인·헤더 없음)는 조용히 넘기고 다음 구독에서 다시 시도한다.
+ */
+export async function probeServerClock(): Promise<void> {
+  restoreOnce()
+  if (probeStarted || offsetMs !== null || typeof fetch !== 'function') return
+  probeStarted = true
+  try {
+    const response = await fetch(`${import.meta.env.BASE_URL}?clock-probe=${Date.now()}`, {
+      method: 'HEAD',
+      cache: 'no-store',
+    })
+    const receivedAtMs = Date.now()
+    const serverDateMs = Date.parse(response.headers.get('date') ?? '')
+    if (!Number.isFinite(serverDateMs)) {
+      probeStarted = false
+      return
+    }
+    const ageSeconds = Number(response.headers.get('age') ?? 0)
+    const sample = serverDateMs + (Number.isFinite(ageSeconds) ? ageSeconds * 1000 : 0) - receivedAtMs
+    if (Math.abs(sample) >= PROBE_MIN_SKEW_MS) recordSample(sample)
+  } catch {
+    probeStarted = false
   }
 }
 
@@ -83,6 +136,8 @@ export function createRoundAnchorObserver(): RoundAnchorObserver {
 
   return function observeRoundAnchor(startedAtMs, fromCache, receivedAtMs = Date.now()) {
     restoreOnce()
+    // 아직 못 쟀으면 다음 전이를 기다리지 않고 지금 잰다(새 탭으로 진행 중 라운드에 합류한 경우)
+    if (offsetMs === null) void probeServerClock()
     const hadPreviousSnapshot = seenSnapshot
     const previousAnchorMs = lastAnchorMs
     seenSnapshot = true
@@ -98,11 +153,7 @@ export function createRoundAnchorObserver(): RoundAnchorObserver {
     // 캐시에서 나온 값은 서버가 방금 확인해 준 것이 아니다
     if (fromCache) return
 
-    const sample = startedAtMs - receivedAtMs
-    if (offsetMs === null || sample > offsetMs) {
-      offsetMs = sample
-      persist(sample)
-    }
+    recordSample(startedAtMs - receivedAtMs)
   }
 }
 
@@ -122,6 +173,7 @@ export function serverClockOffsetMs(): number | null {
 export function resetServerClock(): void {
   offsetMs = null
   restored = false
+  probeStarted = false
   try {
     sessionStorage.removeItem(OFFSET_STORAGE_KEY)
   } catch {
