@@ -130,6 +130,24 @@ describe('EntryPage', () => {
     expect(pushMock).toHaveBeenCalledWith({ name: 'waiting-room', params: { roomCode: 'AB2C' } })
   })
 
+  /** 11/01 QA 탐색 EX-04 — 가운데 공백·전각 코드가 '방을 찾을 수 없어요'로 끝났다 */
+  it('입력 중 공백을 빼고 전각을 반각으로 바꿔, 가운데 공백·전각 코드로도 입장한다', async () => {
+    roomExistsMock.mockResolvedValue(true)
+    const wrapper = mount(EntryPage, { attachTo: document.body })
+
+    await wrapper.find('input').setValue('ＡＢ ２')
+    await flushPromises()
+    expect((wrapper.find('input').element as HTMLInputElement).value).toBe('AB2')
+
+    await wrapper.find('input').setValue('AB2 ｃ')
+    await flushPromises()
+    await findButton(wrapper, '입장하기')!.trigger('click')
+    await flushPromises()
+
+    expect(roomExistsMock).toHaveBeenCalledWith('AB2C')
+    expect(pushMock).toHaveBeenCalledWith({ name: 'waiting-room', params: { roomCode: 'AB2C' } })
+  })
+
   it('초대 코드가 비어 있으면 입장하기는 활성 상태로 두고 제출 시 안내 문구를 보여준다', async () => {
     const wrapper = mount(EntryPage, { attachTo: document.body })
 
