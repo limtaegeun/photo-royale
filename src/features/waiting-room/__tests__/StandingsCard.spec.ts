@@ -37,7 +37,7 @@ describe('StandingsCard', () => {
     expect(topList.findAll('li')).toHaveLength(5)
     expect(topList.text()).toContain('가')
     expect(topList.text()).not.toContain('바')
-    expect(wrapper.text()).toContain('2라운드 정산')
+    expect(wrapper.text()).toContain('2개 라운드 정산')
     expect(wrapper.text()).toContain('전체 보기 (8명)')
   })
 

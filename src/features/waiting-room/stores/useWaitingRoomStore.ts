@@ -185,7 +185,7 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
     }
   })
 
-  /** 정산이 끝난 라운드 수 — 순위 카드의 근거("N라운드 정산")이자 카드 노출 조건이다 */
+  /** 정산이 끝난 라운드 수 — 순위 카드의 근거("N개 라운드 정산")이자 카드 노출 조건이다 */
   const settledRoundCount = computed(
     () => ledgers.value.filter((ledger) => ledger.result !== null).length,
   )

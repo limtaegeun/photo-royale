@@ -336,7 +336,7 @@ describe('WaitingRoomPage', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('누적 순위')
-    expect(wrapper.text()).toContain('1라운드 정산')
+    expect(wrapper.text()).toContain('1개 라운드 정산')
     expect(wrapper.text()).toContain(`${ROSTER[1]!.name}`)
     expect(wrapper.text()).toContain('오리 (나)')
     expect(wrapper.text()).toContain('10P')
