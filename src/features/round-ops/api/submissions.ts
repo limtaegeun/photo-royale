@@ -1,5 +1,4 @@
 import {
-  addDoc,
   collection,
   doc,
   getDocFromServer,
@@ -8,6 +7,7 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
   writeBatch,
@@ -154,11 +154,24 @@ function toSubmissionRecord(id: string, data: Record<string, unknown>): Submissi
 }
 
 /**
- * 킬샷 제출 — rooms/{code}/submissions에 append한다. 판정 결과까지 한 문서에 남는
- * 이력이라 문서를 덮어쓰지 않고 매번 새 문서를 만든다(기록 탭이 이 컬렉션을 재료로 쓴다).
+ * 새 킬샷 문서 id — 보내기 전에 정해 둔다. 끊긴 채 보낸 킬샷을 다시 열어 같은 id로 다시 보내면,
+ * 먼저 보낸 쪽이 늦게라도 도착한 경우 두 번째는 덮어쓰기(update)라 rules가 거부해 두 장이 되지 않는다.
  */
-export async function submitKillshot(code: string, input: KillshotInput): Promise<void> {
-  await addDoc(collection(db, 'rooms', code, 'submissions'), {
+export function newSubmissionId(code: string): string {
+  return doc(collection(db, 'rooms', code, 'submissions')).id
+}
+
+/**
+ * 킬샷 제출 — rooms/{code}/submissions/{submissionId}를 만든다. 판정 결과까지 한 문서에 남는
+ * 이력이라 문서를 덮어쓰지 않고 매번 새 문서를 만든다(기록 탭이 이 컬렉션을 재료로 쓴다).
+ * 이미 있는 id면 rules의 create 갈래가 아니어서 거부된다(참가자는 update 권한이 없다).
+ */
+export async function submitKillshot(
+  code: string,
+  input: KillshotInput,
+  submissionId: string = newSubmissionId(code),
+): Promise<void> {
+  await setDoc(doc(db, 'rooms', code, 'submissions', submissionId), {
     uid: input.uid,
     team: input.team,
     round: input.round,
@@ -166,6 +179,12 @@ export async function submitKillshot(code: string, input: KillshotInput): Promis
     status: 'pending',
     createdAt: serverTimestamp(),
   })
+}
+
+/** 그 킬샷이 서버에 도착해 있는가 — 캐시가 아니라 서버에 묻는다(오프라인이면 throw) */
+export async function submissionExists(code: string, submissionId: string): Promise<boolean> {
+  const snapshot = await getDocFromServer(doc(db, 'rooms', code, 'submissions', submissionId))
+  return snapshot.exists()
 }
 
 /** 판정 대기 큐 스냅샷의 신선도 — fromCache는 서버가 아니라 로컬 캐시에서만 나온 데이터임을 뜻한다 */

@@ -9,7 +9,7 @@ interface FakeRef {
   path: string
 }
 
-const addDocMock = vi.fn<(ref: FakeRef, data: Record<string, unknown>) => Promise<void>>()
+const setDocMock = vi.fn<(ref: FakeRef, data: Record<string, unknown>) => Promise<void>>()
 const updateDocMock = vi.fn<(ref: FakeRef, data: Record<string, unknown>) => Promise<void>>()
 const batchUpdateMock = vi.fn<(ref: FakeRef, data: Record<string, unknown>) => void>()
 const batchCommitMock = vi.fn<() => Promise<void>>()
@@ -33,7 +33,11 @@ const onSnapshotMock =
 
 vi.mock('firebase/firestore', () => ({
   collection: (_db: unknown, ...segments: string[]): FakeRef => ({ path: segments.join('/') }),
-  doc: (_db: unknown, ...segments: string[]): FakeRef => ({ path: segments.join('/') }),
+  // doc(컬렉션 참조)는 자동 id 문서 — newSubmissionId 가 이 경로로 id 를 미리 정한다
+  doc: (base: unknown, ...segments: string[]): FakeRef & { id?: string } =>
+    segments.length === 0
+      ? { path: `${(base as FakeRef).path}/auto-id`, id: 'auto-id' }
+      : { path: segments.join('/') },
   query: (source: FakeRef, ...constraints: unknown[]) => ({ source, constraints }),
   where: (field: string, op: string, value: unknown) => ({ where: field, op, value }),
   orderBy: (field: string, direction: string) => ({ orderBy: field, direction }),
@@ -60,7 +64,7 @@ vi.mock('firebase/firestore', () => ({
     )
   },
   serverTimestamp: () => 'server-timestamp',
-  addDoc: (ref: FakeRef, data: Record<string, unknown>) => addDocMock(ref, data),
+  setDoc: (ref: FakeRef, data: Record<string, unknown>) => setDocMock(ref, data),
   updateDoc: (ref: FakeRef, data: Record<string, unknown>) => updateDocMock(ref, data),
   getDocFromServer: (ref: FakeRef) => getDocFromServerMock(ref),
   writeBatch: () => ({ update: batchUpdateMock, commit: batchCommitMock }),
@@ -74,7 +78,9 @@ import {
   SUBMISSION_PHOTO_PREFIX,
   approveSubmission,
   getSubmissionStatusFromServer,
+  newSubmissionId,
   rejectSubmission,
+  submissionExists,
   submitKillshot,
   subscribeToMySubmissions,
   subscribeToPendingSubmissions,
@@ -82,7 +88,7 @@ import {
 } from '../api/submissions'
 
 beforeEach(() => {
-  addDocMock.mockReset().mockResolvedValue(undefined)
+  setDocMock.mockReset().mockResolvedValue(undefined)
   updateDocMock.mockReset().mockResolvedValue(undefined)
   batchUpdateMock.mockReset()
   batchCommitMock.mockReset().mockResolvedValue(undefined)
@@ -110,7 +116,7 @@ function pendingDoc(
 }
 
 describe('submitKillshot', () => {
-  it('submissions 서브컬렉션에 pending 상태와 서버 시각으로 append한다', async () => {
+  it('submissions 서브컬렉션에 pending 상태와 서버 시각으로 새 문서를 만든다', async () => {
     await submitKillshot('AB2C', {
       uid: 'player1',
       team: 'B',
@@ -118,8 +124,8 @@ describe('submitKillshot', () => {
       photo: 'data:image/jpeg;base64,killshot',
     })
 
-    expect(addDocMock).toHaveBeenCalledExactlyOnceWith(
-      { path: 'rooms/AB2C/submissions' },
+    expect(setDocMock).toHaveBeenCalledExactlyOnceWith(
+      { path: 'rooms/AB2C/submissions/auto-id' },
       {
         uid: 'player1',
         team: 'B',
@@ -129,6 +135,28 @@ describe('submitKillshot', () => {
         createdAt: 'server-timestamp',
       },
     )
+  })
+
+  /** 10/28 최종 QA D4 — 되살린 킬샷은 처음 정한 id 로 다시 보내 두 장이 되지 않게 한다 */
+  it('문서 id 를 주면 그 id 로 만든다', async () => {
+    await submitKillshot(
+      'AB2C',
+      { uid: 'player1', team: 'B', round: 2, photo: 'data:image/jpeg;base64,killshot' },
+      'sub-old',
+    )
+
+    expect(setDocMock.mock.calls[0]![0]).toEqual({ path: 'rooms/AB2C/submissions/sub-old' })
+  })
+
+  it('newSubmissionId 는 보내기 전에 자동 id 를 정한다', () => {
+    expect(newSubmissionId('AB2C')).toBe('auto-id')
+  })
+
+  it('submissionExists 는 캐시가 아니라 서버에 묻는다', async () => {
+    getDocFromServerMock.mockResolvedValueOnce({ exists: () => true })
+
+    await expect(submissionExists('AB2C', 'sub-old')).resolves.toBe(true)
+    expect(getDocFromServerMock).toHaveBeenCalledWith({ path: 'rooms/AB2C/submissions/sub-old' })
   })
 })
 
