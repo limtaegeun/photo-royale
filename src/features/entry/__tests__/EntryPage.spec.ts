@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import EntryPage from '../EntryPage.vue'
 
@@ -43,6 +43,11 @@ function findButton(wrapper: ReturnType<typeof mount>, text: string) {
 }
 
 describe('EntryPage', () => {
+  // 입장하기는 폼 제출 버튼이다 — jsdom 은 문서에 붙은 폼만 클릭으로 제출하므로 붙여 마운트한 테스트를 비운다
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
   beforeEach(() => {
     authState.user = { uid: 'me', displayName: '오리' }
     routeState.query = {}
@@ -101,7 +106,7 @@ describe('EntryPage', () => {
 
   it('초대 코드를 정규화해 방 존재를 확인하고 대기실로 push 이동한다', async () => {
     roomExistsMock.mockResolvedValue(true)
-    const wrapper = mount(EntryPage)
+    const wrapper = mount(EntryPage, { attachTo: document.body })
 
     await wrapper.find('input').setValue(' ab2c ')
     await findButton(wrapper, '입장하기')!.trigger('click')
@@ -111,8 +116,22 @@ describe('EntryPage', () => {
     expect(pushMock).toHaveBeenCalledWith({ name: 'waiting-room', params: { roomCode: 'AB2C' } })
   })
 
-  it('초대 코드가 비어 있으면 입장하기는 활성 상태로 두고 제출 시 안내 문구를 보여준다', async () => {
+  /** 11/01 QA 탐색 EX-02 — 모바일 키보드의 '이동'(Enter)이 아무 반응도 없었다 */
+  it('코드 칸에서 Enter(폼 제출)로도 입장하기와 같게 입장한다', async () => {
+    roomExistsMock.mockResolvedValue(true)
     const wrapper = mount(EntryPage)
+
+    await wrapper.find('input').setValue('ab2c')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.find('input').attributes('enterkeyhint')).toBe('go')
+    expect(roomExistsMock).toHaveBeenCalledWith('AB2C')
+    expect(pushMock).toHaveBeenCalledWith({ name: 'waiting-room', params: { roomCode: 'AB2C' } })
+  })
+
+  it('초대 코드가 비어 있으면 입장하기는 활성 상태로 두고 제출 시 안내 문구를 보여준다', async () => {
+    const wrapper = mount(EntryPage, { attachTo: document.body })
 
     const enterButton = findButton(wrapper, '입장하기')!
     expect(enterButton.attributes('disabled')).toBeUndefined()
@@ -127,7 +146,7 @@ describe('EntryPage', () => {
 
   it('없는 초대 코드면 안내 문구를 보여주고 이동하지 않는다', async () => {
     roomExistsMock.mockResolvedValue(false)
-    const wrapper = mount(EntryPage)
+    const wrapper = mount(EntryPage, { attachTo: document.body })
 
     await wrapper.find('input').setValue('ZZZZ')
     await findButton(wrapper, '입장하기')!.trigger('click')
