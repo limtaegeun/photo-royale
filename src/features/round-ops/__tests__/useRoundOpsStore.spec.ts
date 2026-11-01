@@ -785,6 +785,18 @@ describe('useRoundOpsStore', () => {
       })
     })
 
+    it('라운드를 시작하기 전에 끝내면 원장이 있어도 정산하지 않는다 — 안 한 라운드에 점수가 들어가지 않게', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room({ round: null }))
+      deliver.ledger(ledger())
+
+      await expect(store.finishGame()).resolves.toBe(true)
+
+      expect(endGameMock).toHaveBeenCalledExactlyOnceWith('AB2C', undefined)
+    })
+
     it('원장 구독이 끊기면 정산 없이 종료한다 — 원장 없음과 같게 다룬다', async () => {
       const deliver = captureSnapshotCallbacks()
       const store = useRoundOpsStore()
