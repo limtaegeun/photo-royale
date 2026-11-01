@@ -15,12 +15,19 @@ interface Props {
   hasSelection: boolean
   /** 현재 선택된 멤버 id — 이 팀에 속해 있으면 해당 칩에 선택 ring이 붙는다 */
   selectedMemberId: string | null
+  /**
+   * 선택된 칩을 이 팀이 받을 수 있는가 — 이미 2명인 팀은 false다(규칙서 §1 팀당 1~2명).
+   * false면 칩이 선택돼 있어도 이동 타겟이 아니다(강조·버튼 역할·탭 이동 없음)
+   */
+  canReceive?: boolean
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), { canReceive: true })
 const emit = defineEmits<{ moveHere: []; selectMember: [id: string] }>()
 
 const isEmpty = computed(() => props.team.members.length === 0)
+/** 지금 이 카드가 이동 타겟인가 — 칩이 선택됐고 이 팀이 그 칩을 받을 수 있을 때만 */
+const isMoveTarget = computed(() => props.hasSelection && props.canReceive)
 /** 1인 팀 — 목숨·포인트 2배 규칙 대상 */
 const isSolo = computed(() => props.team.members.length === 1)
 
@@ -30,7 +37,7 @@ const isSolo = computed(() => props.team.members.length === 1)
  * 멤버가 없는 빈 팀은 채워질 자리임을 점선 보더로 표현한다.
  */
 const borderClass = computed(() => {
-  if (props.hasSelection) return isEmpty.value ? 'border-brand border-dashed' : 'border-brand'
+  if (isMoveTarget.value) return isEmpty.value ? 'border-brand border-dashed' : 'border-brand'
   return isEmpty.value ? 'border-dashed border-stroke-strong' : 'border-stroke'
 })
 
@@ -49,7 +56,7 @@ const dropContainerKey = computed(
  * 카드가 팀 수만큼 탭 순서를 차지한다. 카드가 실제로 눌릴 수 있을 때만 버튼으로 노출한다.
  */
 const targetAttrs = computed(() =>
-  props.hasSelection
+  isMoveTarget.value
     ? { role: 'button', tabindex: 0, 'aria-label': `팀 ${props.team.armband}로 이동` }
     : {},
 )
@@ -62,9 +69,9 @@ const targetAttrs = computed(() =>
     class="flex flex-col gap-2 rounded-lg border bg-elevated p-3 transition-colors duration-100 ease-standard
            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
     :class="borderClass"
-    @click="emit('moveHere')"
-    @keydown.enter.prevent="emit('moveHere')"
-    @keydown.space.prevent="emit('moveHere')"
+    @click="isMoveTarget && emit('moveHere')"
+    @keydown.enter.prevent="isMoveTarget && emit('moveHere')"
+    @keydown.space.prevent="isMoveTarget && emit('moveHere')"
   >
     <!-- 팀 헤더: 팀명 + (X 겸직 배지) / 그룹 색 라벨. 완장 알파벳은 좌측 '팀A'에 이미 있으므로
          우측은 그룹 이름만 표기한다(색약 대응 라벨 병기는 그대로 유지된다). -->

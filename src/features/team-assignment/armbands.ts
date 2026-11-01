@@ -39,11 +39,18 @@ export const ARMBAND_LABELS: readonly string[] = [
 ]
 
 /**
+ * 팀 하나의 최대 인원 — 규칙서 v1.0 §1 「팀당 1~2명 구성」. 인원이 홀수면 1인 팀을 만들고
+ * 목숨·포인트를 2배로 준다(p07-elimination 결정 1·7). 자동 배정은 이 값을 넘지 않고, 배정 보드의
+ * 칩 옮기기(탭·끌어 놓기)도 이 값에 닿은 팀에는 넣지 않는다(10/28 최종 QA D3 — 3인 팀이 막힘 없이 확정됐다).
+ */
+export const MAX_TEAM_MEMBERS = 2
+
+/**
  * 자동 배정이 소화할 수 있는 최대 인원 — 완장 25개 × 2인 1팀. 이보다 많으면 완장을 부여할
  * 완장 실물이 없어(armbandForTeamIndex throw) 배정이 성립하지 않으므로, 호출부가 배정을
  * 시작하기 전에 이 값으로 미리 걸러 안내한다.
  */
-export const MAX_ASSIGNABLE_MEMBERS = ARMBAND_LABELS.length * 2
+export const MAX_ASSIGNABLE_MEMBERS = ARMBAND_LABELS.length * MAX_TEAM_MEMBERS
 
 /**
  * 팀 순번 → 완장 알파벳. 0→'A' … 22→'W', 23→'Y', 24→'Z'(X는 건너뛴다).
