@@ -470,7 +470,8 @@ describe('useWaitingRoomStore', () => {
       const deliver = captureSnapshotCallbacks()
       const store = useWaitingRoomStore()
       await store.enter('AB2C')
-      deliver.participants([])
+      deliver.participants([ME_WAITING, OTHER_READY])
+      deliver.participants([OTHER_READY])
       expect(store.phase).toBe('kicked')
 
       await store.enter('AB2C')
@@ -479,8 +480,32 @@ describe('useWaitingRoomStore', () => {
       expect(joinRoomMock).toHaveBeenCalledTimes(2)
 
       // 재입장 직후 첫 스냅샷(내가 포함된 명단)이 kicked 오탐 없이 joined를 유지해야 한다
-      deliver.participants([ME_WAITING])
+      deliver.participants([ME_WAITING, OTHER_READY])
       expect(store.phase).toBe('joined')
+    })
+
+    /**
+     * 10/28 최종 QA D1 — 재입장 직후 첫 스냅샷이 아직 내 문서(트랜잭션 쓰기라 지연 보상 없음)가 없는
+     * 명단으로 오면, 막 다시 들어온 사람을 또 '내보냈어요'로 판정하고 구독까지 끊었다.
+     */
+    it('재입장 직후 내 문서가 아직 없는 첫 스냅샷은 강퇴로 보지 않는다 — 내 문서를 본 뒤에만 판정한다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useWaitingRoomStore()
+      await store.enter('AB2C')
+      deliver.participants([ME_WAITING, OTHER_READY])
+      deliver.participants([OTHER_READY])
+      expect(store.phase).toBe('kicked')
+
+      await store.enter('AB2C')
+      deliver.participants([OTHER_READY]) // 내 문서를 아직 못 본 첫 스냅샷
+
+      expect(store.phase).toBe('joined')
+
+      deliver.participants([OTHER_READY, ME_WAITING]) // 서버가 확인한 재입장
+      expect(store.phase).toBe('joined')
+
+      deliver.participants([OTHER_READY]) // 그 뒤에 빠지면 다시 내보낸 것이다
+      expect(store.phase).toBe('kicked')
     })
 
     it('kick: 호스트가 대기 중에 호출하면 참가자 문서 삭제를 요청하고 true를 반환한다', async () => {
