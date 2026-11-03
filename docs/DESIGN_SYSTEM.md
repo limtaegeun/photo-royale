@@ -143,7 +143,7 @@ src/shared/components/
   - `BaseSwitch` — `Switch`(단일 boolean on/off 토글; 트랙 색+thumb 위치로 상태 표기, role=switch·aria-checked는 Reka가 담당).
   - `BaseDialog` — `Dialog` 중앙 모달(focus trap·scroll lock·Escape/backdrop dismiss·포털).
   - `BaseBottomSheet` — `Dialog` 하단 시트(모바일 코어, safe-area·슬라이드업).
-  - `BaseToast` + `useToast`(`shared/composables`) + `BaseToastProvider` — `Toast`(ARIA live region·타이머·스와이프 dismiss). Provider는 `App.vue`에 1회 마운트하고, 발행은 어느 기능에서든 `useToast().toast({ title, tone })`.
+  - `BaseToast` + `useToast`(`shared/composables`) + `BaseToastProvider` — `Toast`(ARIA live region·스와이프 dismiss). Provider는 `App.vue`에 1회 마운트하고, 발행은 어느 기능에서든 `useToast().toast({ title, tone })`. 자동 닫힘 타이머는 Reka 것을 끄고 `BaseToast`가 토스트마다 직접 센다 — Reka는 일시정지 플래그 하나를 뷰포트 전체가 공유해, 한 번 안 풀리면 다음 토스트부터 전부 안 닫혔다. 그 토스트 위에 마우스가 있거나 키보드 포커스가 들어와 있을 때만 멈추고, 탭 포커스·창 blur로는 멈추지 않는다.
 - 진입/이탈 애니메이션은 Reka `Presence`가 `data-state=closed`에서 애니메이션 종료까지 언마운트를 지연하므로, scoped `<style>`의 `@keyframes`로 작성하되 값은 `--pr-duration-*`/`--pr-easing-*` 토큰만 참조한다(`prefers-reduced-motion` 대응 포함).
 - **비행동형 레이아웃 컴포넌트**(`BaseCard`·`BaseSectionHeader`·`BaseListRow`)는 접근성 행동이 없어 Reka primitive의 실익이 없다. `BaseCard`만 다형 렌더(`as="section"`)가 필요해 `Primitive`를 쓰고, 나머지는 평범한 마크업 + 슬롯으로 둔다.
 - 성장 예정 후보(**실제 두 번째 사용처가 생길 때 추가** — shared 승격 규칙과 동일): BottomCta(하단 고정 CTA), LifeGauge, IconButton(현재 `AppHeader`의 프로필 링크가 유일 사용처).
