@@ -23,7 +23,7 @@ import { useAppHeader } from '@/shared/composables/useAppHeader'
 import KickableRosterChip from './components/KickableRosterChip.vue'
 import StandingsCard from './components/StandingsCard.vue'
 import VenueMapUploadSheet from './components/VenueMapUploadSheet.vue'
-import { normalizeRoomCode, type Participant } from './api/rooms'
+import { isAssignedInRound, normalizeRoomCode, type Participant } from './api/rooms'
 import { hasPlayedRound } from './roundPlayMarker'
 import { useVenueMapStore } from './stores/useVenueMapStore'
 import { useWaitingRoomStore } from './stores/useWaitingRoomStore'
@@ -41,6 +41,7 @@ const {
   roster,
   myAssignment,
   assignmentRound,
+  nextAssignmentRound,
   participantCount,
   readyCount,
   canStartGame,
@@ -86,14 +87,26 @@ const showAssignmentBoard = ref(false)
 /** 같은 차수 재실행 확인 — hasPlayedRound가 true일 때만 연다(requestStartGame 참조) */
 const isRestartRoundDialogOpen = ref(false)
 
-/** 참가자 → 배정 드래프트 멤버(배정 로직에 필요한 필드만 추린다) */
-function toDraftMember(participant: Participant): DraftMember {
+/**
+ * 참가자 → 배정 드래프트 멤버(배정 로직에 필요한 필드만 추린다).
+ *
+ * 보드가 확정할 차수(draftRound)에 이미 배정된 사람은 같은 차수 재배정이다(P10). 그 사람의 문서에는
+ * 그 차수 확정 뒤 이월값이 들어 있으므로, 확정 직전 값(carryoverBase)을 넘겨야 다시 짠 편성이 뛰지도
+ * 않은 짝꿍을 피하거나 연속 비혼성 횟수를 두 번 세지 않는다. 직전 값이 없으면(옛 앱이 확정) 지금 값을 쓴다.
+ */
+function toDraftMember(participant: Participant, draftRound: number): DraftMember {
+  const isAssignedInDraftRound = isAssignedInRound(participant, draftRound)
+  const carryover =
+    isAssignedInDraftRound && participant.carryoverBase !== null
+      ? participant.carryoverBase
+      : participant
   return {
     id: participant.id,
     name: participant.name,
     gender: participant.gender,
-    sameGenderStreak: participant.sameGenderStreak,
-    previousPartnerIds: participant.previousPartnerIds,
+    sameGenderStreak: carryover.sameGenderStreak,
+    previousPartnerIds: carryover.previousPartnerIds,
+    isAssignedInDraftRound,
   }
 }
 
@@ -183,12 +196,14 @@ function startAssignment() {
     })
     return
   }
-  // 이번에 확정할 차수는 클릭 시점의 assignmentRound + 1로 고정한다 — 이후 다른 탭이
-  // 확정해 스냅샷이 올라가도 이 드래프트는 고정된 차수로만 커밋한다(QA N-02).
+  // 이번에 확정할 차수는 클릭 시점에 고정한다 — 이후 다른 탭이 확정해 스냅샷이 올라가도 이
+  // 드래프트는 고정된 차수로만 커밋한다(QA N-02). 지금 차수를 아직 뛰지 않았으면 같은 차수를 다시
+  // 짜고(P10 '팀 다시 배정'), 뛰었으면 다음 차수다(nextAssignmentRound).
   // 게임 모드는 직전 확정 모드를 기본값으로 넘긴다 — 호스트는 보드에서 바꿀 수 있다.
+  const draftRound = nextAssignmentRound.value
   taStore.startDraft(
-    participants.value.map(toDraftMember),
-    (room.value?.assignmentRound ?? 0) + 1,
+    participants.value.map((participant) => toDraftMember(participant, draftRound)),
+    draftRound,
     room.value?.gameMode ?? DEFAULT_GAME_MODE,
   )
   // 보드로 전환하기 직전 — 이전 화면(대기실)에서 쌓인 에러 토스트가 보드 위에 겹쳐 남지 않도록 비운다
@@ -211,6 +226,16 @@ function requestStartGame() {
   }
   store.startPlaying()
 }
+
+/**
+ * 호스트 배정 버튼 문구(P10) — 배정 전엔 시작, 지금 차수를 아직 뛰지 않았으면 같은 차수를 다시 짜고,
+ * 뛰었으면 다음 차수를 배정한다. 게임 전에 'N+1차'를 띄우면 진행자가 1차를 건너뛰고 2차로 넘어갔다.
+ */
+const assignmentCtaLabel = computed(() => {
+  if (assignmentRound.value === 0) return '팀 배정 시작'
+  if (nextAssignmentRound.value === assignmentRound.value) return '팀 다시 배정'
+  return `${nextAssignmentRound.value}차 팀 배정`
+})
 
 /** 재실행 확인 다이얼로그 — 안전한 경로(다음 차수 배정)를 고르면 기존 팀 배정 시작 경로를 그대로 탄다 */
 function goNextAssignment() {
@@ -282,7 +307,7 @@ watchEffect(() => {
 watch(participants, (list) => {
   if (!showAssignmentBoard.value) return
   for (const participant of list) {
-    if (participant.isReady) taStore.addToWaitingPool(toDraftMember(participant))
+    if (participant.isReady) taStore.addToWaitingPool(toDraftMember(participant, taStore.draftRound))
   }
 })
 
@@ -634,7 +659,7 @@ async function copyInviteLink() {
           class="w-full"
           @click="startAssignment"
         >
-          {{ assignmentRound > 0 ? `${assignmentRound + 1}차 팀 배정` : '팀 배정 시작' }}
+          {{ assignmentCtaLabel }}
         </BaseButton>
         <!-- 라운드 종료 후 기록을 확인할 유일한 경로 — 최소 한 번 배정된 방에서만 의미가 있다 -->
         <BaseButton

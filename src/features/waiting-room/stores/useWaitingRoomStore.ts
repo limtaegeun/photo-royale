@@ -17,6 +17,7 @@ import {
   type RoomInfo,
 } from '../api/rooms'
 import { saveVenueMapImage } from '../api/venueMap'
+import { hasPlayedRound } from '../roundPlayMarker'
 import { isRoundLiveAt, isRoundOverAt } from '../roundClock'
 import { serverNow } from '../serverClock'
 import { useVenueMapStore } from './useVenueMapStore'
@@ -133,6 +134,26 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
   const isRoundOver = computed(() => isRoundOverAt(room.value?.round ?? null, serverNow()))
   /** 확정된 팀편성 차수 — 0이면 아직 배정 전 */
   const assignmentRound = computed(() => room.value?.assignmentRound ?? 0)
+  /**
+   * 지금 차수로 이미 게임을 시작했는가(P10). 서버 기록(playedRound)이 정본이고, 기록을 모르는 옛 앱이
+   * 시작한 차수는 이 기기의 라운드 시작 기록(roundPlayMarker)으로 보탠다. 배정 전(0차)은 false다.
+   */
+  const isCurrentRoundPlayed = computed(() => {
+    const round = assignmentRound.value
+    if (round === 0) return false
+    if (room.value?.playedRound === round) return true
+    return roomCode.value !== null && hasPlayedRound(roomCode.value, round)
+  })
+  /**
+   * 호스트가 다음에 여는 배정 보드가 확정할 차수(P10). 배정 전이면 1차, 지금 차수를 아직 뛰지 않았으면
+   * 같은 차수를 다시 짜고(차수를 올리지 않는다), 이미 뛰었으면 다음 차수다. rules의 배정 확정 갈래와
+   * 같은 기준이다 — 뛴 차수를 다시 짜면 서버가 거부한다.
+   */
+  const nextAssignmentRound = computed(() => {
+    const round = assignmentRound.value
+    if (round === 0) return 1
+    return isCurrentRoundPlayed.value ? round + 1 : round
+  })
 
   /**
    * 화면에 보이는 명단 = 플레이어만. 호스트는 진행자라 제외한다
@@ -374,7 +395,7 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
     isStartingGame.value = true
     startGameError.value = null
     try {
-      await startGame(roomCode.value)
+      await startGame(roomCode.value, assignmentRound.value)
     } catch {
       startGameError.value = '게임을 시작하지 못했어요. 다시 시도해 주세요.'
     } finally {
@@ -451,6 +472,7 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
     isRoundLive,
     isRoundOver,
     assignmentRound,
+    nextAssignmentRound,
     roster,
     myAssignment,
     participantCount,

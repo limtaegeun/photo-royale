@@ -4,10 +4,23 @@ import type { Gender } from '@/features/auth'
 
 // api/assignment은 firebase를 끌어오므로 통째로 모킹한다 — 스토어 로직만 검증한다
 const confirmAssignmentMock =
-  vi.fn<(code: string, nextRound: number, gameMode: string, teams: unknown) => Promise<void>>()
+  vi.fn<
+    (
+      code: string,
+      nextRound: number,
+      gameMode: string,
+      teams: unknown,
+      unassigned: unknown,
+    ) => Promise<void>
+  >()
 vi.mock('../api/assignment', () => ({
-  confirmAssignment: (code: string, nextRound: number, gameMode: string, teams: unknown) =>
-    confirmAssignmentMock(code, nextRound, gameMode, teams),
+  confirmAssignment: (
+    code: string,
+    nextRound: number,
+    gameMode: string,
+    teams: unknown,
+    unassigned: unknown,
+  ) => confirmAssignmentMock(code, nextRound, gameMode, teams, unassigned),
 }))
 
 import {
@@ -625,27 +638,59 @@ describe('useTeamAssignmentStore', () => {
       const ok = await store.confirm('AB2C')
 
       expect(ok).toBe(true)
-      expect(confirmAssignmentMock).toHaveBeenCalledExactlyOnceWith('AB2C', 1, 'normal', [
-        {
-          armband: 'A',
-          isXTeam: false,
-          members: [
-            { id: 'm1', nextStreak: 0, nextPartnerIds: ['f1'] },
-            { id: 'f1', nextStreak: 0, nextPartnerIds: ['m1'] },
-          ],
-        },
-        {
-          armband: 'B',
-          isXTeam: false,
-          members: [
-            { id: 'm2', nextStreak: 0, nextPartnerIds: ['f2'] },
-            { id: 'f2', nextStreak: 0, nextPartnerIds: ['m2'] },
-          ],
-        },
-      ])
+      // base = 드래프트에 들어온 이월값(이번 차수 확정 직전 값) — 같은 차수를 다시 짤 때의 기준(P10)
+      const base = { baseStreak: 0, basePartnerIds: [] }
+      expect(confirmAssignmentMock).toHaveBeenCalledExactlyOnceWith(
+        'AB2C',
+        1,
+        'normal',
+        [
+          {
+            armband: 'A',
+            isXTeam: false,
+            members: [
+              { id: 'm1', ...base, nextStreak: 0, nextPartnerIds: ['f1'] },
+              { id: 'f1', ...base, nextStreak: 0, nextPartnerIds: ['m1'] },
+            ],
+          },
+          {
+            armband: 'B',
+            isXTeam: false,
+            members: [
+              { id: 'm2', ...base, nextStreak: 0, nextPartnerIds: ['f2'] },
+              { id: 'f2', ...base, nextStreak: 0, nextPartnerIds: ['m2'] },
+            ],
+          },
+        ],
+        [],
+      )
       // 성공 시 드래프트 초기화
       expect(store.draftTeams).toHaveLength(0)
       expect(store.confirmError).toBeNull()
+    })
+
+    /**
+     * 같은 차수 재배정(P10) — 그 차수에 배정돼 있던 사람이 대기자로 남으면 배정을 풀어야 한다. 처음
+     * 배정되는 사람(다음 차수 배정·새로 합류)은 풀 배정이 없으니 대기자로 남아도 쓰지 않는다.
+     */
+    it('같은 차수 재배정에서 대기자로 남은 기존 배정자만 배정 풀기 대상으로 넘긴다', async () => {
+      const store = useTeamAssignmentStore()
+      const members = mixedFour().map((m) =>
+        m.id === 'm2'
+          ? { ...m, sameGenderStreak: 3, previousPartnerIds: ['z'], isAssignedInDraftRound: true }
+          : { ...m, isAssignedInDraftRound: m.id !== 'f2' },
+      )
+      store.startDraft(members, 1, 'normal', identityRandom)
+      store.moveMember('m2', null)
+      store.moveMember('f2', null)
+
+      await store.confirm('AB2C')
+
+      const [, round, , teams, unassigned] = confirmAssignmentMock.mock.calls[0]!
+      expect(round).toBe(1)
+      expect((teams as { members: { id: string }[] }[]).flatMap((t) => t.members.map((m) => m.id)))
+        .not.toContain('m2')
+      expect(unassigned).toEqual([{ id: 'm2', sameGenderStreak: 3, previousPartnerIds: ['z'] }])
     })
 
     it('멤버가 없는 빈 팀은 확정 대상에서 제외한다', async () => {

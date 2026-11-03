@@ -14,6 +14,7 @@ function participant(id: string, team: string | null, assignedRound = 2): Partic
     isXTeam: false,
     sameGenderStreak: 0,
     previousPartnerIds: [],
+    carryoverBase: null,
     isReady: true,
   }
 }

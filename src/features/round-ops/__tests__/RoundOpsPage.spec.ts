@@ -230,6 +230,7 @@ function hostRoom(overrides: Partial<RoomInfo> = {}): RoomInfo {
     hostUid: 'me',
     status: 'playing',
     assignmentRound: 2,
+    playedRound: 0,
     gameMode: 'normal',
     roundModes: {},
     round: null,
@@ -270,6 +271,7 @@ function assigned(id: string, team: string): Participant {
     isXTeam: false,
     sameGenderStreak: 0,
     previousPartnerIds: [],
+    carryoverBase: null,
     isReady: true,
   }
 }

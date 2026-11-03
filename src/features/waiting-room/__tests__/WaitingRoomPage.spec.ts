@@ -33,7 +33,7 @@ const getRoomMock = vi.fn<(code: string) => Promise<RoomInfo | null>>()
 const joinRoomMock =
   vi.fn<(code: string, member: { uid: string; nickname: string }) => Promise<void>>()
 const setReadyMock = vi.fn<(code: string, uid: string) => Promise<void>>()
-const startGameMock = vi.fn<(code: string) => Promise<void>>()
+const startGameMock = vi.fn<(code: string, round: number) => Promise<void>>()
 const kickParticipantMock = vi.fn<(code: string, uid: string) => Promise<void>>()
 const unsubscribeParticipantsMock = vi.fn<() => void>()
 const unsubscribeRoomMock = vi.fn<() => void>()
@@ -62,7 +62,7 @@ vi.mock('../api/rooms', async (importOriginal) => {
     joinRoom: (code: string, member: { uid: string; nickname: string }) =>
       joinRoomMock(code, member),
     setReady: (code: string, uid: string) => setReadyMock(code, uid),
-    startGame: (code: string) => startGameMock(code),
+    startGame: (code: string, round: number) => startGameMock(code, round),
     kickParticipant: (code: string, uid: string) => kickParticipantMock(code, uid),
     subscribeToParticipants: (code: string, onChange: (participants: Participant[]) => void) =>
       subscribeParticipantsMock(code, onChange),
@@ -166,6 +166,7 @@ const GUEST_ROOM: RoomInfo = {
   hostUid: 'host9',
   status: 'waiting',
   assignmentRound: 0,
+  playedRound: 0,
   gameMode: 'normal',
   roundModes: {},
   round: null,
@@ -174,6 +175,7 @@ const MY_ROOM: RoomInfo = {
   hostUid: 'me',
   status: 'waiting',
   assignmentRound: 0,
+  playedRound: 0,
   gameMode: 'normal',
   roundModes: {},
   round: null,
@@ -189,6 +191,7 @@ const ROSTER: Participant[] = [
     isXTeam: false,
     sameGenderStreak: 0,
     previousPartnerIds: [],
+    carryoverBase: null,
     isReady: false,
   },
   {
@@ -200,6 +203,7 @@ const ROSTER: Participant[] = [
     isXTeam: false,
     sameGenderStreak: 0,
     previousPartnerIds: [],
+    carryoverBase: null,
     isReady: true,
   },
   {
@@ -211,6 +215,7 @@ const ROSTER: Participant[] = [
     isXTeam: false,
     sameGenderStreak: 0,
     previousPartnerIds: [],
+    carryoverBase: null,
     isReady: true,
   },
 ]
@@ -389,6 +394,7 @@ describe('WaitingRoomPage', () => {
       hostUid: 'me',
       status: 'waiting',
       assignmentRound: 3,
+      playedRound: 0,
       gameMode: 'group',
       roundModes: {},
       round: null,
@@ -676,6 +682,7 @@ describe('WaitingRoomPage', () => {
       hostUid: 'host9',
       status: 'playing',
       assignmentRound: 1,
+      playedRound: 0,
       gameMode: 'normal',
       roundModes: {},
       round: null,
@@ -701,6 +708,7 @@ describe('WaitingRoomPage', () => {
       hostUid: 'host9',
       status: 'playing' as const,
       assignmentRound: 1,
+      playedRound: 0,
       gameMode: 'normal' as const,
       roundModes: {},
       round: null,
@@ -729,6 +737,7 @@ describe('WaitingRoomPage', () => {
       hostUid: 'host9',
       status: 'playing',
       assignmentRound: 1,
+      playedRound: 0,
       gameMode: 'normal',
       roundModes: {},
       round: { status: 'running', startedAtMs: Date.now(), durationMs: 1_200_000, pausedRemainingMs: null },
@@ -753,6 +762,7 @@ describe('WaitingRoomPage', () => {
       hostUid: 'host9',
       status: 'playing',
       assignmentRound: 1,
+      playedRound: 0,
       gameMode: 'normal',
       roundModes: {},
       round: {
@@ -780,6 +790,7 @@ describe('WaitingRoomPage', () => {
       hostUid: 'host9',
       status: 'playing' as const,
       assignmentRound: 1,
+      playedRound: 0,
       gameMode: 'normal' as const,
       roundModes: {},
       round: { status: 'running' as const, startedAtMs, durationMs: 1_200_000, pausedRemainingMs: null },
@@ -808,7 +819,7 @@ describe('WaitingRoomPage', () => {
     const deliver = captureSnapshotCallbacks()
     mountPage()
     await flushPromises()
-    deliver.room({ hostUid: 'host9', status: 'waiting', assignmentRound: 0, gameMode: 'normal', roundModes: {}, round: null })
+    deliver.room({ hostUid: 'host9', status: 'waiting', assignmentRound: 0, playedRound: 0, gameMode: 'normal', roundModes: {}, round: null })
     await flushPromises()
     replaceMock.mockClear()
 
@@ -826,8 +837,8 @@ describe('WaitingRoomPage', () => {
     const deliver = captureSnapshotCallbacks()
     mountPage()
     await flushPromises()
-    deliver.room({ hostUid: 'host9', status: 'waiting', assignmentRound: 0, gameMode: 'normal', roundModes: {}, round: null })
-    deliver.participants([{ id: 'me', name: '나', gender: null, isReady: false, team: null, assignedRound: 0, isXTeam: false, sameGenderStreak: 0, previousPartnerIds: [] }])
+    deliver.room({ hostUid: 'host9', status: 'waiting', assignmentRound: 0, playedRound: 0, gameMode: 'normal', roundModes: {}, round: null })
+    deliver.participants([{ id: 'me', name: '나', gender: null, isReady: false, team: null, assignedRound: 0, isXTeam: false, sameGenderStreak: 0, previousPartnerIds: [], carryoverBase: null }])
     await flushPromises()
 
     expect(replaceMock).not.toHaveBeenCalledWith(
@@ -845,6 +856,7 @@ describe('WaitingRoomPage', () => {
       hostUid: 'host9',
       status: 'playing',
       assignmentRound: 1,
+      playedRound: 0,
       gameMode: 'normal',
       roundModes: {},
       round: {
@@ -866,7 +878,7 @@ describe('WaitingRoomPage', () => {
     mountPage()
     await flushPromises()
 
-    deliver.room({ hostUid: 'me', status: 'playing', assignmentRound: 1, gameMode: 'normal', roundModes: {}, round: null })
+    deliver.room({ hostUid: 'me', status: 'playing', assignmentRound: 1, playedRound: 0, gameMode: 'normal', roundModes: {}, round: null })
     await flushPromises()
 
     expect(replaceMock).toHaveBeenCalledWith({
@@ -1100,6 +1112,7 @@ describe('WaitingRoomPage', () => {
       hostUid: 'host9',
       status: 'waiting',
       assignmentRound: 1,
+      playedRound: 0,
       gameMode: 'normal',
       roundModes: {},
       round: null,
@@ -1126,12 +1139,13 @@ describe('WaitingRoomPage', () => {
   })
 
   it('호스트: 보드 진입 후 room 스냅샷 라운드가 올라가도 드래프트 차수는 고정된다(QA N-02)', async () => {
-    // 진입 시점 assignmentRound=2 → 이번 드래프트가 확정할 차수는 3으로 고정되어야 한다
+    // 진입 시점 assignmentRound=2(이미 뛴 차수) → 이번 드래프트가 확정할 차수는 3으로 고정되어야 한다
     const deliver = captureSnapshotCallbacks()
     getRoomMock.mockResolvedValue({
       hostUid: 'me',
       status: 'waiting',
       assignmentRound: 2,
+      playedRound: 2,
       gameMode: 'group',
       roundModes: {},
       round: null,
@@ -1145,7 +1159,7 @@ describe('WaitingRoomPage', () => {
     deliver.participants([{ ...ROSTER[1]! }, { ...ROSTER[2]! }]) // u2·u3 모두 ready
     await flushPromises()
 
-    // 2차까지 확정된 방이라 배정 CTA는 다음 차수를 표기한다(주 액션은 '게임 시작')
+    // 2차까지 확정하고 뛴 방이라 배정 CTA는 다음 차수를 표기한다(주 액션은 '게임 시작')
     await findButton(wrapper, '3차 팀 배정')!.trigger('click')
     await flushPromises()
     expect(taStore.draftRound).toBe(3) // 진입 시점 2 + 1로 고정
@@ -1153,9 +1167,108 @@ describe('WaitingRoomPage', () => {
     expect(taStore.draftGameMode).toBe('group')
 
     // 다른 탭이 확정해 room 스냅샷의 assignmentRound가 올라가도(3) 드래프트 차수는 그대로 3
-    deliver.room({ hostUid: 'me', status: 'waiting', assignmentRound: 3, gameMode: 'group', roundModes: {}, round: null })
+    deliver.room({ hostUid: 'me', status: 'waiting', assignmentRound: 3, playedRound: 2, gameMode: 'group', roundModes: {}, round: null })
     await flushPromises()
     expect(taStore.draftRound).toBe(3)
+  })
+
+  /**
+   * P10 — 배정만 확정하고 게임을 시작하지 않은 차수에서 'N+1차 팀 배정'을 띄우면 진행자가 1차를
+   * 건너뛰고 2차로 넘어갔다. 아직 뛰지 않은 차수는 같은 차수로 다시 짠다.
+   */
+  it('호스트: 확정한 차수를 아직 뛰지 않았으면 "팀 다시 배정"을 띄우고 같은 차수 드래프트를 연다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    const room: RoomInfo = {
+      hostUid: 'me',
+      status: 'waiting',
+      assignmentRound: 1,
+      playedRound: 0,
+      gameMode: 'king-hunt',
+      roundModes: { '1': 'king-hunt' },
+      round: null,
+    }
+    getRoomMock.mockResolvedValue(room)
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const wrapper = mount(WaitingRoomPage, { global: { plugins: [pinia] } })
+    const taStore = useTeamAssignmentStore()
+    await flushPromises()
+    deliver.room(room)
+    // u2는 1차에 배정돼 문서에 확정 뒤 이월값이 있고, 확정 직전 값(carryoverBase)도 남아 있다
+    deliver.participants([
+      {
+        ...ROSTER[1]!,
+        team: 'A',
+        assignedRound: 1,
+        sameGenderStreak: 0,
+        previousPartnerIds: ['u3'],
+        carryoverBase: { sameGenderStreak: 2, previousPartnerIds: ['u9'] },
+      },
+      { ...ROSTER[2]!, isReady: true },
+    ])
+    await flushPromises()
+
+    expect(findButton(wrapper, '2차 팀 배정')).toBeUndefined()
+    await findButton(wrapper, '팀 다시 배정')!.trigger('click')
+    await flushPromises()
+
+    // 차수를 올리지 않는다
+    expect(taStore.draftRound).toBe(1)
+    expect(taStore.draftGameMode).toBe('king-hunt')
+    const drafted = taStore.draftTeams.flatMap((team) => team.members)
+    const u2 = drafted.find((member) => member.id === 'u2')!
+    // 1차에 배정돼 있던 사람은 확정 직전 이월값으로 다시 짠다 — 뛰지도 않은 짝꿍이 이력에 쌓이지 않게
+    expect(u2).toMatchObject({
+      sameGenderStreak: 2,
+      previousPartnerIds: ['u9'],
+      isAssignedInDraftRound: true,
+    })
+    const u3 = drafted.find((member) => member.id === 'u3')!
+    expect(u3.isAssignedInDraftRound).toBe(false)
+  })
+
+  it('호스트: 게임을 시작한 차수(playedRound)는 다시 짜지 않고 다음 차수를 배정한다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    const room: RoomInfo = {
+      hostUid: 'me',
+      status: 'waiting',
+      assignmentRound: 1,
+      playedRound: 1,
+      gameMode: 'normal',
+      roundModes: {},
+      round: null,
+    }
+    getRoomMock.mockResolvedValue(room)
+    const wrapper = mountPage()
+    await flushPromises()
+    deliver.room(room)
+    deliver.participants([{ ...ROSTER[1]!, team: 'A', assignedRound: 1 }])
+    await flushPromises()
+
+    expect(findButton(wrapper, '팀 다시 배정')).toBeUndefined()
+    expect(findButton(wrapper, '2차 팀 배정')).toBeDefined()
+  })
+
+  it('호스트: 서버 기록이 없어도 이 기기에서 라운드를 시작한 차수는 다음 차수를 배정한다(옛 앱 전환기)', async () => {
+    sessionStorage.setItem('pr:round-played:AB2C:1', '1')
+    const deliver = captureSnapshotCallbacks()
+    const room: RoomInfo = {
+      hostUid: 'me',
+      status: 'waiting',
+      assignmentRound: 1,
+      playedRound: 0,
+      gameMode: 'normal',
+      roundModes: {},
+      round: null,
+    }
+    getRoomMock.mockResolvedValue(room)
+    const wrapper = mountPage()
+    await flushPromises()
+    deliver.room(room)
+    deliver.participants([{ ...ROSTER[1]!, team: 'A', assignedRound: 1 }])
+    await flushPromises()
+
+    expect(findButton(wrapper, '2차 팀 배정')).toBeDefined()
   })
   it('호스트: 배정 가능 인원(완장 25개 × 2인)을 넘으면 토스트로 막고 보드를 열지 않는다', async () => {
     const deliver = captureSnapshotCallbacks()
@@ -1189,6 +1302,7 @@ describe('WaitingRoomPage', () => {
       hostUid: 'me',
       status: 'waiting',
       assignmentRound: 1,
+      playedRound: 0,
       gameMode: 'normal',
       roundModes: {},
       round: null,
@@ -1200,14 +1314,15 @@ describe('WaitingRoomPage', () => {
     deliver.participants([{ ...ROSTER[1]!, team: 'A', assignedRound: 1 }])
     await flushPromises()
 
-    // 확정 후에는 게임 시작이 주 액션이고, 배정은 다음 차수로 강등된다
-    expect(findButton(wrapper, '2차 팀 배정')).toBeDefined()
+    // 확정 후에는 게임 시작이 주 액션이고, 배정은 아직 뛰지 않은 차수를 다시 짜는 보조로 강등된다
+    expect(findButton(wrapper, '팀 다시 배정')).toBeDefined()
     expect(findButton(wrapper, '게임 시작')!.attributes('disabled')).toBeUndefined()
 
     await findButton(wrapper, '게임 시작')!.trigger('click')
     await flushPromises()
 
-    expect(startGameMock).toHaveBeenCalledExactlyOnceWith('AB2C')
+    // 이 차수로 시작했다는 기록을 위해 지금 차수를 함께 넘긴다(P10)
+    expect(startGameMock).toHaveBeenCalledExactlyOnceWith('AB2C', 1)
   })
 
   it('호스트: 배정 이력이 남아 있어도 전원이 대기 상태면 게임 시작을 비활성화한다', async () => {
@@ -1216,6 +1331,7 @@ describe('WaitingRoomPage', () => {
       hostUid: 'me',
       status: 'waiting',
       assignmentRound: 1,
+      playedRound: 0,
       gameMode: 'normal',
       roundModes: {},
       round: null,
@@ -1247,6 +1363,7 @@ describe('WaitingRoomPage', () => {
       hostUid: 'me',
       status: 'waiting',
       assignmentRound: 1,
+      playedRound: 0,
       gameMode: 'normal',
       roundModes: {},
       round: null,
@@ -1273,6 +1390,7 @@ describe('WaitingRoomPage', () => {
       hostUid: 'me',
       status: 'waiting',
       assignmentRound: 1,
+      playedRound: 0,
       gameMode: 'normal',
       roundModes: {},
       round: null,
@@ -1290,7 +1408,7 @@ describe('WaitingRoomPage', () => {
     findBodyButton('그대로 다시 시작').click()
     await flushPromises()
 
-    expect(startGameMock).toHaveBeenCalledExactlyOnceWith('AB2C')
+    expect(startGameMock).toHaveBeenCalledExactlyOnceWith('AB2C', 1)
   })
 
   it('호스트: 재실행 확인 다이얼로그에서 "다음 팀 배정하기"를 누르면 배정 보드가 열린다', async () => {
@@ -1300,6 +1418,7 @@ describe('WaitingRoomPage', () => {
       hostUid: 'me',
       status: 'waiting',
       assignmentRound: 1,
+      playedRound: 0,
       gameMode: 'normal',
       roundModes: {},
       round: null,
@@ -1328,6 +1447,7 @@ describe('WaitingRoomPage', () => {
       hostUid: 'me',
       status: 'waiting',
       assignmentRound: 1,
+      playedRound: 0,
       gameMode: 'normal',
       roundModes: {},
       round: null,
@@ -1343,7 +1463,7 @@ describe('WaitingRoomPage', () => {
     await flushPromises()
 
     expect(wrapper.text()).not.toContain('이번 차수는 이미 진행했어요')
-    expect(startGameMock).toHaveBeenCalledExactlyOnceWith('AB2C')
+    expect(startGameMock).toHaveBeenCalledExactlyOnceWith('AB2C', 1)
   })
 
   /** 라운드 종료 후 기록을 확인할 유일한 경로 — 최소 한 번 배정된 방에서 호스트에게만 보인다 */
@@ -1375,6 +1495,7 @@ describe('WaitingRoomPage', () => {
       hostUid: 'host9',
       status: 'waiting',
       assignmentRound: 1,
+      playedRound: 0,
       gameMode: 'normal',
       roundModes: {},
       round: null,

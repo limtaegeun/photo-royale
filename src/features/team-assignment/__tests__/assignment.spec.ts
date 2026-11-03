@@ -14,11 +14,14 @@ const batchSetMock = vi.fn<(ref: FakeRef, data: Record<string, unknown>) => void
 const batchCommitMock = vi.fn<() => Promise<void>>()
 /** serverTimestamp() 센티널 — 원장 스냅샷의 confirmedAt 자리에 그대로 실리는지 본다 */
 const SERVER_TIMESTAMP = { __serverTimestamp: true }
+/** deleteField() 센티널 — 같은 차수 재배정에서 빠진 사람의 배정 키를 지우는지 본다 */
+const DELETE_FIELD = { __deleteField: true }
 
 vi.mock('firebase/firestore', () => ({
   doc: (_db: unknown, ...segments: string[]): FakeRef => ({ path: segments.join('/') }),
   writeBatch: () => ({ update: batchUpdateMock, set: batchSetMock, commit: batchCommitMock }),
   serverTimestamp: () => SERVER_TIMESTAMP,
+  deleteField: () => DELETE_FIELD,
   // round-ledger api가 import만 하는 구독 계층 — 이 스펙에서는 호출되지 않는다
   collection: vi.fn<() => FakeRef>(),
   onSnapshot: vi.fn<() => () => void>(),
@@ -38,14 +41,14 @@ describe('confirmAssignment', () => {
       armband: 'A',
       isXTeam: true,
       members: [
-        { id: 'u1', nextStreak: 0, nextPartnerIds: ['u2'] },
-        { id: 'u2', nextStreak: 0, nextPartnerIds: ['u1'] },
+        { id: 'u1', baseStreak: 1, basePartnerIds: [], nextStreak: 0, nextPartnerIds: ['u2'] },
+        { id: 'u2', baseStreak: 0, basePartnerIds: [], nextStreak: 0, nextPartnerIds: ['u1'] },
       ],
     },
     {
       armband: 'B',
       isXTeam: false,
-      members: [{ id: 'u3', nextStreak: 1, nextPartnerIds: [] }],
+      members: [{ id: 'u3', baseStreak: 0, basePartnerIds: [], nextStreak: 1, nextPartnerIds: [] }],
     },
   ]
 
@@ -57,15 +60,42 @@ describe('confirmAssignment', () => {
 
     expect(batchUpdateMock).toHaveBeenCalledWith(
       { path: 'rooms/AB2C/participants/u1' },
-      { team: 'A', assignedRound: 2, isXTeam: true, sameGenderStreak: 0, previousPartnerIds: ['u2'], isReady: false },
+      {
+        team: 'A',
+        assignedRound: 2,
+        isXTeam: true,
+        sameGenderStreak: 0,
+        previousPartnerIds: ['u2'],
+        baseSameGenderStreak: 1,
+        basePreviousPartnerIds: [],
+        isReady: false,
+      },
     )
     expect(batchUpdateMock).toHaveBeenCalledWith(
       { path: 'rooms/AB2C/participants/u2' },
-      { team: 'A', assignedRound: 2, isXTeam: true, sameGenderStreak: 0, previousPartnerIds: ['u1'], isReady: false },
+      {
+        team: 'A',
+        assignedRound: 2,
+        isXTeam: true,
+        sameGenderStreak: 0,
+        previousPartnerIds: ['u1'],
+        baseSameGenderStreak: 0,
+        basePreviousPartnerIds: [],
+        isReady: false,
+      },
     )
     expect(batchUpdateMock).toHaveBeenCalledWith(
       { path: 'rooms/AB2C/participants/u3' },
-      { team: 'B', assignedRound: 2, isXTeam: false, sameGenderStreak: 1, previousPartnerIds: [], isReady: false },
+      {
+        team: 'B',
+        assignedRound: 2,
+        isXTeam: false,
+        sameGenderStreak: 1,
+        previousPartnerIds: [],
+        baseSameGenderStreak: 0,
+        basePreviousPartnerIds: [],
+        isReady: false,
+      },
     )
     expect(batchUpdateMock).toHaveBeenCalledWith(
       { path: 'rooms/AB2C' },
@@ -112,6 +142,50 @@ describe('confirmAssignment', () => {
     expect(Object.keys(roomCall[1])).not.toContain('roundModes')
   })
 
+  /**
+   * 같은 차수 재배정(P10) — 게임 전 차수를 다시 짜면 대기자로 남은 사람은 그 차수 배정이 풀려야 한다.
+   * 쓰지 않으면 문서의 assignedRound가 지금 차수 그대로라 옛 완장으로 배정된 채 남는다.
+   */
+  it('같은 차수 재배정에서 빠진 사람은 완장·차수·X·base 키를 지우고 이월값을 배정 전 값으로 되돌린다', async () => {
+    await confirmAssignment('AB2C', 1, 'normal', TEAMS, [
+      { id: 'u4', sameGenderStreak: 2, previousPartnerIds: ['u9'] },
+    ])
+
+    expect(batchUpdateMock).toHaveBeenCalledWith(
+      { path: 'rooms/AB2C/participants/u4' },
+      {
+        team: DELETE_FIELD,
+        assignedRound: DELETE_FIELD,
+        isXTeam: DELETE_FIELD,
+        sameGenderStreak: 2,
+        previousPartnerIds: ['u9'],
+        baseSameGenderStreak: DELETE_FIELD,
+        basePreviousPartnerIds: DELETE_FIELD,
+      },
+    )
+    // 차수는 그대로 쓴다(올리지 않는다) — rules가 게임 전 차수일 때만 같은 값을 허용한다
+    expect(batchUpdateMock).toHaveBeenCalledWith(
+      { path: 'rooms/AB2C' },
+      { assignmentRound: 1, gameMode: 'normal', 'roundModes.1': 'normal' },
+    )
+    // 멤버 3 + 빠진 사람 1 + 방 1, 원장 set 1 — 한 commit
+    expect(batchUpdateMock).toHaveBeenCalledTimes(5)
+    expect(batchSetMock).toHaveBeenCalledTimes(1)
+    expect(batchCommitMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('빠진 사람이 없으면(다음 차수 배정) 팀 멤버와 방만 쓴다', async () => {
+    await confirmAssignment('AB2C', 2, 'normal', TEAMS)
+
+    const paths = batchUpdateMock.mock.calls.map(([ref]) => ref.path)
+    expect(paths).toEqual([
+      'rooms/AB2C/participants/u1',
+      'rooms/AB2C/participants/u2',
+      'rooms/AB2C/participants/u3',
+      'rooms/AB2C',
+    ])
+  })
+
   it('commit 실패는 호출부로 전파된다', async () => {
     batchCommitMock.mockRejectedValueOnce(new Error('permission denied'))
 
@@ -132,6 +206,8 @@ describe('firestore.rules 배정 쓰기 필드 동기화 가드', () => {
     'isXTeam',
     'sameGenderStreak',
     'previousPartnerIds',
+    'baseSameGenderStreak',
+    'basePreviousPartnerIds',
     'isReady',
   ]
 
@@ -151,7 +227,7 @@ describe('firestore.rules 배정 쓰기 필드 동기화 가드', () => {
       {
         armband: 'A',
         isXTeam: false,
-        members: [{ id: 'u1', nextStreak: 0, nextPartnerIds: [] }],
+        members: [{ id: 'u1', baseStreak: 0, basePartnerIds: [], nextStreak: 0, nextPartnerIds: [] }],
       },
     ])
 
@@ -159,6 +235,25 @@ describe('firestore.rules 배정 쓰기 필드 동기화 가드', () => {
       ref.path.includes('/participants/'),
     )!
     expect(Object.keys(participantCall[1]).sort()).toEqual([...WRITTEN_FIELDS].sort())
+  })
+
+  /**
+   * 같은 차수 재배정에서 빠진 사람의 쓰기(P10)도 rules ③ 갈래 화이트리스트와 이중 정의다. 지우는 키도
+   * affectedKeys에 들어가므로 지우는 키·쓰는 키를 합친 목록이 rules 목록과 같아야 한다.
+   */
+  it('rules의 배정 풀기 화이트리스트가 빠진 사람 쓰기 키와 일치한다', async () => {
+    const rules = readFileSync(resolve(process.cwd(), 'firestore.rules'), 'utf8')
+    const listMatch = rules.match(
+      /&& isUnplayedRoundReassign\(roomCode\)[\s\S]*?affectedKeys\(\)\s*\n?\s*\.hasOnly\(\[([^\]]*)\]\)/,
+    )
+    expect(listMatch).not.toBeNull()
+    const rulesFields = [...listMatch![1]!.matchAll(/'([^']+)'/g)].map((m) => m[1])
+
+    await confirmAssignment('AB2C', 1, 'normal', [], [
+      { id: 'u4', sameGenderStreak: 0, previousPartnerIds: [] },
+    ])
+    const unassignCall = batchUpdateMock.mock.calls.find(([ref]) => ref.path.endsWith('/u4'))!
+    expect(Object.keys(unassignCall[1]).sort()).toEqual([...rulesFields].sort())
   })
 
   /**

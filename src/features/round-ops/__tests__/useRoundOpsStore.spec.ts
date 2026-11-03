@@ -240,6 +240,7 @@ function room(overrides: Partial<RoomInfo> = {}): RoomInfo {
     hostUid: 'me',
     status: 'playing',
     assignmentRound: 2,
+    playedRound: 0,
     gameMode: 'normal',
     roundModes: {},
     round: null,

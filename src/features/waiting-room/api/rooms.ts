@@ -50,8 +50,17 @@ export interface RoundState {
 export interface RoomInfo {
   hostUid: string
   status: RoomStatus
-  /** 확정된 팀편성 차수(1차~3차). 0이면 아직 배정 전 — 배정 확정 시에만 1씩 증가한다 */
+  /**
+   * 확정된 팀편성 차수. 0이면 아직 배정 전 — 배정 확정 시에만 바뀐다. 다음 차수 배정은 1씩
+   * 올리고, 게임을 시작하지 않은 차수를 다시 짜는 확정(P10)은 그대로 둔다.
+   */
   assignmentRound: number
+  /**
+   * 마지막으로 게임을 시작한 차수(P10). 0이면 시작한 적 없다. 게임 시작이 그때의 assignmentRound를
+   * 같이 쓴다 — 이 값이 지금 차수와 같으면 그 차수는 이미 뛰었으니 다시 짤 수 없고 다음 차수를
+   * 배정해야 한다. 필드를 모르는 옛 앱이 시작한 차수는 기록이 없다.
+   */
+  playedRound: number
   /** 확정된 이번 라운드 게임 모드. 필드가 없으면(기존 방·배정 전) 일반전(normal) */
   gameMode: GameModeId
   /**
@@ -71,11 +80,12 @@ export interface Participant {
   /** 배정된 완장 알파벳(그룹 색은 완장에서 파생). 입장 시점엔 미배정(null) */
   team: string | null
   /**
-   * 이 완장이 확정된 팀편성 차수. 0이면 한 번도 배정된 적 없다.
+   * 이 완장이 확정된 팀편성 차수. 0이면 배정된 적 없거나, 게임 전 같은 차수 재배정에서 빠져
+   * 배정이 풀렸다(P10 — 그때는 team도 함께 지워진다).
    *
    * team만으로는 "이번 라운드에 배정됐는가"를 알 수 없다 — 확정 배치는 멤버가 있는 팀만
    * 쓰므로, 직전 라운드에 배정됐다가 이번 라운드에 미배정 대기자로 내려간 참가자의 team은
-   * 지워지지 않고 그대로 남는다(그리고 rules가 team을 null로 되돌리는 것을 허용하지 않는다).
+   * 지워지지 않고 그대로 남는다(다음 차수 확정은 미배정자 문서를 쓰지 않는다).
    * 그래서 "확정된 차수"를 양수 마커로 함께 저장하고, 화면은 room.assignmentRound와
    * 같은지로 이번 라운드 배정 여부를 판정한다(isAssignedInRound).
    */
@@ -88,14 +98,26 @@ export interface Participant {
   sameGenderStreak: number
   /** 이번 세션 누적 짝꿍 이력 — 재짝꿍 회피용, 확정 시에만 갱신 */
   previousPartnerIds: string[]
+  /**
+   * assignedRound 차수를 확정하기 직전의 이월값(P10). 게임 전에 같은 차수를 다시 짤 때 이 값에서
+   * 다시 계산해야 뛰지도 않은 편성이 짝꿍 이력·연속 비혼성 횟수에 쌓이지 않는다. 필드를 모르는
+   * 옛 앱이 확정했거나 배정된 적 없으면 null이다.
+   */
+  carryoverBase: CarryoverBase | null
   isReady: boolean
+}
+
+/** 배정 확정 직전의 이월값 — Participant.carryoverBase 참조 */
+export interface CarryoverBase {
+  sameGenderStreak: number
+  previousPartnerIds: string[]
 }
 
 /**
  * 이번 라운드(room.assignmentRound)에 실제로 배정된 참가자인지 판정한다 — 완장 표시·배정 카드
  * 노출의 단일 기준. team이 남아 있어도 확정 차수가 다르면 이번 라운드엔 미배정이다: 확정 배치는
  * 멤버가 있는 팀만 쓰므로, 직전 라운드에 배정됐다가 이번에 미배정 대기자로 내려간 참가자의 team은
- * 문서에 그대로 남는다(rules가 team을 null로 되돌리는 것도 허용하지 않는다). 배정 전(0차)에는
+ * 문서에 그대로 남는다(다음 차수 확정은 미배정자 문서를 쓰지 않는다). 배정 전(0차)에는
  * 어떤 참가자도 배정 상태가 아니다.
  */
 export function isAssignedInRound(participant: Participant, assignmentRound: number): boolean {
@@ -147,6 +169,7 @@ function toRoomInfo(data: Record<string, unknown>): RoomInfo {
     hostUid: data.hostUid as string,
     status: data.status as RoomStatus,
     assignmentRound: (data.assignmentRound as number | undefined) ?? 0,
+    playedRound: (data.playedRound as number | undefined) ?? 0,
     gameMode:
       typeof gameMode === 'string' && isGameModeId(gameMode) ? gameMode : DEFAULT_GAME_MODE,
     roundModes: toRoundModes(data.roundModes ?? null),
@@ -342,10 +365,14 @@ export function subscribeToRoom(
  * 게임 시작 — 방 status를 playing으로 전이한다. firestore.rules가 호스트 본인의
  * waiting → playing 전이만 허용하므로, 호스트 여부 검증은 서버가 담당한다.
  * 각 참가자 화면 전환은 subscribeToRoom 스냅샷이 트리거한다.
- * (UI 연결은 팀 배정 플로우 확정 후 — 현재 호스트 CTA는 배정 시작까지만 노출한다)
+ *
+ * 이 차수로 게임을 시작했다는 기록(playedRound)을 같이 쓴다(P10) — 대기실이 이 기록으로 '팀 다시
+ * 배정'(같은 차수)과 '다음 차수 배정'을 가르고, rules도 같은 기록으로 뛴 차수의 재배정을 막는다.
+ *
+ * @param round 지금 확정된 팀편성 차수(room.assignmentRound) — rules가 같은 값인지 대조한다
  */
-export async function startGame(code: string): Promise<void> {
-  await updateDoc(doc(db, 'rooms', code), { status: 'playing' })
+export async function startGame(code: string, round: number): Promise<void> {
+  await updateDoc(doc(db, 'rooms', code), { status: 'playing', playedRound: round })
 }
 
 /**
@@ -373,6 +400,17 @@ export interface RoundLedgerSettlement {
   result: RoundSettlement
 }
 
+/**
+ * 참가자 문서의 base* 두 키 → 배정 직전 이월값. 둘 중 하나라도 없으면(옛 앱 확정·배정 전·배정이
+ * 풀린 참가자) null이다 — 반쪽 값으로 다시 계산하면 이력이 섞인다.
+ */
+function toCarryoverBase(data: Record<string, unknown>): CarryoverBase | null {
+  const streak = data.baseSameGenderStreak
+  const partnerIds = data.basePreviousPartnerIds
+  if (typeof streak !== 'number' || !Array.isArray(partnerIds)) return null
+  return { sameGenderStreak: streak, previousPartnerIds: partnerIds as string[] }
+}
+
 /** 참가자 명단 실시간 구독 — 입장 순서(joinedAt)로 정렬해 전달한다 */
 export function subscribeToParticipants(
   code: string,
@@ -398,6 +436,7 @@ export function subscribeToParticipants(
             isXTeam: (data.isXTeam as boolean | undefined) ?? false,
             sameGenderStreak: (data.sameGenderStreak as number | undefined) ?? 0,
             previousPartnerIds: (data.previousPartnerIds as string[] | undefined) ?? [],
+            carryoverBase: toCarryoverBase(data),
             isReady: data.isReady as boolean,
           }
         }),
