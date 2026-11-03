@@ -180,32 +180,44 @@ const rosterGroups = computed(() =>
 /**
  * 팀 배정 시작(호스트) — 참가자·레디 상태를 검증한 뒤 드래프트를 채우고 보드를 연다.
  * 배정 대상은 명단(플레이어)뿐이며, 호스트(진행자)는 플레이어가 아니라 제외된다.
+ *
+ * 아직 뛰지 않은 차수를 다시 짤 때(P10 '팀 다시 배정')는 전원 준비를 요구하지 않는다. 배정 확정이
+ * 배정된 사람의 준비를 풀므로(라운드마다 재레디), 확정 직후엔 준비한 사람이 0명이라 전원 준비를
+ * 걸면 다시 배정이 항상 막힌다. 그 차수에 배정된 사람은 이미 안전 수칙에 동의하고 배정된 사람이라
+ * 준비 없이 보드에 올린다. 배정되지 않은 사람은 준비(안전 수칙 동의)한 사람만 올린다 — 준비하지
+ * 않은 늦은 합류자는 빼 두고, 보드가 열린 뒤 준비하면 대기열에 합류한다(아래 participants watch).
  */
 function startAssignment() {
   if (participantCount.value === 0) {
     toast({ title: '참가자가 없어요.', tone: 'danger' })
     return
   }
-  if (readyCount.value < participantCount.value) {
+  // 이번에 확정할 차수는 클릭 시점에 고정한다 — 이후 다른 탭이 확정해 스냅샷이 올라가도 이
+  // 드래프트는 고정된 차수로만 커밋한다(QA N-02). 지금 차수를 아직 뛰지 않았으면 같은 차수를 다시
+  // 짜고(P10 '팀 다시 배정'), 뛰었으면 다음 차수다(nextAssignmentRound).
+  const draftRound = nextAssignmentRound.value
+  const isUnplayedRoundReassign = draftRound === assignmentRound.value
+  if (!isUnplayedRoundReassign && readyCount.value < participantCount.value) {
     toast({ title: '모든 참가자가 준비를 완료해야 시작할 수 있어요.', tone: 'danger' })
     return
   }
+  const draftParticipants = isUnplayedRoundReassign
+    ? participants.value.filter(
+        (participant) => participant.isReady || isAssignedInRound(participant, draftRound),
+      )
+    : participants.value
   // 완장 실물 수(25개 × 2인)를 넘으면 완장을 부여할 수 없어 배정 자체가 성립하지 않는다.
   // 가드가 없으면 armbandForTeamIndex가 throw해 안내 없이 클릭이 먹지 않는다.
-  if (participantCount.value > MAX_ASSIGNABLE_MEMBERS) {
+  if (draftParticipants.length > MAX_ASSIGNABLE_MEMBERS) {
     toast({
       title: `배정 가능한 인원은 최대 ${MAX_ASSIGNABLE_MEMBERS}명이에요.`,
       tone: 'danger',
     })
     return
   }
-  // 이번에 확정할 차수는 클릭 시점에 고정한다 — 이후 다른 탭이 확정해 스냅샷이 올라가도 이
-  // 드래프트는 고정된 차수로만 커밋한다(QA N-02). 지금 차수를 아직 뛰지 않았으면 같은 차수를 다시
-  // 짜고(P10 '팀 다시 배정'), 뛰었으면 다음 차수다(nextAssignmentRound).
   // 게임 모드는 직전 확정 모드를 기본값으로 넘긴다 — 호스트는 보드에서 바꿀 수 있다.
-  const draftRound = nextAssignmentRound.value
   taStore.startDraft(
-    participants.value.map((participant) => toDraftMember(participant, draftRound)),
+    draftParticipants.map((participant) => toDraftMember(participant, draftRound)),
     draftRound,
     room.value?.gameMode ?? DEFAULT_GAME_MODE,
   )

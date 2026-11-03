@@ -1311,6 +1311,92 @@ describe('WaitingRoomPage', () => {
     expect(u3.isAssignedInDraftRound).toBe(false)
   })
 
+  /**
+   * 배정 확정은 배정된 사람의 준비를 푼다. 같은 차수를 다시 짤 때도 전원 준비를 걸면 확정 직후
+   * 준비 0명이라 '팀 다시 배정'이 항상 토스트로 막혔다(11/04 실측). 그 차수에 배정된 사람은 준비
+   * 없이 올리고, 배정되지 않은 사람은 준비(안전 수칙 동의)한 사람만 올린다.
+   */
+  it('호스트: 팀 다시 배정은 배정된 사람의 준비를 기다리지 않고, 준비하지 않은 미배정자는 빼고 연다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    const room: RoomInfo = {
+      hostUid: 'me',
+      status: 'waiting',
+      assignmentRound: 1,
+      playedRound: 0,
+      gameMode: 'normal',
+      roundModes: { '1': 'normal' },
+      round: null,
+    }
+    getRoomMock.mockResolvedValue(room)
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const wrapper = mount(WaitingRoomPage, { global: { plugins: [pinia] } })
+    const taStore = useTeamAssignmentStore()
+    await flushPromises()
+    deliver.room(room)
+    deliver.participants([
+      // 1차에 배정됐고 확정으로 준비가 풀렸다
+      { ...ROSTER[1]!, team: 'A', assignedRound: 1, isReady: false },
+      { ...ROSTER[2]!, team: 'A', assignedRound: 1, isReady: false },
+      // 1차 확정 때 대기자로 남았고 준비는 그대로다
+      { ...ROSTER[2]!, id: 'u4', name: '대기자', isReady: true },
+      // 확정 뒤 늦게 들어와 아직 안전 수칙에 동의하지 않았다
+      { ...ROSTER[2]!, id: 'u5', name: '늦은합류', isReady: false },
+    ])
+    await flushPromises()
+
+    await findButton(wrapper, '팀 다시 배정')!.trigger('click')
+    await flushPromises()
+
+    expect(toastMock).not.toHaveBeenCalledWith({
+      title: '모든 참가자가 준비를 완료해야 시작할 수 있어요.',
+      tone: 'danger',
+    })
+    expect(taStore.draftRound).toBe(1)
+    const draftedIds = taStore.draftTeams.flatMap((team) => team.members.map((member) => member.id))
+    expect(draftedIds.sort()).toEqual(['u2', 'u3', 'u4'])
+
+    // 늦은 합류자가 보드가 열린 뒤 준비하면 대기열에 합류한다(기존 경로)
+    deliver.participants([
+      { ...ROSTER[1]!, team: 'A', assignedRound: 1, isReady: false },
+      { ...ROSTER[2]!, team: 'A', assignedRound: 1, isReady: false },
+      { ...ROSTER[2]!, id: 'u4', name: '대기자', isReady: true },
+      { ...ROSTER[2]!, id: 'u5', name: '늦은합류', isReady: true },
+    ])
+    await flushPromises()
+    expect(taStore.waitingPool.map((member) => member.id)).toEqual(['u5'])
+  })
+
+  it('호스트: 다음 차수 배정은 여전히 전원 준비가 필요하다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    const room: RoomInfo = {
+      hostUid: 'me',
+      status: 'waiting',
+      assignmentRound: 1,
+      playedRound: 1,
+      gameMode: 'normal',
+      roundModes: {},
+      round: null,
+    }
+    getRoomMock.mockResolvedValue(room)
+    const wrapper = mountPage()
+    await flushPromises()
+    deliver.room(room)
+    deliver.participants([
+      { ...ROSTER[1]!, team: 'A', assignedRound: 1 },
+      { ...ROSTER[2]!, team: 'A', assignedRound: 1, isReady: false },
+    ])
+    await flushPromises()
+
+    await findButton(wrapper, '2차 팀 배정')!.trigger('click')
+
+    expect(toastMock).toHaveBeenCalledWith({
+      title: '모든 참가자가 준비를 완료해야 시작할 수 있어요.',
+      tone: 'danger',
+    })
+    expect(wrapper.text()).not.toContain('팀 편성')
+  })
+
   it('호스트: 게임을 시작한 차수(playedRound)는 다시 짜지 않고 다음 차수를 배정한다', async () => {
     const deliver = captureSnapshotCallbacks()
     const room: RoomInfo = {
