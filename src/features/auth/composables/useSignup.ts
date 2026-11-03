@@ -1,4 +1,4 @@
-import { reactive, ref } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import { NicknameTakenError, isNicknameTaken, signup } from '../api/signup'
 import { COMMON_AUTH_ERROR_MESSAGE, NETWORK_ERROR_MESSAGE, toAuthErrorMessage } from '../errorMessages'
 import { emailFieldError } from '../validation'
@@ -28,7 +28,8 @@ const DEFAULT_ERROR_MESSAGE = '가입에 실패했어요. 잠시 후 다시 시�
 const NICKNAME_TAKEN_MESSAGE = '이미 사용 중인 닉네임이에요.'
 const NICKNAME_PATTERN_MESSAGE = '닉네임은 한글·영문·숫자만 쓸 수 있어요.'
 
-type FormField = 'email' | 'password' | 'nickname' | 'gender'
+const FORM_FIELDS = ['email', 'password', 'nickname', 'gender'] as const
+type FormField = (typeof FORM_FIELDS)[number]
 
 /** BaseSegmented가 string으로 보관한 값을 Gender로 좁힌다 — 옵션 추가 시 컴파일러가 지켜준다 */
 function isGender(value: string): value is Gender {
@@ -58,6 +59,23 @@ export function useSignup() {
 
   const submitError = ref('')
   const isSubmitting = ref(false)
+
+  // 값을 고치면 그 칸의 오류와 서버 오류를 지운다. 제출 때 뜬 오류가 값을 바로잡은 뒤에도 남아, 닉네임을 넣은
+  // 칸 아래에 「닉네임을 입력해주세요.」가 그대로 보였다(11/03 QA 탐색 EX-02). 다시 검증하는 건
+  // 제출과 이메일 칸 이탈 때다. 입력하는 도중에는 새 오류를 띄우지 않는다
+  for (const field of FORM_FIELDS) {
+    watch(
+      () => form[field],
+      () => {
+        fieldErrors[field] = ''
+        // 직전 제출의 서버 오류(「이메일 또는 비밀번호가 올바르지 않아요.」 등)도 값을 고치면 지운다
+        submitError.value = ''
+      },
+      // 값이 바뀌는 그 순간에 지운다. 기본(pre) 플러시면 값을 넣고 같은 틱에 제출할 때
+      // 검증이 막 채운 오류를 뒤늦게 지워 버린다
+      { flush: 'sync' },
+    )
+  }
 
   /**
    * 검증·저장에 쓰는 닉네임. toNicknameKey와 같은 NFC 정규화를 거쳐(macOS 한글 NFD
