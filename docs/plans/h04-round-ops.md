@@ -13,7 +13,7 @@
 | # | 결정 사항 | 확정안 |
 |---|---|---|
 | 1 | 타이머 정본 | **Firestore 동기화** — room 문서에 라운드 상태 필드 추가 + `firestore.rules` 갱신. 새로고침 복원, 향후 게스트 화면도 같은 데이터 구독 |
-| 2 | 라운드 시작 | **호스트 수동 시작** ('라운드 시작' 버튼), 기본 **20분**, ±1분 조정으로 보정 |
+| 2 | 라운드 시작 | ~~호스트 수동 시작('라운드 시작' 버튼)~~ → **대기실 '게임 시작'이 라운드(기본 20분)까지 한 번에 건다**(2026-11-03 변경). ±1분 조정으로 보정. 진행자가 '게임 시작'과 '라운드 시작'을 연달아 두 번 눌러야 했고, 그 사이 운영 화면에서 할 일이 없었다(인원 확인·공지는 전원 준비 완료가 필요한 '게임 시작' 전에 끝난다). 운영 화면의 '라운드 시작' 버튼은 게임 시작의 라운드 쓰기만 실패했을 때의 안전망으로 남는다 |
 | 3 | 공지 | **자유 텍스트 입력**(바텀시트) → `rooms/{code}/notices` 서브컬렉션 append(히스토리). 운영 탭에 최근 공지 표시. **게스트 수신 UI는 범위 제외**(카메라 콕핏 미완성) → 이후 콕핏 공지 줄로 구현됐다. 공지는 라운드가 바뀌어도 방의 마지막 1건이 남으므로, 콕핏 공지 줄은 보낸 시각(`방금`·`N분 전`)을 함께 보인다 — 시각이 없으면 지난 라운드 공지가 방금 온 것으로 읽힌다(2026-10-09 리허설 문제 4, #71) |
 | 4 | 판정 대기 행 | **화면에서 제거**(판정 탭 mock은 유지). 타이머 요약은 실데이터: `라운드 N(assignmentRound) · 상태 · M팀 배정(참가자에서 파생)` |
 
@@ -38,7 +38,7 @@ round?: {
 **상태 전이** (모두 호스트 전용, `status == 'playing'`에서만)
 | 액션 | 쓰기 내용 |
 |---|---|
-| 라운드 시작 | `round = { status:'running', startedAt: serverTimestamp(), durationMs: 1_200_000 }` |
+| 라운드 시작 | `round = { status:'running', startedAt: serverTimestamp(), durationMs: 1_200_000 }` — 게임 시작(`status: 'playing'`) 바로 뒤에 응답을 기다리지 않고 이어서 쓴다(`waiting-room/api/rooms.ts` `startGame` → `startRound`). rules는 두 키를 다른 갈래로 받아 한 번에 쓰면 거부되므로 두 번 나눠 쓰고, 서버가 보낸 순서대로 적용해 라운드 쓰기 심사 때 방은 이미 playing이다 |
 | 일시정지 | `round = { status:'paused', startedAt 유지, durationMs 유지, pausedRemainingMs: 현재 남은 ms }` |
 | 재개 | `round = { status:'running', startedAt: serverTimestamp(), durationMs: pausedRemainingMs }` (pausedRemainingMs 제거) |
 | 시간 반영(±N분) | running: `durationMs += delta` / paused: `pausedRemainingMs += delta` (0 미만 방지: 최소 0) |
@@ -97,7 +97,7 @@ round?: {
 
 | 라운드 상태 | 배지(ROOM 행) | 타이머 카드 | 주 액션 영역 | 시간 조정 |
 |---|---|---|---|---|
-| 시작 전(`round` 없음) | `neutral` "대기" | `20:00`(기본값) + 요약, `text-content-secondary` | **'라운드 시작'** primary lg 풀폭 1개 | 카드 미노출(또는 disabled — 미노출 권장, 시작 전 조정은 의미 없음) |
+| 시작 전(`round` 없음 — 게임 시작의 라운드 쓰기만 실패한 경우에만 보인다) | `neutral` "대기" | `20:00`(기본값) + 요약, `text-content-secondary` | **'라운드 시작'** primary lg 풀폭 1개(안전망) | 카드 미노출(또는 disabled — 미노출 권장, 시작 전 조정은 의미 없음) |
 | running | `success` "LIVE" | 남은 시간 `text-success`, 1초 갱신 | 2열: **일시정지**(danger) 활성 / **재개**(accent) disabled | 활성 |
 | paused | `warning` "일시정지" | 남은 시간 `text-warning` 고정 | 2열: 일시정지 disabled / **재개** 활성 | 활성 |
 | 종료(remaining ≤ 0) | `neutral` "종료" | `00:00` `text-content-secondary` + 요약에 '종료' | **'라운드 시작'**(재시작) 풀폭 | 미노출 |
