@@ -1,11 +1,17 @@
 <script setup lang="ts">
-import { onBeforeUnmount } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ToastClose, ToastDescription, ToastRoot, ToastTitle } from 'reka-ui'
 import type { ToastItem } from '@/shared/composables/useToast'
 
 /**
  * 단일 토스트 표현 컴포넌트. BaseToastProvider가 전역 큐를 v-for로 렌더할 때 사용한다.
- * ARIA live region·타이머·스와이프 dismiss는 Reka ToastRoot가 담당한다.
+ * ARIA live region·스와이프 dismiss는 Reka ToastRoot가 담당하고, 자동 닫힘 타이머는 토스트마다 여기서 직접 돈다.
+ *
+ * Reka 타이머를 쓰지 않는 이유: Reka는 "일시정지" 플래그 하나를 뷰포트 전체가 공유하고, 창 blur·뷰포트 hover·
+ * 토스트 안 포커스로 켠다. 그래서 (1) 마우스를 올린 채 토스트가 닫히면 플래그가 안 풀려 다음 토스트부터 전부
+ * 안 닫히고, (2) 토스트 본문을 탭하면 포커스가 남아 영원히 떠 있고, (3) 다른 앱으로 갔다 오면 타이머가 멈춰
+ * 있다가 돌아와서야 다시 센다. 여기서는 이 토스트 위에 마우스가 있거나 키보드 포커스가 들어와 있을 때만 멈추고,
+ * 상태가 토스트마다 따로라 닫히면 같이 사라진다.
  *
  * 디자인: 뉴트럴 elevated 카드 + 톤 컬러 아이콘 (Sonner/Linear 계열 패턴).
  * 톤별로 아이콘 모양이 달라(체크/삼각형/X/i) 색약 사용자도 색 없이 상태를 구분할 수 있다.
@@ -16,7 +22,17 @@ interface Props {
 
 const props = defineProps<Props>()
 const emit = defineEmits<{ close: [] }>()
+
+/** Reka ToastRoot의 자체 타이머를 끄는 값 — Reka는 duration이 무한이면 타이머를 걸지 않는다 */
+const REKA_TIMER_DISABLED = Number.POSITIVE_INFINITY
+
+const open = ref(true)
 let closeTimer: ReturnType<typeof setTimeout> | undefined
+let autoCloseTimer: ReturnType<typeof setTimeout> | undefined
+let autoCloseRemaining = props.toast.duration
+let autoCloseStartedAt = 0
+let isHovered = false
+let isKeyboardFocused = false
 
 /** 톤별 아이콘 색 — neutral은 아이콘 없이 텍스트만 표시 */
 const TONE_ICON_CLASS = {
@@ -37,9 +53,63 @@ const TONE_ICON_PATH = {
   info: 'M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-7-4a1 1 0 1 1-2 0 1 1 0 0 1 2 0ZM9 9a.75.75 0 0 0 0 1.5h.253a.25.25 0 0 1 .244.304l-.459 2.066A1.75 1.75 0 0 0 10.747 15H11a.75.75 0 0 0 0-1.5h-.253a.25.25 0 0 1-.244-.304l.459-2.066A1.75 1.75 0 0 0 9.253 9H9Z',
 } as const
 
-function onOpenChange(value: boolean) {
-  if (!value) closeTimer = setTimeout(finishClose, 250)
+/** duration 0(또는 무한)이면 자동 닫힘 없이 수동 dismiss 전까지 유지한다(ToastItem.duration 계약) */
+function startAutoClose() {
+  if (autoCloseTimer || autoCloseRemaining <= 0 || !Number.isFinite(autoCloseRemaining)) return
+  autoCloseStartedAt = Date.now()
+  autoCloseTimer = setTimeout(() => {
+    autoCloseTimer = undefined
+    open.value = false
+  }, autoCloseRemaining)
 }
+
+function pauseAutoClose() {
+  if (!autoCloseTimer) return
+  clearTimeout(autoCloseTimer)
+  autoCloseTimer = undefined
+  autoCloseRemaining -= Date.now() - autoCloseStartedAt
+}
+
+/** 이 토스트를 읽는 중(마우스가 위에 있거나 키보드 포커스가 안에 있음)이면 멈추고, 아니면 남은 시간부터 다시 센다 */
+function syncAutoClose() {
+  if (isHovered || isKeyboardFocused) pauseAutoClose()
+  else if (open.value) startAutoClose()
+}
+
+/** 터치는 hover가 없고 손을 떼면 pointerleave가 오므로, 마우스 hover만 읽는 중으로 본다 */
+function onPointerEnter(event: PointerEvent) {
+  isHovered = event.pointerType === 'mouse'
+  syncAutoClose()
+}
+
+function onPointerLeave() {
+  isHovered = false
+  syncAutoClose()
+}
+
+/** 탭·클릭으로 생긴 포커스는 :focus-visible이 아니라 멈추지 않는다 — 키보드(Tab·F8)로 들어온 경우만 */
+function onFocusIn(event: FocusEvent) {
+  isKeyboardFocused = (event.target as HTMLElement).matches(':focus-visible')
+  syncAutoClose()
+}
+
+function onFocusOut(event: FocusEvent) {
+  const element = event.currentTarget as HTMLElement
+  if (element.contains(event.relatedTarget as Node | null)) return
+  isKeyboardFocused = false
+  syncAutoClose()
+}
+
+// 자동 닫힘·닫기 버튼·스와이프·Esc 모두 open을 내리는 것으로 모인다 → 큐 제거까지 이어 준다
+watch(
+  open,
+  (value) => {
+    if (value) return
+    pauseAutoClose()
+    closeTimer = setTimeout(finishClose, 250)
+  },
+  { flush: 'sync' },
+)
 
 function finishClose() {
   if (closeTimer) clearTimeout(closeTimer)
@@ -52,18 +122,26 @@ function onAnimationEnd(event: AnimationEvent) {
   if (event.target === element && element.dataset.state === 'closed') finishClose()
 }
 
+onMounted(startAutoClose)
+
 onBeforeUnmount(() => {
   if (closeTimer) clearTimeout(closeTimer)
+  if (autoCloseTimer) clearTimeout(autoCloseTimer)
 })
 </script>
 
 <template>
+  <!-- 자동 닫힘은 startAutoClose가 open을 내려서 한다 -->
   <ToastRoot
-    :duration="props.toast.duration"
+    v-model:open="open"
+    :duration="REKA_TIMER_DISABLED"
     :data-tone="props.toast.tone"
     class="base-toast pointer-events-auto flex items-start gap-3 rounded-xl border border-stroke
            bg-surface-strong p-4 shadow-lg"
-    @update:open="onOpenChange"
+    @pointerenter="onPointerEnter"
+    @pointerleave="onPointerLeave"
+    @focusin="onFocusIn"
+    @focusout="onFocusOut"
     @animationend="onAnimationEnd"
   >
     <svg
