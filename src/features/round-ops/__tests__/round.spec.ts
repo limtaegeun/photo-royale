@@ -19,12 +19,10 @@ vi.mock('firebase/firestore', () => ({
 
 import {
   ROUND_ADJUST_STEP_MS,
-  ROUND_DURATION_DEFAULT_MS,
   ROUND_DURATION_MAX_MS,
   adjustRound,
   pauseRound,
   resumeRound,
-  startRound,
 } from '../api/round'
 
 beforeEach(() => {
@@ -37,30 +35,6 @@ function writtenRound() {
   const [, data] = calls[calls.length - 1]!
   return data.round as Record<string, unknown>
 }
-
-describe('startRound', () => {
-  it('방 문서의 round 키만 기본 20분짜리 running 상태로 쓴다', async () => {
-    await startRound('AB2C')
-
-    expect(updateDocMock).toHaveBeenCalledExactlyOnceWith(
-      { path: 'rooms/AB2C' },
-      {
-        round: {
-          status: 'running',
-          startedAt: 'server-timestamp',
-          durationMs: ROUND_DURATION_DEFAULT_MS,
-        },
-      },
-    )
-    expect(ROUND_DURATION_DEFAULT_MS).toBe(20 * 60 * 1000)
-  })
-
-  it('running에는 pausedRemainingMs 키 자체가 없다 — rules가 부재를 요구한다', async () => {
-    await startRound('AB2C')
-
-    expect(writtenRound()).not.toHaveProperty('pausedRemainingMs')
-  })
-})
 
 describe('pauseRound', () => {
   it('클릭 순간의 남은 시간을 durationMs와 pausedRemainingMs 양쪽에 고정한다', async () => {

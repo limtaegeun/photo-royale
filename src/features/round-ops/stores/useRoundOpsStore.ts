@@ -5,6 +5,7 @@ import { GAME_MODES, absorbKillEffect } from '@/features/game-mode'
 import {
   endGame,
   markRoundPlayed,
+  startRound,
   subscribeToParticipants,
   subscribeToRoom,
   type Participant,
@@ -30,7 +31,6 @@ import {
   adjustRound,
   pauseRound,
   resumeRound,
-  startRound,
 } from '../api/round'
 import {
   approveSubmission as requestApproveSubmission,
@@ -326,7 +326,9 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
   }
 
   /**
-   * 라운드 시작·재시작 — 기본 20분으로 카운트다운을 건다.
+   * 라운드 시작 — 기본 20분으로 카운트다운을 건다. 평소엔 대기실 '게임 시작'이 라운드까지 함께
+   * 걸어서 이 경로를 타지 않는다. 그 라운드 쓰기만 실패해 '게임은 시작했는데 라운드는 시작 전'으로
+   * 남은 방을 진행자가 여기서 다시 거는 안전망이다.
    *
    * 시작에 성공한 차수만 "플레이했음"으로 마크한다. 대기실의 재실행 가드(hasPlayedRound)가
    * 이 마커를 근거로 같은 차수 재시작을 확인받는데, 실패한 시도까지 마크하면 라운드가 실제로는

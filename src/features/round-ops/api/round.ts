@@ -2,9 +2,6 @@ import { doc, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { db } from '@/shared/api/firebase'
 import type { RoundState } from '@/features/waiting-room'
 
-/** 라운드 기본 길이(20분) — 호스트가 '라운드 시작'을 누를 때의 총량 */
-export const ROUND_DURATION_DEFAULT_MS = 20 * 60 * 1000
-
 /** 시간 조정 한 스텝(1분) — −1분/+1분 버튼이 대기값에 누적한다 */
 export const ROUND_ADJUST_STEP_MS = 60 * 1000
 
@@ -16,10 +13,13 @@ export const ROUND_ADJUST_STEP_MS = 60 * 1000
 export const ROUND_DURATION_MAX_MS = 3 * 60 * 60 * 1000
 
 /**
- * 라운드 상태 쓰기의 단일 경로. 모든 전이(시작·정지·재개·시간 반영)를 **"지금부터 남은 시간
+ * 라운드 상태 쓰기의 단일 경로. 세 전이(정지·재개·시간 반영)를 **"지금부터 남은 시간
  * 만큼"** 으로 다시 앵커한다 — 남은 시간은 어차피 durationMs - (now - startedAt)로만 정의되므로,
  * 앵커를 매번 서버 시각으로 새로 잡으면 클라이언트가 이전 Timestamp를 되쓰지 않아도 되고
- * (호스트 기기 시계가 개입할 여지도 없고) 네 전이의 payload 모양이 하나로 모인다.
+ * (호스트 기기 시계가 개입할 여지도 없고) 전이마다 payload 모양이 하나로 모인다.
+ *
+ * 시작은 여기 없다 — 게임 시작과 한 번에 걸리므로 방 문서 소유자(waiting-room)의 startRound가
+ * 같은 모양(서버 시각 앵커·running에는 pausedRemainingMs 없음)으로 쓴다.
  *
  * 방 문서의 top-level 키는 `round` 하나만 건드린다 — rules의 갈래 검사(hasOnly(['round']))가
  * 기존 status/배정 갈래와 겹치지 않게 하는 전제다.
@@ -44,11 +44,6 @@ async function writeRound(
 /** 음수·상한 초과·소수점을 서버 스키마(0 이상의 정수)에 맞춘다 */
 function clampDurationMs(remainingMs: number): number {
   return Math.min(Math.max(Math.round(remainingMs), 0), ROUND_DURATION_MAX_MS)
-}
-
-/** 라운드 시작(재시작 포함) — 기본 20분으로 카운트다운을 건다 */
-export async function startRound(code: string): Promise<void> {
-  await writeRound(code, 'running', ROUND_DURATION_DEFAULT_MS)
 }
 
 /** 올스탑 — 클릭 순간의 남은 시간을 고정한다(오차는 클릭 시점 스큐뿐) */

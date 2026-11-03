@@ -17,7 +17,7 @@ import {
   type RoomInfo,
 } from '../api/rooms'
 import { saveVenueMapImage } from '../api/venueMap'
-import { hasPlayedRound } from '../roundPlayMarker'
+import { hasPlayedRound, markRoundPlayed } from '../roundPlayMarker'
 import { isRoundLiveAt, isRoundOverAt } from '../roundClock'
 import { serverNow } from '../serverClock'
 import { useVenueMapStore } from './useVenueMapStore'
@@ -108,9 +108,9 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
   const isHost = computed(() => room.value !== null && room.value.hostUid === myId.value)
   const gameStatus = computed(() => room.value?.status ?? null)
   /**
-   * 지금 뛰는 중인 라운드가 있는가 — 게임 시작(playing)과 다르다. 게임 시작은 "배정이 끝나고
-   * 진행자가 운영 화면으로 갔다"는 뜻일 뿐이라, 이 값이 false인 동안 플레이어는 아직 뛰지 않는다.
-   * 콕핏 전환 기준은 playing이 아니라 이 값이다.
+   * 지금 뛰는 중인 라운드가 있는가 — 게임 시작(playing)과 다르다. 게임 시작은 라운드까지 함께
+   * 걸지만, 라운드 쓰기만 실패하면 playing인데 라운드가 없는 방이 남고 그동안 플레이어는 아직
+   * 뛰지 않는다. 라운드가 끝난 뒤에도 playing은 그대로다. 콕핏 전환 기준은 playing이 아니라 이 값이다.
    *
    * 'round 필드가 있다'로는 부족하다. 타이머가 0에 닿아도 round는 호스트가 게임을 종료할 때까지
    * 남아 있어서, 종료 뒤 콕핏에서 나온 게스트를 대기실이 즉시 콕핏으로 되밀어 낸다(A-4).
@@ -128,8 +128,8 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
    * 라운드가 시작됐는데 남은 시간이 없는 상태 — 게스트가 콕핏에서 나와 대기실에 있는 구간이다.
    *
    * `isRoundLive`의 부정으로 대신할 수 없다. 게임만 시작하고 라운드는 아직 시작하지 않은 구간
-   * (진행자가 인원을 세고 공지하는 동안)도 '살아 있지 않은' 상태라, 부정으로 가르면 시작도 안 한
-   * 라운드를 끝났다고 알린다.
+   * (게임 시작의 라운드 쓰기만 실패해 진행자가 운영 화면에서 다시 거는 동안)도 '살아 있지 않은'
+   * 상태라, 부정으로 가르면 시작도 안 한 라운드를 끝났다고 알린다.
    */
   const isRoundOver = computed(() => isRoundOverAt(room.value?.round ?? null, serverNow()))
   /** 확정된 팀편성 차수 — 0이면 아직 배정 전 */
@@ -378,9 +378,13 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
   }
 
   /**
-   * 게임 시작(호스트 전용) — 방 status를 playing으로 전이한다. 화면 전환은 각 참가자의
-   * 방 스냅샷 구독이 담당하므로(호스트 자신도 포함) 여기서 라우팅하지 않는다.
+   * 게임 시작(호스트 전용) — 방을 playing으로 전이하고 라운드 타이머까지 한 번에 건다(startGame).
+   * 화면 전환은 각 참가자의 방 스냅샷 구독이 담당하므로(호스트 자신도 포함) 여기서 라우팅하지 않는다.
    * 배정이 한 번도 확정되지 않았으면(차수 0) 완장 없이 게임이 시작되므로 막는다.
+   *
+   * 라운드까지 걸리면 이 차수를 "플레이했음"으로 마크한다(재실행 가드 hasPlayedRound의 근거).
+   * 방·차수는 쓰기 전에 잡아 둔다 — 로컬 스냅샷이 먼저 playing을 보여 호스트가 운영 화면으로
+   * 넘어가면 이 화면이 떠나며(leave) 방 상태를 비우는데, 서버 응답은 그 뒤에 온다.
    */
   async function startPlaying() {
     if (!roomCode.value || !isHost.value || isStartingGame.value) return
@@ -392,10 +396,13 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
       startGameError.value = '모든 참가자가 준비를 완료해야 시작할 수 있어요.'
       return
     }
+    const code = roomCode.value
+    const playedRound = assignmentRound.value
     isStartingGame.value = true
     startGameError.value = null
     try {
-      await startGame(roomCode.value, assignmentRound.value)
+      await startGame(code, playedRound)
+      markRoundPlayed(code, playedRound)
     } catch {
       startGameError.value = '게임을 시작하지 못했어요. 다시 시도해 주세요.'
     } finally {

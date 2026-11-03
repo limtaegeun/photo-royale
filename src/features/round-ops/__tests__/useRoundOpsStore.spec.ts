@@ -49,6 +49,7 @@ const endGameMock =
     (code: string, settlement?: { roundNo: number; result: RoundSettlement }) => Promise<void>
   >()
 const markRoundPlayedMock = vi.fn<(code: string, round: number) => void>()
+const startRoundMock = vi.fn<(code: string) => Promise<void>>()
 
 vi.mock('@/features/waiting-room', async (importOriginal) => ({
   // 남은 시간 계산은 순수 함수라 실제 구현을 그대로 쓴다 — 스토어가 쓰기 직전에 넘기는 값이
@@ -60,13 +61,14 @@ vi.mock('@/features/waiting-room', async (importOriginal) => ({
   endGame: (code: string, settlement?: { roundNo: number; result: RoundSettlement }) =>
     endGameMock(code, settlement),
   markRoundPlayed: (code: string, round: number) => markRoundPlayedMock(code, round),
+  ROUND_DURATION_DEFAULT_MS: 20 * 60 * 1000,
+  startRound: (code: string) => startRoundMock(code),
   subscribeToRoom: (code: string, onChange: (room: RoomInfo | null) => void) =>
     subscribeRoomMock(code, onChange),
   subscribeToParticipants: (code: string, onChange: (participants: Participant[]) => void) =>
     subscribeParticipantsMock(code, onChange),
 }))
 
-const startRoundMock = vi.fn<(code: string) => Promise<void>>()
 const pauseRoundMock = vi.fn<(code: string, remainingMs: number) => Promise<void>>()
 const resumeRoundMock = vi.fn<(code: string, remainingMs: number) => Promise<void>>()
 const adjustRoundMock =
@@ -75,10 +77,8 @@ const adjustRoundMock =
   >()
 
 vi.mock('../api/round', () => ({
-  ROUND_DURATION_DEFAULT_MS: 20 * 60 * 1000,
   ROUND_ADJUST_STEP_MS: 60 * 1000,
   ROUND_DURATION_MAX_MS: 3 * 60 * 60 * 1000,
-  startRound: (code: string) => startRoundMock(code),
   pauseRound: (code: string, remainingMs: number) => pauseRoundMock(code, remainingMs),
   resumeRound: (code: string, remainingMs: number) => resumeRoundMock(code, remainingMs),
   adjustRound: (code: string, status: string, remainingMs: number, deltaMs: number) =>

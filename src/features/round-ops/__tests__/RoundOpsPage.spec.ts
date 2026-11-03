@@ -30,6 +30,7 @@ vi.mock('@/features/waiting-room', async (importOriginal) => {
   return {
     ...actual,
     endGame: (code: string) => endGameMock(code),
+    startRound: (code: string) => startRoundMock(code),
     subscribeToRoom: (code: string, onChange: (room: RoomInfo | null) => void) =>
       subscribeRoomMock(code, onChange),
     subscribeToParticipants: (code: string, onChange: (participants: Participant[]) => void) =>
@@ -60,7 +61,6 @@ vi.mock('../api/round', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/round')>()
   return {
     ...actual,
-    startRound: (code: string) => startRoundMock(code),
     pauseRound: (code: string, remainingMs: number) => pauseRoundMock(code, remainingMs),
     resumeRound: (code: string, remainingMs: number) => resumeRoundMock(code, remainingMs),
     adjustRound: (code: string, status: string, remainingMs: number, deltaMs: number) =>
