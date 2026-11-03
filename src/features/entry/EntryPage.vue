@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import BaseBadge from '@/shared/components/BaseBadge.vue'
 import BaseButton from '@/shared/components/BaseButton.vue'
+import BaseCard from '@/shared/components/BaseCard.vue'
 import BaseInput from '@/shared/components/BaseInput.vue'
 import { useAuthStore } from '@/features/auth'
 import { MyRoomList, ROOM_CODE_LENGTH, normalizeRoomCode } from '@/features/waiting-room'
@@ -42,6 +43,16 @@ const sharedCode = computed(() => {
 /** 비로그인 CTA가 인증 화면으로 들고 가는 쿼리 — 인증 완료 후 이 화면으로 돌아와 자동 입장한다 */
 const authQuery = computed(() => (sharedCode.value ? { code: sharedCode.value } : undefined))
 
+/**
+ * 비로그인 CTA 순서 — 첫 번째가 primary 다. 공유 링크로 온 사람은 대부분 처음 오는 게스트라
+ * 계정 만들기를 앞에 두고, 코드 없이 온 사람은 세션이 끊긴 기존 사용자가 많아 로그인을 앞에 둔다
+ */
+const guestCtas = computed(() => {
+  const login = { routeName: 'login', label: '로그인' } as const
+  const signup = { routeName: 'signup', label: '계정 만들기' } as const
+  return sharedCode.value ? [signup, login] : [login, signup]
+})
+
 // 게스트가 공유 URL로 진입: 인증이 끝난 상태면 확인 없이 바로 대기실로 보낸다
 onMounted(() => {
   if (authStore.isLoggedIn && sharedCode.value) {
@@ -77,7 +88,8 @@ onMounted(() => {
     </div>
 
     <!-- 하단 고정 CTA — 로그인 상태면 초대 코드 입장(primary)·방 만들기(secondary),
-         비로그인이면 로그인 유도. 코드로 들어오는 게스트가 다수라 입장 경로를 주인공으로 둔다 -->
+         비로그인이면 로그인 유도(공유 링크로 왔으면 초대 안내 + 계정 만들기 우선).
+         코드로 들어오는 게스트가 다수라 입장 경로를 주인공으로 둔다 -->
     <div class="pt-5 pb-6">
       <template v-if="authStore.isLoggedIn">
         <!-- 폼으로 묶어 모바일 키보드의 '이동'(Enter)도 입장하기와 같게 제출한다 — 버튼 클릭만 받으면
@@ -128,24 +140,32 @@ onMounted(() => {
           새로운 방 만들기
         </BaseButton>
       </template>
-      <template v-else>
-        <BaseButton
-          variant="primary"
-          size="md"
-          class="w-full"
-          @click="router.push({ name: 'login', query: authQuery })"
-        >
-          로그인
-        </BaseButton>
-        <BaseButton
-          variant="ghost"
-          size="md"
-          class="mt-3 w-full"
-          @click="router.push({ name: 'signup', query: authQuery })"
-        >
-          계정 만들기
-        </BaseButton>
-      </template>
+      <div v-else class="flex flex-col gap-5">
+        <!-- 공유 링크로 온 비로그인 게스트 — 어느 방에 초대받았는지와, 인증하면 그 방으로 바로
+             들어간다는 것을 CTA 바로 위에서 알린다 -->
+        <BaseCard v-if="sharedCode" role="status">
+          <!-- 코드는 주소창 값 그대로라 길이 제한이 없다 — 긴 값이 카드·화면 밖으로 넘치지 않게 글자 단위로 끊는다 -->
+          <h2 class="text-label break-keep text-content">
+            <span class="font-semibold tracking-widest break-all">{{ sharedCode }}</span> 방에
+            초대받았어요
+          </h2>
+          <p class="mt-2 text-caption break-keep text-content-secondary">
+            로그인하거나 계정을 만들면 바로 입장해요.
+          </p>
+        </BaseCard>
+        <div class="flex flex-col gap-3">
+          <BaseButton
+            v-for="(cta, index) in guestCtas"
+            :key="cta.routeName"
+            :variant="index === 0 ? 'primary' : 'ghost'"
+            size="md"
+            class="w-full"
+            @click="router.push({ name: cta.routeName, query: authQuery })"
+          >
+            {{ cta.label }}
+          </BaseButton>
+        </div>
+      </div>
     </div>
   </section>
 </template>

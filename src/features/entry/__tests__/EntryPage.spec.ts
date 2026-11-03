@@ -198,6 +198,42 @@ describe('EntryPage', () => {
     expect(pushMock).toHaveBeenCalledWith({ name: 'signup', query: { code: 'AB2C' } })
   })
 
+  it('공유 링크로 온 비로그인 사용자에게 초대받은 방 코드와 인증 후 바로 입장한다는 안내를 보여준다', () => {
+    authState.user = null
+    routeState.query = { code: 'ab2c' }
+    const wrapper = mount(EntryPage)
+
+    const notice = wrapper.find('[role="status"]')
+    expect(notice.exists()).toBe(true)
+    expect(notice.text()).toContain('AB2C 방에 초대받았어요')
+    expect(notice.text()).toContain('로그인하거나 계정을 만들면 바로 입장해요.')
+  })
+
+  it('공유 링크로 온 비로그인 사용자는 계정 만들기가 앞에 오는 primary, 로그인이 뒤의 ghost다', () => {
+    authState.user = null
+    routeState.query = { code: 'ab2c' }
+    const wrapper = mount(EntryPage)
+
+    const labels = wrapper.findAll('button').map((b) => [b.text(), b.attributes('data-variant')])
+    expect(labels).toEqual([
+      ['계정 만들기', 'primary'],
+      ['로그인', 'ghost'],
+    ])
+  })
+
+  it('공유 코드 없이 온 비로그인 사용자는 초대 안내 없이 로그인이 앞에 오는 primary다', () => {
+    authState.user = null
+    const wrapper = mount(EntryPage)
+
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('초대받았어요')
+    const labels = wrapper.findAll('button').map((b) => [b.text(), b.attributes('data-variant')])
+    expect(labels).toEqual([
+      ['로그인', 'primary'],
+      ['계정 만들기', 'ghost'],
+    ])
+  })
+
   it('공유 코드가 없으면 로그인·회원가입 CTA는 쿼리 없이 이동한다', async () => {
     authState.user = null
     const wrapper = mount(EntryPage)
