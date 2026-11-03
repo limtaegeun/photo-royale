@@ -9,6 +9,7 @@ function mountHeader(
     description?: string
     backTo?: RouteLocationRaw
     backLabel?: string
+    showBackButton?: boolean
     showProfileLink?: boolean
   } = {},
 ) {
@@ -63,6 +64,23 @@ describe('AppHeader', () => {
     const wrapper = mountHeader({ backTo: { name: 'entry' } })
 
     expect(wrapper.find('[aria-label="뒤로"]').exists()).toBe(true)
+  })
+
+  it('showBackButton이면 이탈 링크 대신 같은 자리에 뒤로 버튼을 렌더하고 누르면 back을 알린다', async () => {
+    const wrapper = mountHeader({
+      backTo: { name: 'entry' },
+      backLabel: '대기실로',
+      showBackButton: true,
+    })
+
+    // 페이지 안 하위 화면을 닫는 버튼이 우선한다 — 라우트로 가는 링크는 함께 뜨지 않는다
+    expect(wrapper.findAllComponents(RouterLinkStub)).toHaveLength(0)
+    const backButton = wrapper.find('button[aria-label="대기실로"]')
+    expect(backButton.exists()).toBe(true)
+
+    await backButton.trigger('click')
+
+    expect(wrapper.emitted('back')).toHaveLength(1)
   })
 
   it('showProfileLink가 없으면 프로필 진입 링크를 렌더하지 않는다', () => {
