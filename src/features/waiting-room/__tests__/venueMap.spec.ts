@@ -113,7 +113,8 @@ describe('firestore.rules 행사장 지도 규칙 동기화 가드', () => {
     expect(assetsBlock).toContain('request.resource.data.image is string')
     expect(assetsBlock).toContain(`image.matches('^${JPEG_DATA_URL_PREFIX}.*')`)
     expect(assetsBlock).toContain("keys().hasOnly(['image', 'updatedAt'])")
-    expect(assetsBlock).toContain('allow delete: if false')
+    // 지도만 지우는 길은 없고, 방 삭제(P09) 때만 함께 지운다
+    expect(assetsBlock).toContain('allow delete: if isDeletingRoomHost(roomCode);')
   })
 
   it('길이 상한이 클라 VENUE_MAP_IMAGE_MAX_LENGTH와 같고 문서 한도(1MiB) 안이다', () => {

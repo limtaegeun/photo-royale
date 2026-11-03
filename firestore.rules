@@ -57,6 +57,17 @@ service cloud.firestore {
         && ledger.hits[team] >= (ledger.teams[team].size() == 1 ? 2 : 1);
     }
 
+    // 방 삭제(P09) — 요청자가 이 방의 호스트이고 방이 삭제 표식(deleting)을 달았는가.
+    // 하위 문서(킬샷·원장·공지·지도) 삭제 갈래가 전부 이 함수를 요구한다 — 서버 함수가 없어 하위
+    // 컬렉션은 진행자 기기가 지우는데, 표식 없이 열면 삭제 흐름 밖에서 원장·킬샷을 지울 길이 생긴다.
+    // 표식은 rooms update 5번 갈래(방 닫기)로만 달린다(docs/plans/p09-room-delete.md §4).
+    function isDeletingRoomHost(roomCode) {
+      let room = get(/databases/$(database)/documents/rooms/$(roomCode)).data;
+      return request.auth != null
+        && room.hostUid == request.auth.uid
+        && room.get('deleting', false) == true;
+    }
+
     // 닉네임 유니크 인덱스. 문서 ID = 정규화 키(trim → NFC → lowercase,
     // src/features/auth/api/signup.ts toNicknameKey와 동일 규칙), 내용은 소유자 uid뿐.
     match /nicknames/{nickname} {
@@ -162,10 +173,22 @@ service cloud.firestore {
             && resource.data.status == 'playing'
             && request.resource.data.status == 'waiting'
             && !('round' in request.resource.data))
+          // 5) 방 닫기(P09 방 삭제의 첫 단계) — 어느 상태(대기·진행)에서든 대기로 되돌리고 진행 중인
+          //    라운드를 지우며 삭제 표식(deleting)을 단다. 진행 중인 방이면 4번 갈래의 게임 종료와 같은
+          //    전이라 참가자 화면이 대기실로 돌아온다. 표식이 달린 방은 새 참가자를 받지 않고
+          //    (participants create), 하위 문서·방 문서 삭제 갈래가 이 표식을 요구한다.
+          //    이미 닫힌 방에 다시 쓰면 affectedKeys가 비어 그대로 통과한다(중간에 실패한 삭제의 재시도).
+          || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'round', 'deleting'])
+            && request.resource.data.deleting == true
+            && request.resource.data.status == 'waiting'
+            && !('round' in request.resource.data))
         );
 
-      // 방 정리(삭제) 플로우 도입 전까지 불변이다.
-      allow delete: if false;
+      // 방 삭제(P09) — 호스트가 닫은(deleting) 방만. 하위 문서를 먼저 지우고 방 문서를 마지막에
+      // 지운다 — 방 문서가 남아 있어야 중간에 실패한 삭제를 진행자 목록에서 다시 이어 갈 수 있다.
+      allow delete: if request.auth != null
+        && request.auth.uid == resource.data.hostUid
+        && resource.data.get('deleting', false) == true;
 
       // 참가자. 문서 ID = 참가자 uid — 재입장(joinRoom)이 자연스럽게 멱등이 된다.
       match /participants/{uid} {
@@ -176,9 +199,12 @@ service cloud.firestore {
         // 본인 문서만, 대기(isReady=false) 상태로, 존재하는 방에만 생성한다.
         // 닉네임은 users 스키마와 같은 제약(2~12자, 한글·영문·숫자)을 강제한다.
         // gender는 명단 표기용 optional — 있으면 값을 검증한다(프로필 조회 실패 시 생략 허용).
+        // 삭제 중(deleting)인 방에는 들어올 수 없다 — 지우는 사이 들어온 참가자가 방 문서가
+        // 사라진 뒤 고아 문서로 남아, 같은 코드로 만든 새 방에 유령 참가자로 보이지 않게 한다(P09).
         allow create: if request.auth != null
           && request.auth.uid == uid
           && exists(/databases/$(database)/documents/rooms/$(roomCode))
+          && get(/databases/$(database)/documents/rooms/$(roomCode)).data.get('deleting', false) == false
           && request.resource.data.keys().hasAll(['nickname', 'isReady', 'joinedAt'])
           && request.resource.data.keys().hasOnly(['nickname', 'gender', 'isReady', 'joinedAt'])
           && request.resource.data.nickname is string
@@ -228,9 +254,11 @@ service cloud.firestore {
         // 배정 확정 뒤·게임 시작 전의 강퇴는 같은 배치로 그 차수 원장 teams에서도 뺀다(rounds
         // update 갈래 ④) — 이 삭제 갈래는 그대로이고, 원장을 안 고치는 옛 클라이언트도 통과한다.
         // 본인 퇴장(자진 나가기)은 아직 플로우가 없어 호스트 외에는 계속 불변이다.
+        // 방 삭제(P09) — 닫힌(deleting) 방이면 상태와 무관하게 호스트가 지운다(방 문서와 같은 배치).
         allow delete: if request.auth != null
           && get(/databases/$(database)/documents/rooms/$(roomCode)).data.hostUid == request.auth.uid
-          && get(/databases/$(database)/documents/rooms/$(roomCode)).data.status == 'waiting';
+          && (get(/databases/$(database)/documents/rooms/$(roomCode)).data.status == 'waiting'
+            || isDeletingRoomHost(roomCode));
       }
 
       // 방 자산(P08 §2.2) — 지금은 행사장 지도 한 장(문서 ID venueMap)뿐이다. 진행자가 이미지 파일을 올리면
@@ -259,8 +287,8 @@ service cloud.firestore {
           && request.resource.data.image.matches('^data:image/jpeg;base64,.*')
           && request.resource.data.updatedAt == request.time;
 
-        // 지도를 지우는 플로우는 없다(바꾸기만 한다).
-        allow delete: if false;
+        // 지도만 지우는 플로우는 없다(바꾸기만 한다). 방 삭제(P09) 때만 함께 지운다.
+        allow delete: if isDeletingRoomHost(roomCode);
       }
 
       // 진행자 공지. append-only 히스토리 — 운영 탭은 최신 1건을 구독하고,
@@ -279,8 +307,9 @@ service cloud.firestore {
           && request.resource.data.text.size() <= 100
           && request.resource.data.createdAt == request.time;
 
-        // 보낸 공지는 정정하지 않고 새 공지로 덮는다(이력 보존).
-        allow update, delete: if false;
+        // 보낸 공지는 정정하지 않고 새 공지로 덮는다(이력 보존). 방 삭제(P09) 때만 함께 지운다.
+        allow update: if false;
+        allow delete: if isDeletingRoomHost(roomCode);
       }
 
       // 킬샷 제출·판정 큐. 참가자가 append하고 호스트가 pending → approved/rejected로
@@ -370,8 +399,8 @@ service cloud.firestore {
               && !('multiplier' in request.resource.data))
           );
 
-        // 판정 이력은 정정하지 않는다(재판정·삭제 플로우 없음).
-        allow delete: if false;
+        // 판정 이력은 정정하지 않는다(재판정 없음). 방 삭제(P09) 때만 사진과 함께 지운다.
+        allow delete: if isDeletingRoomHost(roomCode);
       }
 
       // 라운드 원장(P07). 문서 ID = 팀편성 차수(rooms.assignmentRound) 문자열. 사진이 실린
@@ -445,8 +474,8 @@ service cloud.firestore {
               && request.resource.data.teams.diff(resource.data.teams).changedKeys().size() <= 1)
           );
 
-        // 원장은 지우지 않는다(정정은 재시작 → 재종료로만).
-        allow delete: if false;
+        // 원장은 지우지 않는다(정정은 재시작 → 재종료로만). 방 삭제(P09) 때만 방과 함께 지운다.
+        allow delete: if isDeletingRoomHost(roomCode);
       }
     }
   }
