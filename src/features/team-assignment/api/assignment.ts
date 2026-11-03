@@ -1,4 +1,4 @@
-import { doc, writeBatch } from 'firebase/firestore'
+import { deleteField, doc, writeBatch } from 'firebase/firestore'
 import { db } from '@/shared/api/firebase'
 import type { GameModeId } from '@/features/game-mode'
 import { addRoundSnapshotToBatch } from '@/features/round-ledger'
@@ -6,8 +6,21 @@ import { addRoundSnapshotToBatch } from '@/features/round-ledger'
 /** 확정된 팀의 한 멤버에게 쓸 이월값 */
 export interface ConfirmedMemberWrite {
   id: string
+  /** 이번 차수 확정 직전 이월값 — 같은 차수를 다시 짤 때 여기서 다시 계산한다(P10) */
+  baseStreak: number
+  basePartnerIds: string[]
   nextStreak: number
   nextPartnerIds: string[]
+}
+
+/**
+ * 같은 차수 재배정(P10)에서 대기자로 남은 사람 — 그 차수 배정을 풀고 이월값을 배정 전 값으로
+ * 되돌린다. 다음 차수 배정에는 없다(차수 마커가 어긋나 저절로 미배정이 된다).
+ */
+export interface UnassignedMemberWrite {
+  id: string
+  sameGenderStreak: number
+  previousPartnerIds: string[]
 }
 
 /** 확정된 한 팀 — 완장·X 겸직 여부와 그 팀 멤버들 */
@@ -23,16 +36,22 @@ export interface ConfirmedTeamWrite {
  * 모드를 roundModes 이력에 남기고, 라운드 원장(rounds/{차수})에 편성 스냅샷을 만든다.
  * 드래프트 단계에선 아무것도 쓰지 않으므로 재배정을 몇 번 돌려도 이력이 오염되지 않는다.
  *
- * @param code      방 초대 코드(= 방 문서 ID)
- * @param nextRound 이번에 확정할 팀편성 차수(기존 assignmentRound + 1)
- * @param gameMode  이번 라운드 확정 게임 모드 — assignmentRound와 함께 원자적으로 커밋된다
- * @param teams     확정된 팀 구성
+ * 게임을 시작하지 않은 차수는 같은 차수로 다시 확정할 수 있다(P10, '팀 다시 배정'). 이때 차수는
+ * 그대로이고, 원장 스냅샷은 덮어쓰며, 빠진 사람(unassigned)은 그 차수 배정을 푼다. 이월값은 매번
+ * 확정 직전 값(base)에서 계산하므로 다시 짜도 쌓이지 않는다.
+ *
+ * @param code       방 초대 코드(= 방 문서 ID)
+ * @param nextRound  이번에 확정할 팀편성 차수 — 다음 차수면 assignmentRound + 1, 다시 배정이면 그대로
+ * @param gameMode   이번 라운드 확정 게임 모드 — assignmentRound와 함께 원자적으로 커밋된다
+ * @param teams      확정된 팀 구성
+ * @param unassigned 같은 차수 재배정에서 대기자로 남아 배정을 풀 사람
  */
 export async function confirmAssignment(
   code: string,
   nextRound: number,
   gameMode: GameModeId,
   teams: ConfirmedTeamWrite[],
+  unassigned: UnassignedMemberWrite[] = [],
 ): Promise<void> {
   const batch = writeBatch(db)
 
@@ -46,9 +65,23 @@ export async function confirmAssignment(
         isXTeam: team.isXTeam,
         sameGenderStreak: member.nextStreak,
         previousPartnerIds: member.nextPartnerIds,
+        baseSameGenderStreak: member.baseStreak,
+        basePreviousPartnerIds: member.basePartnerIds,
         isReady: false,
       })
     }
+  }
+
+  for (const member of unassigned) {
+    batch.update(doc(db, 'rooms', code, 'participants', member.id), {
+      team: deleteField(),
+      assignedRound: deleteField(),
+      isXTeam: deleteField(),
+      sameGenderStreak: member.sameGenderStreak,
+      previousPartnerIds: member.previousPartnerIds,
+      baseSameGenderStreak: deleteField(),
+      basePreviousPartnerIds: deleteField(),
+    })
   }
 
   batch.update(doc(db, 'rooms', code), {

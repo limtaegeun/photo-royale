@@ -207,9 +207,9 @@ function ledgerWith(hits: Record<string, number>): RoundLedger {
   }
 }
 const PLAYERS = [
-  { id: 'player1', name: '민우', team: 'A', assignedRound: 1, gender: 'male', isXTeam: false, sameGenderStreak: 0, previousPartnerIds: [], isReady: true },
-  { id: 'player2', name: '하린', team: 'A', assignedRound: 1, gender: 'female', isXTeam: false, sameGenderStreak: 0, previousPartnerIds: [], isReady: true },
-  { id: 'player3', name: '도윤', team: 'B', assignedRound: 1, gender: 'male', isXTeam: false, sameGenderStreak: 0, previousPartnerIds: [], isReady: true },
+  { id: 'player1', name: '민우', team: 'A', assignedRound: 1, gender: 'male', isXTeam: false, sameGenderStreak: 0, previousPartnerIds: [], carryoverBase: null, isReady: true },
+  { id: 'player2', name: '하린', team: 'A', assignedRound: 1, gender: 'female', isXTeam: false, sameGenderStreak: 0, previousPartnerIds: [], carryoverBase: null, isReady: true },
+  { id: 'player3', name: '도윤', team: 'B', assignedRound: 1, gender: 'male', isXTeam: false, sameGenderStreak: 0, previousPartnerIds: [], carryoverBase: null, isReady: true },
 ]
 
 /** 콕핏이 머물러야 하는 상태 — 진행 중인 방 + 시작된 라운드 */
@@ -224,6 +224,7 @@ function playingRoom(overrides: Partial<RoomInfo> = {}): RoomInfo {
     hostUid: 'host9',
     status: 'playing',
     assignmentRound: 1,
+    playedRound: 0,
     gameMode: 'normal',
     roundModes: {},
     round: RUNNING_ROUND,
@@ -306,6 +307,7 @@ function deliverAssignedParticipants() {
         isXTeam: false,
         sameGenderStreak: 0,
         previousPartnerIds: [],
+        carryoverBase: null,
         isReady: true,
       },
     ])
@@ -504,6 +506,7 @@ describe('CameraPage 미배정 게스트 리다이렉트 (D-5)', () => {
           isXTeam: false,
           sameGenderStreak: 0,
           previousPartnerIds: [],
+          carryoverBase: null,
           isReady: true,
         },
       ])
@@ -561,6 +564,7 @@ describe('CameraPage 미배정 게스트 리다이렉트 (D-5)', () => {
           isXTeam: false,
           sameGenderStreak: 0,
           previousPartnerIds: [],
+          carryoverBase: null,
           isReady: true,
         },
       ])
@@ -989,6 +993,7 @@ describe('CameraPage', () => {
           isXTeam: false,
           sameGenderStreak: 0,
           previousPartnerIds: [],
+          carryoverBase: null,
           isReady: true,
         },
         {
@@ -1000,6 +1005,7 @@ describe('CameraPage', () => {
           isXTeam: false,
           sameGenderStreak: 0,
           previousPartnerIds: [],
+          carryoverBase: null,
           isReady: true,
         },
         {
@@ -1011,6 +1017,7 @@ describe('CameraPage', () => {
           isXTeam: false,
           sameGenderStreak: 0,
           previousPartnerIds: [],
+          carryoverBase: null,
           isReady: true,
         },
       ])

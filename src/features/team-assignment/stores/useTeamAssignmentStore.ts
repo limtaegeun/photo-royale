@@ -11,7 +11,11 @@ import {
 import { assignTeams, deriveCarryover } from '../teamAssignment'
 import { ARMBAND_LABELS, MAX_TEAM_MEMBERS, armbandForTeamIndex } from '../armbands'
 import { pickXTeams } from '../xRole'
-import { confirmAssignment, type ConfirmedTeamWrite } from '../api/assignment'
+import {
+  confirmAssignment,
+  type ConfirmedTeamWrite,
+  type UnassignedMemberWrite,
+} from '../api/assignment'
 
 /**
  * 보드에 올라온 한 명. TeamCandidate(id·gender·sameGenderStreak·previousPartnerIds)를
@@ -23,6 +27,12 @@ export interface DraftMember {
   gender: Gender | null
   sameGenderStreak: number
   previousPartnerIds: string[]
+  /**
+   * 같은 차수 재배정(P10)에서 이 사람이 이미 그 차수에 배정돼 있는가. 그렇다면 sameGenderStreak·
+   * previousPartnerIds는 그 차수 확정 직전 값이어야 하고(페이지가 넘긴다), 확정 때 미배정 대기자로
+   * 남으면 그 차수 배정을 풀고 이월값을 이 값으로 되돌린다. 다음 차수 배정에서는 늘 false다.
+   */
+  isAssignedInDraftRound?: boolean
 }
 
 /** 드래프트 보드의 한 팀 — 완장·멤버·X 겸직 여부 */
@@ -329,6 +339,10 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
   /**
    * 배정 확정 — 멤버가 있는 팀만 대상으로 이월값을 재산출해 writeBatch 1회로 커밋한다.
    * 성공 시 드래프트를 초기화하고 true, 실패 시 confirmError를 세팅하고 false를 반환한다.
+   *
+   * 드래프트 멤버의 이월값은 이번 차수 확정 직전 값이라(같은 차수 재배정이면 페이지가 그 차수의
+   * 배정 전 값을 넘긴다) 그대로 base로 남긴다. 같은 차수 재배정에서 대기자로 남은 사람은 그 차수
+   * 배정을 풀고 이월값을 되돌린다(P10).
    */
   async function confirm(code: string): Promise<boolean> {
     if (isConfirming.value) return false
@@ -342,15 +356,24 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
       isXTeam: team.isXTeam,
       members: team.members.map((member) => ({
         id: member.id,
+        baseStreak: member.sameGenderStreak,
+        basePartnerIds: member.previousPartnerIds,
         nextStreak: nextStreaks[member.id] ?? 0,
         nextPartnerIds: nextPartnerIds[member.id] ?? [],
       })),
     }))
+    const unassigned: UnassignedMemberWrite[] = waitingPool.value
+      .filter((member) => member.isAssignedInDraftRound === true)
+      .map((member) => ({
+        id: member.id,
+        sameGenderStreak: member.sameGenderStreak,
+        previousPartnerIds: member.previousPartnerIds,
+      }))
 
     isConfirming.value = true
     confirmError.value = null
     try {
-      await confirmAssignment(code, draftRound.value, draftGameMode.value, payload)
+      await confirmAssignment(code, draftRound.value, draftGameMode.value, payload, unassigned)
       reset()
       return true
     } catch {

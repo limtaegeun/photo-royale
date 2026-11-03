@@ -172,6 +172,7 @@ describe('getRoom', () => {
       hostUid: 'host-1',
       status: 'waiting',
       assignmentRound: 2,
+      playedRound: 0,
       gameMode: 'king-hunt',
       roundModes: {},
       round: null,
@@ -467,7 +468,14 @@ describe('subscribeToParticipants', () => {
             isXTeam: true,
             sameGenderStreak: 2,
             previousPartnerIds: ['x'],
+            baseSameGenderStreak: 1,
+            basePreviousPartnerIds: [],
           }),
+        },
+        {
+          id: 'u3',
+          // base 두 키 중 하나만 있으면 반쪽 값으로 다시 계산하지 않도록 null로 둔다
+          data: () => ({ nickname: '도윤', isReady: true, baseSameGenderStreak: 1 }),
         },
       ],
     })
@@ -482,6 +490,7 @@ describe('subscribeToParticipants', () => {
         isXTeam: false,
         sameGenderStreak: 0,
         previousPartnerIds: [],
+        carryoverBase: null,
         isReady: true,
       },
       {
@@ -493,7 +502,20 @@ describe('subscribeToParticipants', () => {
         isXTeam: true,
         sameGenderStreak: 2,
         previousPartnerIds: ['x'],
+        carryoverBase: { sameGenderStreak: 1, previousPartnerIds: [] },
         isReady: false,
+      },
+      {
+        id: 'u3',
+        name: '도윤',
+        team: null,
+        assignedRound: 0,
+        gender: null,
+        isXTeam: false,
+        sameGenderStreak: 0,
+        previousPartnerIds: [],
+        carryoverBase: null,
+        isReady: true,
       },
     ])
     expect(result).toBe(unsubscribe)
@@ -557,6 +579,7 @@ describe('subscribeToRoom', () => {
         hostUid: 'host-1',
         status: 'waiting',
         assignmentRound: 1,
+        playedRound: 1,
         gameMode: 'staff-chase',
       }),
     })
@@ -564,6 +587,7 @@ describe('subscribeToRoom', () => {
       hostUid: 'host-1',
       status: 'waiting',
       assignmentRound: 1,
+      playedRound: 1,
       gameMode: 'staff-chase',
       roundModes: {},
       round: null,
@@ -585,14 +609,14 @@ describe('subscribeToRoom', () => {
 })
 
 describe('startGame', () => {
-  it('방 status만 playing으로 갱신한다', async () => {
+  it('방 status를 playing으로 갱신하며 이 차수로 시작했다는 기록(playedRound)을 같이 쓴다', async () => {
     updateDocMock.mockResolvedValue(undefined)
 
-    await startGame('AB2C')
+    await startGame('AB2C', 3)
 
     expect(updateDocMock).toHaveBeenCalledExactlyOnceWith(
       { path: 'rooms/AB2C' },
-      { status: 'playing' },
+      { status: 'playing', playedRound: 3 },
     )
   })
 })

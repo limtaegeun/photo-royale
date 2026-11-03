@@ -17,6 +17,7 @@ function participant(id: string, team: string): Participant {
     isXTeam: false,
     sameGenderStreak: 0,
     previousPartnerIds: [],
+    carryoverBase: null,
     isReady: true,
   }
 }

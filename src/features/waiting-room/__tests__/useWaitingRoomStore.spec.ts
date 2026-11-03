@@ -24,7 +24,7 @@ const joinRoomMock =
     ) => Promise<void>
   >()
 const setReadyMock = vi.fn<(code: string, uid: string) => Promise<void>>()
-const startGameMock = vi.fn<(code: string) => Promise<void>>()
+const startGameMock = vi.fn<(code: string, round: number) => Promise<void>>()
 const kickParticipantMock =
   vi.fn<
     (code: string, uid: string, snapshotRemoval?: { roundNo: number; armband: string }) => Promise<void>
@@ -61,7 +61,7 @@ vi.mock('../api/rooms', () => ({
     member: { uid: string; nickname: string; gender: 'male' | 'female' | null },
   ) => joinRoomMock(code, member),
   setReady: (code: string, uid: string) => setReadyMock(code, uid),
-  startGame: (code: string) => startGameMock(code),
+  startGame: (code: string, round: number) => startGameMock(code, round),
   kickParticipant: (
     code: string,
     uid: string,
@@ -165,6 +165,7 @@ const GUEST_ROOM: RoomInfo = {
   hostUid: 'host9',
   status: 'waiting',
   assignmentRound: 0,
+  playedRound: 0,
   gameMode: 'normal',
   roundModes: {},
   round: null,
@@ -173,6 +174,7 @@ const MY_ROOM: RoomInfo = {
   hostUid: 'me',
   status: 'waiting',
   assignmentRound: 0,
+  playedRound: 0,
   gameMode: 'normal',
   roundModes: {},
   round: null,
@@ -187,6 +189,7 @@ const ME_WAITING: Participant = {
   isXTeam: false,
   sameGenderStreak: 0,
   previousPartnerIds: [],
+  carryoverBase: null,
   isReady: false,
 }
 const ME_READY: Participant = { ...ME_WAITING, isReady: true }
@@ -199,6 +202,7 @@ const OTHER_READY: Participant = {
   isXTeam: false,
   sameGenderStreak: 0,
   previousPartnerIds: [],
+  carryoverBase: null,
   isReady: true,
 }
 
@@ -612,6 +616,7 @@ describe('useWaitingRoomStore', () => {
       hostUid: 'host9',
       status: 'waiting',
       assignmentRound: 2,
+      playedRound: 0,
       gameMode: 'normal',
       roundModes: {},
       round: null,
@@ -627,6 +632,7 @@ describe('useWaitingRoomStore', () => {
         isXTeam: false,
         sameGenderStreak: 0,
         previousPartnerIds: [],
+        carryoverBase: null,
         isReady: true,
       }
     }
@@ -771,11 +777,58 @@ describe('useWaitingRoomStore', () => {
     })
   })
 
+  /**
+   * P10 — 호스트 배정 보드가 확정할 차수. 확정만 하고 뛰지 않은 차수는 다시 짜고(차수 그대로),
+   * 뛴 차수는 다음 차수를 배정한다. rules 배정 확정 갈래와 같은 기준이다.
+   */
+  describe('nextAssignmentRound', () => {
+    async function enterHostRoom(room: Partial<RoomInfo>) {
+      authState.user = { uid: 'me', displayName: '오리' }
+      getRoomMock.mockResolvedValue({
+        hostUid: 'me',
+        status: 'waiting',
+        assignmentRound: 0,
+        playedRound: 0,
+        gameMode: 'normal',
+        roundModes: {},
+        round: null,
+        ...room,
+      })
+      captureSnapshotCallbacks()
+      const store = useWaitingRoomStore()
+      await store.enter('AB2C')
+      return store
+    }
+
+    it('배정 전이면 1차', async () => {
+      const store = await enterHostRoom({ assignmentRound: 0 })
+      expect(store.nextAssignmentRound).toBe(1)
+    })
+
+    it('확정한 차수를 아직 뛰지 않았으면 같은 차수(다시 배정)', async () => {
+      const store = await enterHostRoom({ assignmentRound: 2, playedRound: 1 })
+      expect(store.nextAssignmentRound).toBe(2)
+    })
+
+    it('확정한 차수로 게임을 시작했으면 다음 차수', async () => {
+      const store = await enterHostRoom({ assignmentRound: 2, playedRound: 2 })
+      expect(store.nextAssignmentRound).toBe(3)
+    })
+
+    it('서버 기록이 없어도 이 기기가 그 차수 라운드를 시작했으면 다음 차수(옛 앱 전환기)', async () => {
+      sessionStorage.setItem('pr:round-played:AB2C:2', '1')
+      const store = await enterHostRoom({ assignmentRound: 2, playedRound: 0 })
+      expect(store.nextAssignmentRound).toBe(3)
+      sessionStorage.clear()
+    })
+  })
+
   describe('startPlaying', () => {
     const HOST_ROUND1: RoomInfo = {
       hostUid: 'me',
       status: 'waiting',
       assignmentRound: 1,
+      playedRound: 0,
       gameMode: 'normal',
       roundModes: {},
       round: null,
@@ -791,7 +844,8 @@ describe('useWaitingRoomStore', () => {
 
       await store.startPlaying()
 
-      expect(startGameMock).toHaveBeenCalledExactlyOnceWith('AB2C')
+      // 이 차수로 시작했다는 기록(playedRound)을 위해 지금 차수를 같이 넘긴다(P10)
+      expect(startGameMock).toHaveBeenCalledExactlyOnceWith('AB2C', 1)
       expect(store.startGameError).toBeNull()
     })
 
