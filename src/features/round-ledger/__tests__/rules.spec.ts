@@ -19,9 +19,10 @@ describe('firestore.rules 라운드 원장 규칙 동기화 가드', () => {
     )
   }
 
-  it('rounds 갈래가 존재하고 삭제를 막는다', () => {
+  it('rounds 갈래가 존재하고 삭제는 방 삭제 때만 연다', () => {
     expect(roundsBlock).toBeDefined()
-    expect(roundsBlock).toContain('allow delete: if false;')
+    // 원장은 방 삭제(P09) 때만 방과 함께 지운다
+    expect(roundsBlock).toContain('allow delete: if isDeletingRoomHost(roomCode);')
   })
 
   it('create 갈래의 키 화이트리스트(hasAll·hasOnly)가 ROUND_SNAPSHOT_KEYS와 같다', () => {

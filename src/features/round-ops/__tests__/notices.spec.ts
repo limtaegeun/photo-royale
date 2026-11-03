@@ -124,8 +124,12 @@ describe('firestore.rules 공지 규칙 동기화 가드', () => {
     expect(Number(match![1])).toBe(NOTICE_TEXT_MAX_LENGTH)
   })
 
-  it('notices 갈래가 존재하고 수정·삭제를 막는다', () => {
+  it('notices 갈래가 존재하고 수정을 막으며, 삭제는 방 삭제 때만 연다', () => {
     expect(rules).toContain('match /notices/{noticeId}')
-    expect(rules).toMatch(/match \/notices\/\{noticeId\}[\s\S]*?allow update, delete: if false;/)
+    expect(rules).toMatch(/match \/notices\/\{noticeId\}[\s\S]*?allow update: if false;/)
+    // 공지는 방 삭제(P09) 때만 함께 지운다
+    expect(rules).toMatch(
+      /match \/notices\/\{noticeId\}[\s\S]*?allow delete: if isDeletingRoomHost\(roomCode\);/,
+    )
   })
 })

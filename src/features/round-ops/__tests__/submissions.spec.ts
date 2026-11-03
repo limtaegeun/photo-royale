@@ -630,7 +630,7 @@ describe('firestore.rules 킬샷 규칙 동기화 가드', () => {
     expect(submissionsBlock[0]).toContain(".round.durationMs, 'ms')")
   })
 
-  it('submissions 갈래가 존재하고 판정은 pending에서만, 삭제는 불가다', () => {
+  it('submissions 갈래가 존재하고 판정은 pending에서만, 삭제는 방 삭제 때만이다', () => {
     expect(rules).toContain('match /submissions/{submissionId}')
     const submissionsBlock = rules.match(/match \/submissions\/\{submissionId\}[\s\S]*?\n {6}\}/)!
     expect(submissionsBlock).not.toBeNull()
@@ -644,6 +644,7 @@ describe('firestore.rules 킬샷 규칙 동기화 가드', () => {
     // 배율은 1·3만, 반려에는 배율이 없어야 한다(P07 M2)
     expect(submissionsBlock[0]).toContain('request.resource.data.multiplier in [1, 3]')
     expect(submissionsBlock[0]).toContain("!('multiplier' in request.resource.data))")
-    expect(submissionsBlock[0]).toContain('allow delete: if false;')
+    // 킬샷은 방 삭제(P09) 때만 사진과 함께 지운다
+    expect(submissionsBlock[0]).toContain('allow delete: if isDeletingRoomHost(roomCode);')
   })
 })
