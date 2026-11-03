@@ -583,6 +583,36 @@ describe('AssignmentBoard', () => {
       expect(store.selectedMemberId).toBeNull()
     })
 
+    it('빈 팀에만 팀 삭제 버튼이 있고, 누르면 그 팀이 사라진다', async () => {
+      const { wrapper, store } = mountBoard()
+      store.startDraft(mixedFour(), 1, 'normal', identityRandom) // A[m1,f1] B[m2,f2]
+      store.addTeam() // C 빈 팀
+      await flushPromises()
+
+      expect(wrapper.find('[data-team="A"]').text()).not.toContain('팀 삭제')
+      const removeButton = wrapper
+        .find('[data-team="C"]')
+        .findAll('button')
+        .find((b) => b.text() === '팀 삭제')
+      expect(removeButton).toBeDefined()
+
+      await removeButton!.trigger('click')
+
+      expect(wrapper.find('[data-team="C"]').exists()).toBe(false)
+      expect(store.draftTeams.map((team) => team.armband)).toEqual(['A', 'B'])
+    })
+
+    it('칩을 고른 동안에는 빈 팀의 삭제 버튼을 숨긴다(카드 전체가 이동 버튼)', async () => {
+      const { wrapper, store } = mountBoard()
+      store.startDraft(mixedFour(), 1, 'normal', identityRandom)
+      store.addTeam() // C 빈 팀
+      store.selectMember('m1')
+      await flushPromises()
+
+      expect(wrapper.find('[data-team="C"]').text()).not.toContain('팀 삭제')
+      expect(wrapper.find('[data-team="C"]').text()).toContain('비어 있음')
+    })
+
     it('×2 배지·"비어 있음"은 드롭 컨테이너 밖에 렌더된다(컨테이너 자식은 칩 버튼뿐)', async () => {
       const { wrapper, store } = mountBoard()
       store.startDraft([member('solo', '혼자', 'male')], 1, 'normal', identityRandom) // A[solo]

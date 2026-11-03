@@ -272,6 +272,7 @@ async function onConfirm() {
           :can-receive="selectedMemberId === null || store.canMoveTo(selectedMemberId, team.armband)"
           @move-here="store.moveSelectedTo(team.armband)"
           @select-member="store.selectMember"
+          @remove="store.removeTeam(team.armband)"
         />
       </div>
     </div>

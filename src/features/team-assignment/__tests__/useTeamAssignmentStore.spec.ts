@@ -378,6 +378,43 @@ describe('useTeamAssignmentStore', () => {
     })
   })
 
+  describe('removeTeam', () => {
+    it('빈 팀을 지우고, 지운 완장은 다음 팀 추가 때 다시 쓴다', () => {
+      const store = useTeamAssignmentStore()
+      store.startDraft(mixedFour(), 1, 'normal', identityRandom) // A·B 사용 중
+      store.addTeam() // C
+      store.addTeam() // D
+
+      store.removeTeam('C')
+      expect(store.draftTeams.map((team) => team.armband)).toEqual(['A', 'B', 'D'])
+
+      store.addTeam()
+      expect(store.draftTeams.map((team) => team.armband)).toEqual(['A', 'B', 'D', 'C'])
+    })
+
+    it('멤버가 있는 팀은 지우지 않는다', () => {
+      const store = useTeamAssignmentStore()
+      store.startDraft(mixedFour(), 1, 'normal', identityRandom) // A[m1,f1] B[m2,f2]
+
+      store.removeTeam('A')
+
+      expect(store.draftTeams.map((team) => team.armband)).toEqual(['A', 'B'])
+      expect(store.assignedCount).toBe(4)
+    })
+
+    it('완장 소진 안내를 비운다 — 팀을 지우면 다시 추가할 수 있다', () => {
+      const store = useTeamAssignmentStore()
+      for (let i = 0; i < 25; i++) store.addTeam()
+      store.addTeam()
+      expect(store.confirmError).not.toBeNull()
+
+      store.removeTeam('Z')
+
+      expect(store.draftTeams).toHaveLength(24)
+      expect(store.confirmError).toBeNull()
+    })
+  })
+
   describe('setXModule', () => {
     it('켜면 현재 편성 기준으로 X를 선정하고, 끄면 전 팀의 X를 해제한다', () => {
       const store = useTeamAssignmentStore()

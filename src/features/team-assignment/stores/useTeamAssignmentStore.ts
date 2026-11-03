@@ -279,6 +279,19 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
   }
 
   /**
+   * 빈 팀을 보드에서 지운다 — 멤버가 있는 팀은 지우지 않는다. 멤버를 대기열로 함께 넘기면 진행자가
+   * 모르는 사이에 이번 라운드 제외자가 생기므로, 멤버를 먼저 옮겨 비운 뒤에만 지우게 한다.
+   * 빈 팀은 X를 겸하지 않으므로 X 편성은 그대로다. 지운 완장은 다음 팀 추가 때 다시 쓰이고,
+   * 완장 소진 안내도 더는 맞지 않으므로 팀 추가와 같이 직전 안내를 비운다.
+   */
+  function removeTeam(armband: string) {
+    const index = draftTeams.value.findIndex((team) => team.armband === armband)
+    if (index === -1 || draftTeams.value[index]!.members.length > 0) return
+    draftTeams.value.splice(index, 1)
+    confirmError.value = null
+  }
+
+  /**
    * 게임 모드 선택 — 로컬 드래프트만 바꾼다. 확정 시 confirmAssignment로 room에 커밋된다.
    * UI(모드 선택 시트)가 미구현 모드를 막지만, 방어적으로 store 레벨에서도 무시한다.
    *
@@ -382,6 +395,7 @@ export const useTeamAssignmentStore = defineStore('teamAssignment', () => {
     canMoveTo,
     moveSelectedTo,
     addTeam,
+    removeTeam,
     setGameMode,
     setXModule,
     confirm,
