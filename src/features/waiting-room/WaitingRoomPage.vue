@@ -183,9 +183,10 @@ const rosterGroups = computed(() =>
  *
  * 아직 뛰지 않은 차수를 다시 짤 때(P10 '팀 다시 배정')는 전원 준비를 요구하지 않는다. 배정 확정이
  * 배정된 사람의 준비를 풀므로(라운드마다 재레디), 확정 직후엔 준비한 사람이 0명이라 전원 준비를
- * 걸면 다시 배정이 항상 막힌다. 그 차수에 배정된 사람은 이미 안전 수칙에 동의하고 배정된 사람이라
- * 준비 없이 보드에 올린다. 배정되지 않은 사람은 준비(안전 수칙 동의)한 사람만 올린다 — 준비하지
- * 않은 늦은 합류자는 빼 두고, 보드가 열린 뒤 준비하면 대기열에 합류한다(아래 participants watch).
+ * 걸면 다시 배정이 항상 막힌다. 그래서 준비했거나 보드에 오른 적이 있는 사람(hasBeenAssigned —
+ * 이미 안전 수칙에 동의했다)을 준비 없이 올린다. 앞선 다시 배정에서 대기자로 빠져 배정이 풀린
+ * 사람도 여기 들어간다 — 준비로만 가르면 그 사람이 보드에서 사라져 다시 넣을 수 없었다(11/04 QA EX-01).
+ * 준비하지 않은 늦은 합류자만 빼 두고, 보드가 열린 뒤 준비하면 대기열에 합류한다(아래 participants watch).
  */
 function startAssignment() {
   if (participantCount.value === 0) {
@@ -202,9 +203,7 @@ function startAssignment() {
     return
   }
   const draftParticipants = isUnplayedRoundReassign
-    ? participants.value.filter(
-        (participant) => participant.isReady || isAssignedInRound(participant, draftRound),
-      )
+    ? participants.value.filter((participant) => participant.isReady || participant.hasBeenAssigned)
     : participants.value
   // 완장 실물 수(25개 × 2인)를 넘으면 완장을 부여할 수 없어 배정 자체가 성립하지 않는다.
   // 가드가 없으면 armbandForTeamIndex가 throw해 안내 없이 클릭이 먹지 않는다.

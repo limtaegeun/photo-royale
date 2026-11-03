@@ -192,6 +192,7 @@ const ROSTER: Participant[] = [
     sameGenderStreak: 0,
     previousPartnerIds: [],
     carryoverBase: null,
+    hasBeenAssigned: false,
     isReady: false,
   },
   {
@@ -204,6 +205,7 @@ const ROSTER: Participant[] = [
     sameGenderStreak: 0,
     previousPartnerIds: [],
     carryoverBase: null,
+    hasBeenAssigned: false,
     isReady: true,
   },
   {
@@ -216,6 +218,7 @@ const ROSTER: Participant[] = [
     sameGenderStreak: 0,
     previousPartnerIds: [],
     carryoverBase: null,
+    hasBeenAssigned: false,
     isReady: true,
   },
 ]
@@ -838,7 +841,7 @@ describe('WaitingRoomPage', () => {
     mountPage()
     await flushPromises()
     deliver.room({ hostUid: 'host9', status: 'waiting', assignmentRound: 0, playedRound: 0, gameMode: 'normal', roundModes: {}, round: null })
-    deliver.participants([{ id: 'me', name: '나', gender: null, isReady: false, team: null, assignedRound: 0, isXTeam: false, sameGenderStreak: 0, previousPartnerIds: [], carryoverBase: null }])
+    deliver.participants([{ id: 'me', name: '나', gender: null, isReady: false, team: null, assignedRound: 0, isXTeam: false, sameGenderStreak: 0, previousPartnerIds: [], carryoverBase: null, hasBeenAssigned: false }])
     await flushPromises()
 
     expect(replaceMock).not.toHaveBeenCalledWith(
@@ -1313,8 +1316,8 @@ describe('WaitingRoomPage', () => {
 
   /**
    * 배정 확정은 배정된 사람의 준비를 푼다. 같은 차수를 다시 짤 때도 전원 준비를 걸면 확정 직후
-   * 준비 0명이라 '팀 다시 배정'이 항상 토스트로 막혔다(11/04 실측). 그 차수에 배정된 사람은 준비
-   * 없이 올리고, 배정되지 않은 사람은 준비(안전 수칙 동의)한 사람만 올린다.
+   * 준비 0명이라 '팀 다시 배정'이 항상 토스트로 막혔다(11/04 실측). 보드에 오른 적이 있는 사람은 준비
+   * 없이 올리고, 처음 들어온 사람은 준비(안전 수칙 동의)한 사람만 올린다.
    */
   it('호스트: 팀 다시 배정은 배정된 사람의 준비를 기다리지 않고, 준비하지 않은 미배정자는 빼고 연다', async () => {
     const deliver = captureSnapshotCallbacks()
@@ -1336,12 +1339,14 @@ describe('WaitingRoomPage', () => {
     deliver.room(room)
     deliver.participants([
       // 1차에 배정됐고 확정으로 준비가 풀렸다
-      { ...ROSTER[1]!, team: 'A', assignedRound: 1, isReady: false },
-      { ...ROSTER[2]!, team: 'A', assignedRound: 1, isReady: false },
+      { ...ROSTER[1]!, team: 'A', assignedRound: 1, isReady: false, hasBeenAssigned: true },
+      { ...ROSTER[2]!, team: 'A', assignedRound: 1, isReady: false, hasBeenAssigned: true },
       // 1차 확정 때 대기자로 남았고 준비는 그대로다
       { ...ROSTER[2]!, id: 'u4', name: '대기자', isReady: true },
       // 확정 뒤 늦게 들어와 아직 안전 수칙에 동의하지 않았다
       { ...ROSTER[2]!, id: 'u5', name: '늦은합류', isReady: false },
+      // 앞선 다시 배정에서 대기자로 빠져 배정이 풀렸다(준비도 풀린 채다)
+      { ...ROSTER[2]!, id: 'u6', name: '빠진사람', isReady: false, hasBeenAssigned: true },
     ])
     await flushPromises()
 
@@ -1354,14 +1359,15 @@ describe('WaitingRoomPage', () => {
     })
     expect(taStore.draftRound).toBe(1)
     const draftedIds = taStore.draftTeams.flatMap((team) => team.members.map((member) => member.id))
-    expect(draftedIds.sort()).toEqual(['u2', 'u3', 'u4'])
+    expect(draftedIds.sort()).toEqual(['u2', 'u3', 'u4', 'u6'])
 
     // 늦은 합류자가 보드가 열린 뒤 준비하면 대기열에 합류한다(기존 경로)
     deliver.participants([
-      { ...ROSTER[1]!, team: 'A', assignedRound: 1, isReady: false },
-      { ...ROSTER[2]!, team: 'A', assignedRound: 1, isReady: false },
+      { ...ROSTER[1]!, team: 'A', assignedRound: 1, isReady: false, hasBeenAssigned: true },
+      { ...ROSTER[2]!, team: 'A', assignedRound: 1, isReady: false, hasBeenAssigned: true },
       { ...ROSTER[2]!, id: 'u4', name: '대기자', isReady: true },
       { ...ROSTER[2]!, id: 'u5', name: '늦은합류', isReady: true },
+      { ...ROSTER[2]!, id: 'u6', name: '빠진사람', isReady: false, hasBeenAssigned: true },
     ])
     await flushPromises()
     expect(taStore.waitingPool.map((member) => member.id)).toEqual(['u5'])

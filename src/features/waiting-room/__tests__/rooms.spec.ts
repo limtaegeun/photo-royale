@@ -493,6 +493,7 @@ describe('subscribeToParticipants', () => {
         sameGenderStreak: 0,
         previousPartnerIds: [],
         carryoverBase: null,
+        hasBeenAssigned: false,
         isReady: true,
       },
       {
@@ -505,6 +506,7 @@ describe('subscribeToParticipants', () => {
         sameGenderStreak: 2,
         previousPartnerIds: ['x'],
         carryoverBase: { sameGenderStreak: 1, previousPartnerIds: [] },
+        hasBeenAssigned: true,
         isReady: false,
       },
       {
@@ -517,6 +519,7 @@ describe('subscribeToParticipants', () => {
         sameGenderStreak: 0,
         previousPartnerIds: [],
         carryoverBase: null,
+        hasBeenAssigned: false,
         isReady: true,
       },
     ])

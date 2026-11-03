@@ -272,6 +272,7 @@ function assigned(id: string, team: string): Participant {
     sameGenderStreak: 0,
     previousPartnerIds: [],
     carryoverBase: null,
+    hasBeenAssigned: false,
     isReady: true,
   }
 }
