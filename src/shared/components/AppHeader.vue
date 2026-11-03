@@ -10,6 +10,11 @@ interface Props {
   backTo?: RouteLocationRaw
   /** 좌측 이탈 링크의 접근성 라벨 — route meta.appHeaderBackLabel로 지정한다 */
   backLabel?: string
+  /**
+   * 링크 대신 같은 자리에 뒤로 버튼을 노출하고 누르면 back을 알린다 — backTo보다 우선한다.
+   * 라우트가 아니라 페이지 안의 하위 화면(대기실 위 배정 보드)에서 빠져나올 때 쓴다(useAppHeader().setBackAction)
+   */
+  showBackButton?: boolean
   /** 로그인 상태에서만 우측 프로필 진입 아이콘을 노출한다 */
   showProfileLink?: boolean
 }
@@ -19,8 +24,26 @@ withDefaults(defineProps<Props>(), {
   description: undefined,
   backTo: undefined,
   backLabel: '뒤로',
+  showBackButton: false,
   showProfileLink: false,
 })
+
+const emit = defineEmits<{ back: [] }>()
+
+const BACK_ICON_ATTRS = {
+  viewBox: '0 0 24 24',
+  fill: 'none',
+  stroke: 'currentColor',
+  'stroke-width': '2',
+  'stroke-linecap': 'round',
+  'stroke-linejoin': 'round',
+  class: 'size-6',
+} as const
+
+/** 좌측 이탈 링크·버튼 공통 — 링크든 버튼이든 같은 자리·같은 모양이어야 한다 */
+const backControlClass =
+  '-ml-3 flex size-12 shrink-0 items-center justify-center rounded-full text-content-secondary ' +
+  'transition-colors duration-100 ease-standard hover:text-content'
 </script>
 
 <template>
@@ -33,26 +56,20 @@ withDefaults(defineProps<Props>(), {
            pt-[calc(var(--pr-inset-top-safe)+0.75rem)] pb-3"
   >
     <!-- 좌측 이탈 링크 — 프로필처럼 다른 화면에서 진입만 하는 잎 화면이 갇히지 않도록,
-         목적지를 라우트 meta로 선언한 화면에서만 노출한다 -->
-    <RouterLink
-      v-if="backTo"
-      :to="backTo"
+         목적지를 라우트 meta로 선언한 화면에서만 노출한다. 페이지 안의 하위 화면이 열려 있으면
+         같은 자리를 그 화면을 닫는 버튼이 대신한다. 아이콘 전용 컨트롤이라 오른쪽 프로필 링크처럼
+         DS IconButton 원자가 생기기 전까지 직접 스타일한다 -->
+    <button
+      v-if="showBackButton"
+      type="button"
       :aria-label="backLabel"
-      class="-ml-3 flex size-12 shrink-0 items-center justify-center rounded-full text-content-secondary
-             transition-colors duration-100 ease-standard hover:text-content"
+      :class="backControlClass"
+      @click="emit('back')"
     >
-      <svg
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        class="size-6"
-        aria-hidden="true"
-      >
-        <path d="M15 5l-7 7 7 7" />
-      </svg>
+      <svg v-bind="BACK_ICON_ATTRS" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
+    </button>
+    <RouterLink v-else-if="backTo" :to="backTo" :aria-label="backLabel" :class="backControlClass">
+      <svg v-bind="BACK_ICON_ATTRS" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
     </RouterLink>
 
     <div class="min-w-0 flex-1">

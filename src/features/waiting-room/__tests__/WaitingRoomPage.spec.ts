@@ -1041,6 +1041,90 @@ describe('WaitingRoomPage', () => {
     expect(useAppHeader().backLinkHidden.value).toBe(true)
   })
 
+  /** 11/04 — 배정 보드를 열면 대기실로 돌아갈 길이 없었다(헤더 링크 숨김·뒤로가기는 방을 나감) */
+  describe('배정 보드에서 대기실로 돌아가기', () => {
+    async function openBoard() {
+      const deliver = captureSnapshotCallbacks()
+      getRoomMock.mockResolvedValue(MY_ROOM)
+      const wrapper = mountPage()
+      await flushPromises()
+      deliver.participants([{ ...ROSTER[1]! }, { ...ROSTER[2]! }]) // u2·u3 모두 ready
+      await flushPromises()
+      await findButton(wrapper, '팀 배정 시작')!.trigger('click')
+      await flushPromises()
+      return wrapper
+    }
+
+    it('보드가 열린 동안 헤더에 대기실로 버튼을 걸고, 누르면 바로 닫지 않고 확인을 연다', async () => {
+      const wrapper = await openBoard()
+
+      const backAction = useAppHeader().backAction.value
+      expect(backAction?.label).toBe('대기실로')
+
+      backAction!.run()
+      await flushPromises()
+
+      // BaseDialog는 Teleport로 document.body에 렌더되어 wrapper.text()에 잡히지 않는다
+      expect(document.body.textContent).toContain('배정 편집을 그만둘까요?')
+      expect(wrapper.text()).toContain('팀 편성')
+    })
+
+    it('"대기실로 돌아가기"를 누르면 드래프트를 버리고 대기실 뷰와 헤더 기본값으로 돌아간다', async () => {
+      const wrapper = await openBoard()
+      useAppHeader().backAction.value!.run()
+      await flushPromises()
+
+      findBodyButton('대기실로 돌아가기').click()
+      await flushPromises()
+
+      expect(wrapper.text()).not.toContain('팀 편성')
+      expect(findButton(wrapper, '팀 배정 시작')).toBeDefined()
+      expect(useTeamAssignmentStore().draftTeams).toEqual([])
+      expect(useAppHeader().title.value).toBeUndefined()
+      expect(useAppHeader().backAction.value).toBeUndefined()
+      // 대기 화면이므로 홈으로 링크가 다시 열린다
+      expect(useAppHeader().backLinkHidden.value).toBe(false)
+    })
+
+    it('"계속 편집"을 누르면 보드와 편성이 그대로 남는다', async () => {
+      const wrapper = await openBoard()
+      const teamsBefore = JSON.stringify(useTeamAssignmentStore().draftTeams)
+      useAppHeader().backAction.value!.run()
+      await flushPromises()
+
+      findBodyButton('계속 편집').click()
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('팀 편성')
+      expect(JSON.stringify(useTeamAssignmentStore().draftTeams)).toBe(teamsBefore)
+      expect(useAppHeader().backAction.value?.label).toBe('대기실로')
+    })
+
+    it('뒤로가기는 방을 나가지 않고 같은 확인을 연다 — 코드가 부른 이동은 막지 않는다', async () => {
+      await openBoard()
+      window.history.replaceState({ current: '/' }, '')
+
+      expect(leaveGuard!({ fullPath: '/' })).toBe(false)
+      await flushPromises()
+      expect(document.body.textContent).toContain('배정 편집을 그만둘까요?')
+
+      // 게임 시작 뒤 운영 화면 이동·세션 상실 뒤 로그인 이동처럼 코드가 부른 이동은 기록이 아직 지금 주소다
+      window.history.replaceState({ current: '/waiting-room/ab2c' }, '')
+      expect(leaveGuard!({ fullPath: '/login' })).toBe(true)
+      window.history.replaceState(null, '')
+    })
+
+    it('배정 확정 쓰기가 도는 중에는 확인을 열지 않는다 — 결과가 보드를 닫거나 오류를 보여 준다', async () => {
+      await openBoard()
+      useTeamAssignmentStore().isConfirming = true
+
+      useAppHeader().backAction.value!.run()
+      await flushPromises()
+
+      expect(document.body.textContent).not.toContain('배정 편집을 그만둘까요?')
+    })
+  })
+
   describe('헤더 홈으로 링크', () => {
     it('게임 시작 전 대기 화면에서만 열고, 방을 불러오기 전에는 숨긴다', async () => {
       mountPage()
