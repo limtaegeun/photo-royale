@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import BaseBadge from '@/shared/components/BaseBadge.vue'
+import BaseButton from '@/shared/components/BaseButton.vue'
 import { groupLabelEn, groupTextClass } from '../armbandStyles'
 import type { DraftTeam } from '../stores/useTeamAssignmentStore'
 import SelectableMemberChip from './SelectableMemberChip.vue'
@@ -23,13 +24,18 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), { canReceive: true })
-const emit = defineEmits<{ moveHere: []; selectMember: [id: string] }>()
+const emit = defineEmits<{ moveHere: []; selectMember: [id: string]; remove: [] }>()
 
 const isEmpty = computed(() => props.team.members.length === 0)
 /** 지금 이 카드가 이동 타겟인가 — 칩이 선택됐고 이 팀이 그 칩을 받을 수 있을 때만 */
 const isMoveTarget = computed(() => props.hasSelection && props.canReceive)
 /** 1인 팀 — 목숨·포인트 2배 규칙 대상 */
 const isSolo = computed(() => props.team.members.length === 1)
+/**
+ * 빈 팀만 지울 수 있다. 칩을 고른 동안은 카드 전체가 이동 버튼이 되므로, 그 안에 삭제 버튼을
+ * 겹쳐 두지 않고 숨긴다 — 옮길 팀을 누르려다 팀을 지우는 일도 함께 막는다.
+ */
+const isRemovable = computed(() => isEmpty.value && !props.hasSelection)
 
 /**
  * 카드 보더 상태 — 4조합을 리터럴 클래스로 매핑(Tailwind 스캐너 대응).
@@ -107,6 +113,17 @@ const targetAttrs = computed(() =>
     <!-- 팀 상태 표기는 드롭 컨테이너 밖(카드 내 형제)에 둔다 — Sortable 자식에서 배제한다.
          self-start가 없으면 flex-col의 stretch로 배지가 카드 폭 전체까지 늘어난다. -->
     <BaseBadge v-if="isSolo" tone="warning" size="sm" class="self-start">1인 팀 ×2</BaseBadge>
-    <span v-else-if="isEmpty" class="text-caption text-content-tertiary">비어 있음</span>
+    <div v-else-if="isEmpty" class="flex items-center justify-between gap-2">
+      <span class="text-caption text-content-tertiary">비어 있음</span>
+      <BaseButton
+        v-if="isRemovable"
+        variant="ghost"
+        size="sm"
+        padding="compact"
+        @click.stop="emit('remove')"
+      >
+        팀 삭제
+      </BaseButton>
+    </div>
   </div>
 </template>

@@ -14,9 +14,9 @@
 | 배정 알고리즘 | `src/features/team-assignment/teamAssignment.ts` | 2인 1팀 혼성 우선, streak 이월 우선권, 직전 짝꿍 회피(best-effort), 홀수→1인 팀, `deriveCarryover` |
 | 완장·그룹 매핑 | `src/features/team-assignment/armbands.ts` | X 제외 A~Z 25개, 그룹 4색 순환(A=파랑·B=주황·C=초록·D=빨강, 표 정본) |
 | X 모듈 | `src/features/team-assignment/xRole.ts` | 그룹당 1팀 랜덤 X 겸직(1인 팀 포함 — 2026-07-24 스펙 변경, 빈 팀만 제외), 편성마다 재선정 |
-| 드래프트 스토어 | `stores/useTeamAssignmentStore.ts` | 로컬 드래프트(재배정·칩 이동·팀 추가·X 토글), 확정 시에만 서버 커밋 |
+| 드래프트 스토어 | `stores/useTeamAssignmentStore.ts` | 로컬 드래프트(재배정·칩 이동·팀 추가/삭제·X 토글), 확정 시에만 서버 커밋 |
 | 확정 쓰기 | `api/assignment.ts` | writeBatch 1회: 참가자 team/isXTeam/streak/partnerIds/isReady:false + room assignmentRound |
-| 호스트 보드 UI | `components/AssignmentBoard.vue` | H03 배정 편집(칩 터치 이동, ×2·X 배지, 미배정 대기자, 랜덤 재배정/확정/+팀 추가, X 토글) |
+| 호스트 보드 UI | `components/AssignmentBoard.vue` | H03 배정 편집(칩 터치 이동, ×2·X 배지, 미배정 대기자, 랜덤 재배정/확정/+팀 추가, 빈 팀 삭제, X 토글) |
 | 참가자 카드 UI | `components/RoundAssignmentCard.vue` | P03 라운드 배정 카드(완장 타일, 그룹색, 팀원(나), 규칙서, 1인/X variant) |
 | 대기실 연결 | `waiting-room/WaitingRoomPage.vue` | 호스트 CTA 가드→보드 전환, 게스트 카드 전환, 대기자 합류 watch, 이탈 시 드래프트 reset |
 | 데이터 모델 | `waiting-room/api/rooms.ts` | `team`: 완장 알파벳 문자열, **`assignedRound`(이 완장이 확정된 차수)**, `isXTeam`/`sameGenderStreak`/`previousPartnerIds`, room `assignmentRound`. 이번 라운드 배정 판정은 `isAssignedInRound` 단일 기준 |
@@ -82,6 +82,7 @@
 | C-02 | P1 | 칩 선택 상태 | `미배정 대기자` 영역 터치 | 칩이 대기자 영역으로 이동, `미배정 대기자 N명` 카운트 갱신 | [unit] |
 | C-11 | P1 | 대기자 0명(보드 진입 직후) | 대기자 영역 확인 → 칩 선택 → 대기자 영역 터치 | 대기자가 없어도 `미배정 대기자 0명` 카드가 점선 보더로 상시 노출(`이번 라운드에서 제외할 멤버를 여기로 옮기세요`)되고 이동 타겟으로 동작 — 카드를 숨기면 라운드 제외 수단이 없어진다 | [unit] |
 | C-03 | P2 | 보드 진입 | `+ 팀 추가` 클릭 | 사용 중이지 않은 첫 완장으로 빈 팀 카드 추가(`팀 터치 시 이동`만 표시) — 이동 타겟으로 동작 | [unit] |
+| C-12 | P2 | 빈 팀 존재(예: `+ 팀 추가`로 만든 팀) | 빈 팀 카드의 `팀 삭제` 클릭 | 그 팀 카드가 사라지고 요약 팀 수가 줄어듦. 멤버가 있는 팀·칩을 고른 동안의 빈 팀에는 버튼이 없음(멤버는 먼저 옮겨 비운 뒤 지운다). 지운 완장은 다음 `+ 팀 추가` 때 다시 쓰임 | [unit] |
 | C-04 | P1 | X 모듈 `끔` 상태 | `특수 완장 X` 스위치 켬 | 그룹마다 한 팀(1인 팀 포함, 빈 팀 제외) 헤더에 `X` 배지. 끄면 전부 해제 | [unit] |
 | C-05 | P1 | X 팀 존재 | X 팀에서 멤버를 이동시켜 빈 팀으로 만듦 | 빈 팀이 된 경우만 `X` 해제 — 1인이 된 X 팀은 X 유지(2026-07-24 스펙 변경, R8) | [unit] |
 | C-10 | P1 | X 모듈 켬, 같은 그룹에 2팀 이상(예: A·E 모두 blue) | X 팀(A)의 멤버를 전부 다른 팀으로 옮겨 A를 비움 | 같은 그룹의 다른 팀(E)이 `X`를 이어받아 그룹에 X가 정확히 1팀 유지. 빈 팀 안 만드는 이동에서는 기존 X가 그대로(칩 하나 옮길 때마다 X가 튀지 않음) | [unit] |
