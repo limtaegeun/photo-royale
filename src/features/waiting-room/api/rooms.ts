@@ -104,6 +104,12 @@ export interface Participant {
    * 옛 앱이 확정했거나 배정된 적 없으면 null이다.
    */
   carryoverBase: CarryoverBase | null
+  /**
+   * 배정 확정이 이 문서를 한 번이라도 썼는가 — 배정과 배정 풀기(P10) 모두 sameGenderStreak를 쓰고
+   * 지우지 않으며, 입장 문서에는 이 키가 없다. 보드에 오르려면 전원 준비(안전 수칙 동의)를 거치거나
+   * 이미 보드에 오른 적이 있어야 하므로, true면 안전 수칙에 동의한 적이 있는 사람이다.
+   */
+  hasBeenAssigned: boolean
   isReady: boolean
 }
 
@@ -472,6 +478,7 @@ export function subscribeToParticipants(
             sameGenderStreak: (data.sameGenderStreak as number | undefined) ?? 0,
             previousPartnerIds: (data.previousPartnerIds as string[] | undefined) ?? [],
             carryoverBase: toCarryoverBase(data),
+            hasBeenAssigned: typeof data.sameGenderStreak === 'number',
             isReady: data.isReady as boolean,
           }
         }),

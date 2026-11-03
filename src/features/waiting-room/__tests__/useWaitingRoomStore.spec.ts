@@ -191,6 +191,7 @@ const ME_WAITING: Participant = {
   sameGenderStreak: 0,
   previousPartnerIds: [],
   carryoverBase: null,
+  hasBeenAssigned: false,
   isReady: false,
 }
 const ME_READY: Participant = { ...ME_WAITING, isReady: true }
@@ -204,6 +205,7 @@ const OTHER_READY: Participant = {
   sameGenderStreak: 0,
   previousPartnerIds: [],
   carryoverBase: null,
+  hasBeenAssigned: false,
   isReady: true,
 }
 
@@ -636,6 +638,7 @@ describe('useWaitingRoomStore', () => {
         sameGenderStreak: 0,
         previousPartnerIds: [],
         carryoverBase: null,
+        hasBeenAssigned: false,
         isReady: true,
       }
     }
