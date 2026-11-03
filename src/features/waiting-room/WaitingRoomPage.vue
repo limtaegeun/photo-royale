@@ -31,7 +31,7 @@ import { useWaitingRoomStore } from './stores/useWaitingRoomStore'
 const route = useRoute()
 const router = useRouter()
 const { toast, dismissAll } = useToast()
-const { setHeader, clearHeader } = useAppHeader()
+const { setHeader, setBackLinkHidden, clearHeader } = useAppHeader()
 const store = useWaitingRoomStore()
 const {
   roomCode,
@@ -270,6 +270,12 @@ watchEffect(() => {
   } else {
     clearHeader()
   }
+  // 홈으로 링크는 게임 시작 전 대기 화면에서만 연다. 게임 중 게스트는 라운드 사이에 여기서 기다리는데,
+  // 홈으로 가면 방 구독이 끊겨 라운드가 시작돼도 콕핏으로 넘어가지 못한다(홈의 '돌아가기'는 내가 만든
+  // 방만 보여 줘서 게스트는 초대 코드를 다시 쳐야 돌아온다). 배정 보드를 편집하는 동안에도 숨긴다 —
+  // 잘못 누르면 확정 전 드래프트가 사라진다. 방을 불러오기 전(status 없음)에도 숨겨 게임 중인 방에
+  // 들어올 때 링크가 잠깐 비쳤다 사라지지 않게 한다
+  setBackLinkHidden(gameStatus.value !== 'waiting' || showAssignmentBoard.value)
 })
 
 // 보드가 열린 동안 새로 레디한 참가자를 대기열에 합류시킨다(이미 배정/대기 중이면 무시된다)
