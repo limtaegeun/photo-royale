@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch, watchEffect } from 'vue'
 import { storeToRefs } from 'pinia'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { closeOpenSheetOnHistoryBack } from '@/shared/utils/closeOpenSheetOnHistoryBack'
+import { isHistoryBackNavigation } from '@/shared/utils/isHistoryBackNavigation'
 import BaseBadge from '@/shared/components/BaseBadge.vue'
 import BaseButton from '@/shared/components/BaseButton.vue'
 import BaseCard from '@/shared/components/BaseCard.vue'
@@ -31,7 +32,7 @@ import { useWaitingRoomStore } from './stores/useWaitingRoomStore'
 const route = useRoute()
 const router = useRouter()
 const { toast, dismissAll } = useToast()
-const { setHeader, setBackLinkHidden, clearHeader } = useAppHeader()
+const { setHeader, setBackLinkHidden, setBackAction, clearHeader } = useAppHeader()
 const store = useWaitingRoomStore()
 const {
   roomCode,
@@ -86,6 +87,8 @@ const taStore = useTeamAssignmentStore()
 const showAssignmentBoard = ref(false)
 /** 같은 차수 재실행 확인 — hasPlayedRound가 true일 때만 연다(requestStartGame 참조) */
 const isRestartRoundDialogOpen = ref(false)
+/** 배정 편집 그만두기 확인 — 헤더 뒤로 버튼·뒤로가기로 연다(requestLeaveBoard 참조) */
+const isLeaveBoardDialogOpen = ref(false)
 
 /**
  * 참가자 → 배정 드래프트 멤버(배정 로직에 필요한 필드만 추린다).
@@ -277,6 +280,26 @@ async function confirmKick() {
   )
 }
 
+/**
+ * 배정 편집 그만두기 요청 — 바로 닫지 않고 확인 다이얼로그를 연다. 드래프트는 이 기기에만 있어
+ * 닫으면 칩을 옮긴 편성이 사라지고, 다시 열면 처음부터 새로 짠다. 뒤로가기 제스처는 모바일에서
+ * 의도치 않게 나오기 쉬워 한 번 더 묻는다. 확정 쓰기가 도는 중에는 닫지 않는다 — 결과가 나오면
+ * 보드가 스스로 닫히거나(성공) 오류를 보여 준다(실패).
+ */
+function requestLeaveBoard() {
+  if (taStore.isConfirming) return
+  isLeaveBoardDialogOpen.value = true
+}
+
+/** 배정 편집 그만두기 확정 — 드래프트를 버리고 대기실 뷰로 돌아간다. 서버에는 아무것도 쓰지 않는다 */
+function leaveBoard() {
+  isLeaveBoardDialogOpen.value = false
+  showAssignmentBoard.value = false
+  taStore.reset()
+  // 보드 맥락의 잔여 알림(완장 소진 안내 등)이 대기실 위에 남지 않게 정리한다
+  dismissAll()
+}
+
 /** 확정 완료 — 보드를 닫고 기존 대기실 뷰로 복귀한다(명단에 완장 보더가 반영된다) */
 function onAssignmentConfirmed() {
   showAssignmentBoard.value = false
@@ -301,6 +324,10 @@ watchEffect(() => {
   // 잘못 누르면 확정 전 드래프트가 사라진다. 방을 불러오기 전(status 없음)에도 숨겨 게임 중인 방에
   // 들어올 때 링크가 잠깐 비쳤다 사라지지 않게 한다
   setBackLinkHidden(gameStatus.value !== 'waiting' || showAssignmentBoard.value)
+  // 보드가 열린 동안은 같은 자리에 '대기실로' 버튼을 둔다 — 홈이 아니라 보드만 닫는다
+  setBackAction(
+    showAssignmentBoard.value ? { label: '대기실로', run: requestLeaveBoard } : undefined,
+  )
 })
 
 // 보드가 열린 동안 새로 레디한 참가자를 대기열에 합류시킨다(이미 배정/대기 중이면 무시된다)
@@ -348,8 +375,17 @@ onUnmounted(() => {
  * 진입 시점의 미인증은 라우트 가드(authGuard)가 `whenReady()`로 인증 복원을 기다린 뒤 이미 걸러낸다.
  * 그래서 여기가 잡는 것은 **화면에 머무는 동안 로그인이 사라지는 전이**뿐이다.
  */
-// 뒤로가기는 열린 시트(누적 순위 전체·지도 등)만 닫고 대기실에 머문다(11/01 QA 탐색 EX-01)
-onBeforeRouteLeave((to) => !closeOpenSheetOnHistoryBack(to))
+// 뒤로가기는 열린 시트(누적 순위 전체·지도 등)만 닫고 대기실에 머문다(11/01 QA 탐색 EX-01).
+// 배정 보드가 열려 있으면 방을 나가지 않고 헤더 '대기실로'와 같은 확인을 연다 — 그대로 나가면
+// 편집하던 드래프트가 말없이 사라지고 대기실도 벗어난다
+onBeforeRouteLeave((to) => {
+  if (closeOpenSheetOnHistoryBack(to)) return false
+  if (showAssignmentBoard.value && isHistoryBackNavigation(to)) {
+    requestLeaveBoard()
+    return false
+  }
+  return true
+})
 
 watch(myId, (id) => {
   if (id !== null) return
@@ -705,6 +741,28 @@ async function copyInviteLink() {
         </BaseButton>
         <BaseButton variant="ghost" size="lg" class="w-full" @click="restartSameRound">
           그대로 다시 시작
+        </BaseButton>
+      </div>
+    </BaseDialog>
+
+    <!-- 배정 편집 그만두기 확인 — 위 = 안전(계속 편집, 채운 배경), 아래 = 드래프트를 버리는 쪽(ghost).
+         재실행 확인 다이얼로그와 같은 위계·같은 size -->
+    <BaseDialog
+      v-model:open="isLeaveBoardDialogOpen"
+      title="배정 편집을 그만둘까요?"
+      description="지금 짠 팀 편성은 저장되지 않아요. 다시 배정하면 처음부터 새로 짜요."
+    >
+      <div class="flex flex-col gap-3">
+        <BaseButton
+          variant="primary"
+          size="lg"
+          class="w-full"
+          @click="isLeaveBoardDialogOpen = false"
+        >
+          계속 편집
+        </BaseButton>
+        <BaseButton variant="ghost" size="lg" class="w-full" @click="leaveBoard">
+          대기실로 돌아가기
         </BaseButton>
       </div>
     </BaseDialog>
