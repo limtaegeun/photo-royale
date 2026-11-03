@@ -68,6 +68,7 @@ vi.mock('firebase/firestore', () => ({
 import {
   ROOM_CODE_LENGTH,
   ROOM_CODE_PATTERN,
+  ROUND_DURATION_DEFAULT_MS,
   RoomNotFoundError,
   createRoom,
   endGame,
@@ -79,6 +80,7 @@ import {
   roomExists,
   setReady,
   startGame,
+  startRound,
   subscribeToParticipants,
   subscribeToRoom,
 } from '../api/rooms'
@@ -609,15 +611,75 @@ describe('subscribeToRoom', () => {
 })
 
 describe('startGame', () => {
-  it('방 status를 playing으로 갱신하며 이 차수로 시작했다는 기록(playedRound)을 같이 쓴다', async () => {
+  it('status·playedRound를 쓰고 이어서 기본 20분 라운드를 건다 — 두 번 나눠, 이 순서로 쓴다', async () => {
     updateDocMock.mockResolvedValue(undefined)
 
     await startGame('AB2C', 3)
 
+    // rules가 게임 시작(status·playedRound)과 라운드(playing일 때 round만)를 다른 갈래로 받으므로
+    // 한 번에 쓰면 거부된다. 서버는 보낸 순서대로 적용하므로 라운드 쓰기가 심사받을 때 방은 이미 playing이다
+    expect(updateDocMock.mock.calls).toEqual([
+      [{ path: 'rooms/AB2C' }, { status: 'playing', playedRound: 3 }],
+      [
+        { path: 'rooms/AB2C' },
+        {
+          round: {
+            status: 'running',
+            startedAt: 'server-timestamp',
+            durationMs: ROUND_DURATION_DEFAULT_MS,
+          },
+        },
+      ],
+    ])
+  })
+
+  it('첫 쓰기의 응답을 기다리지 않고 라운드 쓰기까지 내보낸다 — 로컬 화면에 두 쓰기가 함께 반영된다', async () => {
+    let resolvePlaying: () => void = () => {}
+    updateDocMock
+      .mockReturnValueOnce(new Promise<void>((resolve) => (resolvePlaying = resolve)))
+      .mockResolvedValueOnce(undefined)
+
+    const started = startGame('AB2C', 1)
+
+    expect(updateDocMock).toHaveBeenCalledTimes(2)
+    resolvePlaying()
+    await started
+  })
+
+  it('라운드 쓰기만 실패해도 거부한다 — 호출부가 성공으로 보고 재실행 마커를 남기지 않게', async () => {
+    updateDocMock
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('permission denied'))
+
+    await expect(startGame('AB2C', 1)).rejects.toThrow('permission denied')
+  })
+})
+
+describe('startRound', () => {
+  it('방 문서의 round 키만 기본 20분짜리 running 상태로 쓴다', async () => {
+    updateDocMock.mockResolvedValue(undefined)
+
+    await startRound('AB2C')
+
     expect(updateDocMock).toHaveBeenCalledExactlyOnceWith(
       { path: 'rooms/AB2C' },
-      { status: 'playing', playedRound: 3 },
+      {
+        round: {
+          status: 'running',
+          startedAt: 'server-timestamp',
+          durationMs: ROUND_DURATION_DEFAULT_MS,
+        },
+      },
     )
+    expect(ROUND_DURATION_DEFAULT_MS).toBe(20 * 60 * 1000)
+  })
+
+  it('running에는 pausedRemainingMs 키 자체가 없다 — rules가 부재를 요구한다', async () => {
+    updateDocMock.mockResolvedValue(undefined)
+
+    await startRound('AB2C')
+
+    expect(updateDocMock.mock.calls[0]![1].round).not.toHaveProperty('pausedRemainingMs')
   })
 })
 

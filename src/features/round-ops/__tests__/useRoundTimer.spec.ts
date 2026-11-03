@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { defineComponent, h, ref, type Ref } from 'vue'
 import { mount } from '@vue/test-utils'
-import type { RoundState } from '@/features/waiting-room'
-import { ROUND_DURATION_DEFAULT_MS } from '../api/round'
+import { ROUND_DURATION_DEFAULT_MS, type RoundState } from '@/features/waiting-room'
 import { computeRemainingMs, formatRemaining, useRoundTimer } from '../composables/useRoundTimer'
 
 const NOW = new Date('2026-07-25T19:20:00Z').getTime()

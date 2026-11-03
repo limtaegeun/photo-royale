@@ -96,6 +96,7 @@ vi.mock('@/features/round-ledger', async (importOriginal) => ({
 
 import { RoomNotFoundError } from '../api/rooms'
 import { useWaitingRoomStore } from '../stores/useWaitingRoomStore'
+import { hasPlayedRound } from '../roundPlayMarker'
 
 /** 구독 콜백들을 붙잡아 테스트가 스냅샷 도착을 흉내 낼 수 있게 한다 */
 function captureSnapshotCallbacks() {
@@ -209,6 +210,8 @@ const OTHER_READY: Participant = {
 describe('useWaitingRoomStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    // 재실행 마커(roundPlayMarker)는 실제 sessionStorage에 남는다 — 테스트끼리 새지 않게 비운다
+    sessionStorage.clear()
     authState.user = { uid: 'me', displayName: '오리' }
     fetchMyGenderMock.mockReset().mockResolvedValue('male')
     getRoomMock.mockReset().mockResolvedValue(GUEST_ROOM)
@@ -847,6 +850,27 @@ describe('useWaitingRoomStore', () => {
       // 이 차수로 시작했다는 기록(playedRound)을 위해 지금 차수를 같이 넘긴다(P10)
       expect(startGameMock).toHaveBeenCalledExactlyOnceWith('AB2C', 1)
       expect(store.startGameError).toBeNull()
+      // 게임 시작이 라운드까지 걸었으니 이 차수를 플레이했다고 남긴다 — 같은 차수 재실행 가드의 근거
+      expect(hasPlayedRound('AB2C', 1)).toBe(true)
+    })
+
+    it('응답이 오기 전에 화면을 떠나도(leave) 시작한 방·차수로 마크한다', async () => {
+      authState.user = { uid: 'me', displayName: '오리' }
+      getRoomMock.mockResolvedValue(HOST_ROUND1)
+      const deliver = captureSnapshotCallbacks()
+      const store = useWaitingRoomStore()
+      await store.enter('AB2C')
+      deliver.participants([OTHER_READY])
+      let resolveStart: () => void = () => {}
+      startGameMock.mockReturnValueOnce(new Promise<void>((resolve) => (resolveStart = resolve)))
+
+      const starting = store.startPlaying()
+      // 로컬 스냅샷이 playing을 먼저 보여 호스트가 운영 화면으로 넘어가면 대기실이 떠난다
+      store.leave()
+      resolveStart()
+      await starting
+
+      expect(hasPlayedRound('AB2C', 1)).toBe(true)
     })
 
     it('배정 이력이 있어도 참가자 전원이 준비하지 않았으면 시작하지 않는다', async () => {
@@ -899,6 +923,8 @@ describe('useWaitingRoomStore', () => {
       startGameMock.mockRejectedValueOnce(new Error('permission denied'))
       await store.startPlaying()
       expect(store.startGameError).toBe('게임을 시작하지 못했어요. 다시 시도해 주세요.')
+      // 실패한 시도는 마크하지 않는다 — 시작도 안 된 차수에서 재실행 경고가 뜨면 안 된다
+      expect(hasPlayedRound('AB2C', 1)).toBe(false)
 
       await store.startPlaying()
       expect(store.startGameError).toBeNull()

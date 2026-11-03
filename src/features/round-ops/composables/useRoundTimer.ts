@@ -1,6 +1,10 @@
 import { computed, onUnmounted, ref, type Ref } from 'vue'
-import { computeRoundRemainingMs, serverNow, type RoundState } from '@/features/waiting-room'
-import { ROUND_DURATION_DEFAULT_MS } from '../api/round'
+import {
+  ROUND_DURATION_DEFAULT_MS,
+  computeRoundRemainingMs,
+  serverNow,
+  type RoundState,
+} from '@/features/waiting-room'
 
 /** 화면이 구분해야 하는 라운드 표시 상태 — 배지 톤·타이머 색·주 액션이 여기서 갈린다 */
 export type RoundDisplayState = 'idle' | 'running' | 'paused' | 'ended'

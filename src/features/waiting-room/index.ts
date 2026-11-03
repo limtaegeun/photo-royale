@@ -4,8 +4,11 @@ export { default as MyRoomList } from './components/MyRoomList.vue'
 export { ROOM_CODE_LENGTH, createRoom, normalizeRoomCode, roomExists } from './api/rooms'
 // 라운드 운영(H04)이 방 문서·명단을 구독한다 — 방 데이터의 소유자는 여기다
 export { endGame, isAssignedInRound, subscribeToParticipants, subscribeToRoom } from './api/rooms'
+// 라운드 시작은 게임 시작과 한 몸이라 여기 있다 — 운영 화면은 그 쓰기만 실패했을 때 다시 건다
+export { ROUND_DURATION_DEFAULT_MS, startRound } from './api/rooms'
 export type { Participant, RoomInfo, RoomStatus, RoundLedgerSettlement, RoundState } from './api/rooms'
-// 라운드 재실행 세션 가드 — round-ops가 라운드 시작 성공 시 markRoundPlayed를 호출한다(best-effort)
+// 라운드 재실행 세션 가드 — 게임 시작(라운드까지)이 성공하면 대기실이, 운영 화면에서 라운드를 다시 걸면
+// round-ops가 markRoundPlayed를 호출한다(best-effort)
 export { hasPlayedRound, markRoundPlayed } from './roundPlayMarker'
 // 라운드 시계 — 방 문서의 round를 남은 시간으로 읽는 해석은 방 데이터 소유자인 여기가 갖는다
 export { computeRoundRemainingMs } from './roundClock'

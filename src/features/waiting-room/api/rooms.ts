@@ -361,18 +361,53 @@ export function subscribeToRoom(
   )
 }
 
+/** 라운드 기본 길이(20분) — 게임 시작이 거는 카운트다운의 총량. 운영 화면의 시작 전 미리보기도 이 값이다 */
+export const ROUND_DURATION_DEFAULT_MS = 20 * 60 * 1000
+
 /**
- * 게임 시작 — 방 status를 playing으로 전이한다. firestore.rules가 호스트 본인의
- * waiting → playing 전이만 허용하므로, 호스트 여부 검증은 서버가 담당한다.
- * 각 참가자 화면 전환은 subscribeToRoom 스냅샷이 트리거한다.
+ * 게임 시작 — 방을 playing으로 전이하고 **같은 순간 라운드 타이머(기본 20분)도 건다.**
+ * 진행자가 대기실 '게임 시작'과 운영 화면 '라운드 시작'을 연달아 눌러야 하던 것을 한 번으로 합쳤다.
+ * 시작 전 인원 확인·공지는 대기실에서 끝난다 — 게임 시작은 전원이 준비를 마쳐야 눌린다.
+ * 호스트 여부 검증은 firestore.rules가 하고, 각 참가자 화면 전환은 subscribeToRoom 스냅샷이 한다.
  *
- * 이 차수로 게임을 시작했다는 기록(playedRound)을 같이 쓴다(P10) — 대기실이 이 기록으로 '팀 다시
+ * 이 차수로 게임을 시작했다는 기록(playedRound)을 status와 같이 쓴다(P10) — 대기실이 이 기록으로 '팀 다시
  * 배정'(같은 차수)과 '다음 차수 배정'을 가르고, rules도 같은 기록으로 뛴 차수의 재배정을 막는다.
+ *
+ * 한 문서를 **두 번 나눠 쓴다.** rules의 게임 시작 갈래(①)는 status·playedRound만, 라운드 갈래(③)는
+ * 방이 playing일 때 round만 허용하므로, rules를 바꾸지 않고 두 갈래를 차례로 탄다(배포 순서가 자유롭다).
+ * 첫 쓰기의 서버 응답을 기다리지 않고 연달아 내보내는 이유:
+ * - SDK는 한 클라이언트의 쓰기를 보낸 순서대로 서버에 적용한다 — 라운드 쓰기가 심사받을 때 방은
+ *   이미 playing이다. 게임 시작이 거부되면 라운드 쓰기도(방이 아직 waiting이라) 함께 거부된다.
+ * - 로컬 스냅샷에는 두 쓰기가 한꺼번에 반영된다 — 응답을 기다렸다 이으면 진행자는 그 사이 운영
+ *   화면에서 '시작 전' 상태와 '라운드 시작' 버튼을 잠깐 본다.
+ *
+ * 라운드 쓰기만 실패하면 방은 '게임은 시작했는데 라운드는 시작 전'으로 남는다. 그 상태의 운영
+ * 화면에는 '라운드 시작' 버튼이 그대로 있어 진행자가 다시 걸 수 있다(게스트는 그동안 대기실에 머문다).
  *
  * @param round 지금 확정된 팀편성 차수(room.assignmentRound) — rules가 같은 값인지 대조한다
  */
 export async function startGame(code: string, round: number): Promise<void> {
-  await updateDoc(doc(db, 'rooms', code), { status: 'playing', playedRound: round })
+  await Promise.all([
+    updateDoc(doc(db, 'rooms', code), { status: 'playing', playedRound: round }),
+    startRound(code),
+  ])
+}
+
+/**
+ * 라운드 시작 — 기본 20분 카운트다운을 건다(rules ③ 갈래: 방이 playing일 때 round만).
+ * 게임 시작이 함께 부르고, 그 쓰기만 실패했을 때 운영 화면의 '라운드 시작'이 다시 부른다.
+ *
+ * 쓰는 모양은 round-ops writeRound(정지·재개·시간 반영)의 running과 같아야 한다 — startedAt은
+ * 서버 시각이고 running에는 pausedRemainingMs가 없다(rules isValidRound).
+ */
+export async function startRound(code: string): Promise<void> {
+  await updateDoc(doc(db, 'rooms', code), {
+    round: {
+      status: 'running',
+      startedAt: serverTimestamp(),
+      durationMs: ROUND_DURATION_DEFAULT_MS,
+    },
+  })
 }
 
 /**
