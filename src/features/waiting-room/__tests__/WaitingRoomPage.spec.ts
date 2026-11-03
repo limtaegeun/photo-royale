@@ -1025,6 +1025,47 @@ describe('WaitingRoomPage', () => {
     // 페이지 타이틀은 앱 셸 헤더가 담당한다 — 보드 전환 시 '배정 편집'으로 오버라이드된다
     expect(useAppHeader().title.value).toBe('배정 편집')
     expect(findButton(wrapper, '팀 배정 시작')).toBeUndefined()
+    // 편집 중 홈으로 링크를 잘못 누르면 확정 전 드래프트가 사라진다 — 보드가 열린 동안 숨긴다
+    expect(useAppHeader().backLinkHidden.value).toBe(true)
+  })
+
+  describe('헤더 홈으로 링크', () => {
+    it('게임 시작 전 대기 화면에서만 열고, 방을 불러오기 전에는 숨긴다', async () => {
+      mountPage()
+      // 방 정보가 오기 전 — 게임 중인 방에 들어올 때 링크가 비쳤다 사라지지 않게 숨겨 둔다
+      expect(useAppHeader().backLinkHidden.value).toBe(true)
+
+      await flushPromises()
+
+      expect(useAppHeader().backLinkHidden.value).toBe(false)
+    })
+
+    it('게임이 시작되면 숨긴다 — 라운드 사이 대기실을 떠나면 라운드 시작을 놓친다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      mountPage()
+      await flushPromises()
+      expect(useAppHeader().backLinkHidden.value).toBe(false)
+
+      deliver.room({ ...GUEST_ROOM, status: 'playing', assignmentRound: 1 })
+      deliver.participants([{ ...ROSTER[0]!, team: 'A', assignedRound: 1, isReady: true }])
+      await flushPromises()
+
+      expect(useAppHeader().backLinkHidden.value).toBe(true)
+    })
+
+    it('대기실을 떠나면 숨김을 풀어 다음 화면이 라우트 기본값을 쓰게 한다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      await flushPromises()
+      deliver.room({ ...GUEST_ROOM, status: 'playing', assignmentRound: 1 })
+      await flushPromises()
+      expect(useAppHeader().backLinkHidden.value).toBe(true)
+
+      wrapper.unmount()
+      mounted.splice(mounted.indexOf(wrapper), 1)
+
+      expect(useAppHeader().backLinkHidden.value).toBe(false)
+    })
   })
 
   it('호스트: 가드 실패로 토스트가 쌓인 뒤 전원 레디로 재클릭하면 보드 전환 시 토스트 큐가 비워진다', async () => {

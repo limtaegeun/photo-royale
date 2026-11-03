@@ -8,8 +8,13 @@ import { useAuthStore } from '@/features/auth'
 const route = useRoute()
 const authStore = useAuthStore()
 
-// 헤더 타이틀·설명 — 기본값은 라우트 meta, 페이지가 setHeader로 덮어쓰면 그 값이 우선한다
-const { title: headerTitle, description: headerDescription } = useAppHeader()
+// 헤더 타이틀·설명 — 기본값은 라우트 meta, 페이지가 setHeader로 덮어쓰면 그 값이 우선한다.
+// 이탈 링크도 meta가 기본값이고, 페이지가 setBackLinkHidden으로 상태에 따라 숨길 수 있다
+const {
+  title: headerTitle,
+  description: headerDescription,
+  backLinkHidden: headerBackLinkHidden,
+} = useAppHeader()
 </script>
 
 <template>
@@ -22,7 +27,7 @@ const { title: headerTitle, description: headerDescription } = useAppHeader()
         :show-profile-link="authStore.isLoggedIn"
         :title="headerTitle ?? route.meta.appHeaderTitle"
         :description="headerDescription ?? route.meta.appHeaderDescription"
-        :back-to="route.meta.appHeaderBackTo"
+        :back-to="headerBackLinkHidden ? undefined : route.meta.appHeaderBackTo"
         :back-label="route.meta.appHeaderBackLabel"
       />
       <RouterView />
