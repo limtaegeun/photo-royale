@@ -68,6 +68,20 @@ service cloud.firestore {
         && room.get('deleting', false) == true;
     }
 
+    // 같은 차수 재배정(P10) — 방이 대기 중이고, 지금 차수로 아직 게임을 시작하지 않았고(playedRound),
+    // 이 배치가 차수를 올리지 않는가. 배정은 확정했지만 게임 전인 차수를 다시 짜는 진행자 흐름이다.
+    // 참가자 배정 풀기(participants update ③)와 편성 스냅샷 덮어쓰기(rounds update ⑤)가 요구한다.
+    // playedRound는 게임 시작(rooms update ①)이 함께 쓴다 — 필드를 모르는 옛 앱이 시작한 차수는
+    // 기록이 없어 '아직 안 함'으로 읽힌다(배포 전환기 한계, docs/plans/p10-reassign-same-round.md §4).
+    function isUnplayedRoundReassign(roomCode) {
+      let room = get(/databases/$(database)/documents/rooms/$(roomCode)).data;
+      let roomAfter = getAfter(/databases/$(database)/documents/rooms/$(roomCode)).data;
+      return room.status == 'waiting'
+        && room.get('assignmentRound', 0) > 0
+        && room.get('playedRound', 0) != room.get('assignmentRound', 0)
+        && roomAfter.get('assignmentRound', 0) == room.get('assignmentRound', 0);
+    }
+
     // 닉네임 유니크 인덱스. 문서 ID = 정규화 키(trim → NFC → lowercase,
     // src/features/auth/api/signup.ts toNicknameKey와 동일 규칙), 내용은 소유자 uid뿐.
     match /nicknames/{nickname} {
@@ -129,14 +143,20 @@ service cloud.firestore {
       allow update: if request.auth != null
         && request.auth.uid == resource.data.hostUid
         && (
-          // 1) 게임 시작 — status 필드만, waiting → playing 단방향 전이만 허용한다.
-          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+          // 1) 게임 시작 — waiting → playing 단방향 전이만 허용한다. 이 차수로 게임을 시작했다는
+          //    기록(playedRound = 지금 차수)을 같이 쓸 수 있다(P10) — 같은 차수 재배정이 이 기록으로
+          //    "아직 안 한 차수"를 가린다. 기록을 모르는 옛 앱의 시작도 통과해야 하므로 없어도 된다.
+          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'playedRound'])
             && resource.data.status == 'waiting'
-            && request.resource.data.status == 'playing')
-          // 2) 배정 확정 — 팀편성 차수(+1)와 게임 모드, 그리고 차수 → 모드 이력(roundModes)을
+            && request.resource.data.status == 'playing'
+            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['playedRound'])
+              || request.resource.data.playedRound == resource.data.get('assignmentRound', 0)))
+          // 2) 배정 확정 — 팀편성 차수와 게임 모드, 그리고 차수 → 모드 이력(roundModes)을
           //    함께 커밋한다. 아직 대기 중일 때만 허용한다.
-          //    모드는 확정과 함께만 커밋된다(드래프트는 로컬) — assignmentRound +1 제약을 유지하므로
-          //    모드만 단독으로 바꾸는 요청은(차수가 그대로라) 거부된다.
+          //    차수는 +1(다음 차수 배정)이거나, 아직 게임을 시작하지 않은 지금 차수 그대로(P10 같은
+          //    차수 재배정)다. 재배정은 같은 배치가 그 차수 원장(rounds/{차수})의 편성 스냅샷을 새 모드로
+          //    다시 써야 성립한다(getAfter 대조) — 모드만 단독으로 바꾸는 요청은 원장 모드가 그대로라
+          //    거부되고, 게임을 시작한 차수(playedRound)는 다시 짤 수 없다.
           //    아래 모드 리스트는 src/features/game-mode/registry.ts의 GAME_MODE_IDS와 일치해야
           //    한다(registry.spec이 대조 검증) — 새 모드 추가 시 여기도 갱신하고 rules를 배포할 것.
           //    roundModes는 gameMode가 덮어써져 사라지는 과거 라운드 모드를 남기는 이력 맵이다.
@@ -147,8 +167,14 @@ service cloud.firestore {
           || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['assignmentRound', 'gameMode', 'roundModes'])
             && resource.data.status == 'waiting'
             && request.resource.data.assignmentRound is int
-            && request.resource.data.assignmentRound ==
-              (('assignmentRound' in resource.data) ? resource.data.assignmentRound + 1 : 1)
+            && (request.resource.data.assignmentRound ==
+                (('assignmentRound' in resource.data) ? resource.data.assignmentRound + 1 : 1)
+              || ('assignmentRound' in resource.data
+                && resource.data.assignmentRound > 0
+                && request.resource.data.assignmentRound == resource.data.assignmentRound
+                && resource.data.get('playedRound', 0) != resource.data.assignmentRound
+                && getAfter(/databases/$(database)/documents/rooms/$(roomCode)/rounds/$(string(resource.data.assignmentRound))).data.mode
+                  == request.resource.data.gameMode))
             && request.resource.data.gameMode in ['normal', 'tail-chase', 'group', 'king-hunt', 'staff-chase', 'bomb-plant', 'kkomkkomi', 'fast-survival']
             && (!('roundModes' in request.resource.data)
               || (request.resource.data.roundModes is map
@@ -215,7 +241,7 @@ service cloud.firestore {
           && request.resource.data.isReady == false
           && request.resource.data.joinedAt == request.time;
 
-        // 두 갈래로 나뉜다.
+        // 세 갈래로 나뉜다.
         allow update: if
           // 1) 본인의 레디 확정만 허용한다(레디 해제 플로우는 아직 없다).
           (request.auth != null
@@ -226,10 +252,18 @@ service cloud.firestore {
           //    team(완장)·확정 차수·X 겸직·이월값을 쓰고, 라운드마다 재레디를 위해 isReady를 false로 리셋한다.
           //    assignedRound는 getAfter로 방 문서의 커밋 후 assignmentRound와 일치해야 한다 —
           //    즉 참가자 배정 쓰기는 방 차수 증가와 같은 배치에만 성립한다(참가자만 단독 수정 불가).
+          //    base* 두 키는 이번 확정 직전의 이월값이다(P10) — 같은 차수를 다시 짤 때 이 값에서 다시
+          //    계산해, 게임도 안 한 편성이 짝꿍 이력·연속 비혼성 횟수에 쌓이지 않게 한다. 두 키를 모르는
+          //    옛 앱의 확정도 통과해야 하므로 없어도 된다.
           || (request.auth != null
             && get(/databases/$(database)/documents/rooms/$(roomCode)).data.hostUid == request.auth.uid
             && request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly(['team', 'assignedRound', 'isXTeam', 'sameGenderStreak', 'previousPartnerIds', 'isReady'])
+              .hasOnly(['team', 'assignedRound', 'isXTeam', 'sameGenderStreak', 'previousPartnerIds', 'isReady', 'baseSameGenderStreak', 'basePreviousPartnerIds'])
+            && (!('baseSameGenderStreak' in request.resource.data)
+              || (request.resource.data.baseSameGenderStreak is int
+                && request.resource.data.baseSameGenderStreak >= 0))
+            && (!('basePreviousPartnerIds' in request.resource.data)
+              || request.resource.data.basePreviousPartnerIds is list)
             && request.resource.data.team is string
             && request.resource.data.team.size() == 1
             && request.resource.data.team.matches('^[A-Z]$')
@@ -240,7 +274,26 @@ service cloud.firestore {
             && request.resource.data.sameGenderStreak is int
             && request.resource.data.sameGenderStreak >= 0
             && request.resource.data.previousPartnerIds is list
-            && request.resource.data.isReady == false);
+            && request.resource.data.isReady == false)
+          // 3) 같은 차수 재배정에서 빠진 참가자(P10) — 지금 차수에 배정돼 있던 사람이 새 편성에서
+          //    미배정 대기자로 남으면 그 차수 배정을 푼다. 완장·차수·X 겸직·base* 키를 지우고 이월값을
+          //    배정 전 값(base*)으로 되돌린다. 차수를 올리는 확정은 미배정자를 건드리지 않으므로(차수
+          //    마커가 어긋나 저절로 미배정이 된다) 이 갈래는 게임 전 같은 차수 재배정에만 열린다.
+          || (request.auth != null
+            && get(/databases/$(database)/documents/rooms/$(roomCode)).data.hostUid == request.auth.uid
+            && isUnplayedRoundReassign(roomCode)
+            && resource.data.get('assignedRound', 0)
+              == get(/databases/$(database)/documents/rooms/$(roomCode)).data.assignmentRound
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['team', 'assignedRound', 'isXTeam', 'sameGenderStreak', 'previousPartnerIds', 'baseSameGenderStreak', 'basePreviousPartnerIds'])
+            && !('team' in request.resource.data)
+            && !('assignedRound' in request.resource.data)
+            && !('isXTeam' in request.resource.data)
+            && !('baseSameGenderStreak' in request.resource.data)
+            && !('basePreviousPartnerIds' in request.resource.data)
+            && request.resource.data.sameGenderStreak is int
+            && request.resource.data.sameGenderStreak >= 0
+            && request.resource.data.previousPartnerIds is list);
 
         // 강퇴 — 호스트가 대기 중(waiting)에만 참가자를 내보낸다(문서 삭제). 응답 없는
         // 참가자가 "전원 준비" 조건을 영원히 막아 다음 배정이 열리지 않는 것을 푸는 운영
@@ -429,7 +482,7 @@ service cloud.firestore {
           && request.resource.data.xTeams is list
           && request.resource.data.confirmedAt == request.time;
 
-        // 호스트 본인이 현재 차수 문서에만 쓴다. 게임 중(playing) 두 갈래와 대기 중(waiting) 한 갈래로 나뉜다.
+        // 호스트 본인이 현재 차수 문서에만 쓴다. 게임 중(playing) 두 갈래와 대기 중(waiting) 두 갈래로 나뉜다.
         allow update: if request.auth != null
           && get(/databases/$(database)/documents/rooms/$(roomCode)).data.hostUid == request.auth.uid
           && roundNo == string(get(/databases/$(database)/documents/rooms/$(roomCode)).data.assignmentRound)
@@ -472,6 +525,18 @@ service cloud.firestore {
               && request.resource.data.teams.diff(resource.data.teams).addedKeys().size() == 0
               && request.resource.data.teams.diff(resource.data.teams).removedKeys().size() == 0
               && request.resource.data.teams.diff(resource.data.teams).changedKeys().size() <= 1)
+            // 5) 같은 차수 재배정(P10) — 게임을 시작하지 않은 차수를 다시 짜면 편성 스냅샷을 통째로
+            //    다시 쓴다(배정 확정 배치의 set). 키는 1번 create 갈래와 같은 네 개뿐이고, 모드는 같은
+            //    배치가 커밋한 방 모드와 같아야 한다. 정산이 끝난(result 있는) 원장은 고칠 수 없다.
+            || (isUnplayedRoundReassign(roomCode)
+              && !('result' in resource.data)
+              && request.resource.data.keys().hasAll(['mode', 'teams', 'xTeams', 'confirmedAt'])
+              && request.resource.data.keys().hasOnly(['mode', 'teams', 'xTeams', 'confirmedAt'])
+              && request.resource.data.mode
+                == getAfter(/databases/$(database)/documents/rooms/$(roomCode)).data.gameMode
+              && request.resource.data.teams is map
+              && request.resource.data.xTeams is list
+              && request.resource.data.confirmedAt == request.time)
           );
 
         // 원장은 지우지 않는다(정정은 재시작 → 재종료로만). 방 삭제(P09) 때만 방과 함께 지운다.
