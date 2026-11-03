@@ -30,6 +30,16 @@ describe('useLogin', () => {
     expect(loginMock).not.toHaveBeenCalled()
   })
 
+  it('제출로 뜬 칸 오류는 그 칸의 값을 고치면 사라지고, 고치지 않은 칸의 오류는 남는다', async () => {
+    const { form, fieldErrors, submit } = useLogin()
+    await submit()
+
+    form.password = 'secret1'
+
+    expect(fieldErrors.password).toBe('')
+    expect(fieldErrors.email).toBe('이메일을 입력해주세요.')
+  })
+
   it('이메일 형식이 틀리면 필드 에러를 내고 login을 호출하지 않는다', async () => {
     const { form, fieldErrors, submit } = useLogin()
     form.email = 'not-an-email'

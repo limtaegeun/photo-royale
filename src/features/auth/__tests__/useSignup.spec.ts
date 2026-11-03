@@ -102,6 +102,40 @@ describe('useSignup', () => {
     expect(fieldErrors.email).toBe('')
   })
 
+  it('제출로 뜬 칸 오류는 그 칸의 값을 고치면 사라지고, 고치지 않은 칸의 오류는 남는다', async () => {
+    const { form, fieldErrors, submit } = useSignup()
+    form.email = 'a@b'
+    form.password = '123'
+    await submit()
+    expect(fieldErrors.password).toBeTruthy()
+    expect(fieldErrors.nickname).toBeTruthy()
+    expect(fieldErrors.gender).toBeTruthy()
+
+    form.password = 'secret1'
+    form.nickname = '오리'
+    form.gender = 'male'
+
+    expect(fieldErrors.password).toBe('')
+    expect(fieldErrors.nickname).toBe('')
+    expect(fieldErrors.gender).toBe('')
+    // 이메일은 고치지 않았으므로 그대로 남는다
+    expect(fieldErrors.email).toBeTruthy()
+  })
+
+  it('값을 고친 뒤 다시 제출하면 아직 틀린 칸의 오류를 다시 띄운다', async () => {
+    const { form, fieldErrors, submit } = useSignup()
+    fillValid(form)
+    form.password = '123'
+    await submit()
+    form.password = '1234'
+    expect(fieldErrors.password).toBe('')
+
+    await submit()
+
+    expect(fieldErrors.password).toContain('6자')
+    expect(signupMock).not.toHaveBeenCalled()
+  })
+
   it('짧은 비밀번호는 6자 미만 에러를 낸다', async () => {
     const { form, fieldErrors, submit } = useSignup()
     fillValid(form)
