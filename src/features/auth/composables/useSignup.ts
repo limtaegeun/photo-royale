@@ -60,7 +60,7 @@ export function useSignup() {
   const submitError = ref('')
   const isSubmitting = ref(false)
 
-  // 값을 고치면 그 칸의 오류를 지운다. 제출 때 뜬 오류가 값을 바로잡은 뒤에도 남아, 닉네임을 넣은
+  // 값을 고치면 그 칸의 오류와 서버 오류를 지운다. 제출 때 뜬 오류가 값을 바로잡은 뒤에도 남아, 닉네임을 넣은
   // 칸 아래에 「닉네임을 입력해주세요.」가 그대로 보였다(11/03 QA 탐색 EX-02). 다시 검증하는 건
   // 제출과 이메일 칸 이탈 때다. 입력하는 도중에는 새 오류를 띄우지 않는다
   for (const field of FORM_FIELDS) {
@@ -68,6 +68,8 @@ export function useSignup() {
       () => form[field],
       () => {
         fieldErrors[field] = ''
+        // 직전 제출의 서버 오류(「이메일 또는 비밀번호가 올바르지 않아요.」 등)도 값을 고치면 지운다
+        submitError.value = ''
       },
       // 값이 바뀌는 그 순간에 지운다. 기본(pre) 플러시면 값을 넣고 같은 틱에 제출할 때
       // 검증이 막 채운 오류를 뒤늦게 지워 버린다

@@ -86,6 +86,18 @@ describe('useLogin', () => {
     expect(submitError.value).toBe(INVALID_CREDENTIAL_MESSAGE)
   })
 
+  it('서버 오류가 뜬 뒤 값을 고치면 서버 오류 문구를 지운다', async () => {
+    const { form, submitError, submit } = useLogin()
+    fillValid(form)
+    loginMock.mockRejectedValue(new FirebaseError('auth/invalid-credential', 'x'))
+    await submit()
+    expect(submitError.value).toBe(INVALID_CREDENTIAL_MESSAGE)
+
+    form.password = 'secret2'
+
+    expect(submitError.value).toBe('')
+  })
+
   it('네트워크 에러를 한글 메시지로 매핑한다', async () => {
     loginMock.mockRejectedValue(new FirebaseError('auth/network-request-failed', 'x'))
     const { form, submitError, submit } = useLogin()

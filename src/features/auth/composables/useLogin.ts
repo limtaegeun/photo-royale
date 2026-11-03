@@ -41,12 +41,14 @@ export function useLogin() {
   const submitError = ref('')
   const isSubmitting = ref(false)
 
-  // 값을 고치면 그 칸의 오류를 지운다 — 가입 폼과 같은 이유다(useSignup 참조)
+  // 값을 고치면 그 칸의 오류와 서버 오류를 지운다. 가입 폼과 같은 이유다(useSignup 참조)
   for (const field of FORM_FIELDS) {
     watch(
       () => form[field],
       () => {
         fieldErrors[field] = ''
+        // 직전 제출의 서버 오류(「이메일 또는 비밀번호가 올바르지 않아요.」 등)도 값을 고치면 지운다
+        submitError.value = ''
       },
       // 값이 바뀌는 그 순간에 지운다. 기본(pre) 플러시면 값을 넣고 같은 틱에 제출할 때
       // 검증이 막 채운 오류를 뒤늦게 지워 버린다
