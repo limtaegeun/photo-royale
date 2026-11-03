@@ -69,5 +69,5 @@
 
 | # | 작업 | 브랜치 | 상태 |
 |---|---|---|---|
-| 1 | rules 삭제 갈래 + 방 삭제 API(`api/roomDeletion.ts`) + 확인 모달(`RoomDeleteDialog`) + `내가 만든 방` 시트 삭제 버튼 | `feat/room-delete` | 진행 중 |
-| 2 | rules 배포 → 호스팅 배포 → 배포본에서 실제 삭제 확인 | — | **사용자 확인 필요**(실서비스 배포) |
+| 1 | rules 삭제 갈래 + 방 삭제 API(`api/roomDeletion.ts`) + 확인 모달(`RoomDeleteDialog`) + `내가 만든 방` 시트 삭제 버튼 | `feat/room-delete` | 머지 #90 (2026-11-03). 실검증 TC 34건 중 31건 통과(rules 미배포), TestRuleset 29/29 |
+| 2 | rules 배포 → 호스팅 배포 → 배포본에서 실제 삭제 확인(QA 리포트 C-03 · C-04 · C-05) | — | **사용자 확인 필요**(실서비스 배포) |
