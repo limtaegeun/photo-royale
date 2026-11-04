@@ -178,10 +178,17 @@ const teamCountLabel = computed(() =>
     ? `${assignedTeamCount.value}팀 참가`
     : `생존 ${aliveTeamCount(ledger.value)} / ${Object.keys(ledger.value.teams).length}팀`,
 )
+/**
+ * 팀 칩 — 내 이름은 싣지 않고 같은 팀원 이름만 싣는다. 이름 앞에 '팀원'을 붙이는 이유는
+ * `팀 B · leo10`이 내 이름으로 읽혀, 창마다 계정을 다르게 띄운 시험에서 제출자를 거꾸로
+ * 짚은 일이 있었기 때문이다(2026-11-04 사용자 결정, docs/plans/p11-cockpit-teammate-label.md).
+ */
 const teamLabel = computed(() => {
   if (me.value?.team === null || me.value === null) return '팀 확인 중'
   const partnerNames = teammates.value.map((participant) => participant.name).join(' · ')
-  return partnerNames ? `팀 ${me.value.team} · ${partnerNames}` : `팀 ${me.value.team} · 1인 팀`
+  return partnerNames
+    ? `팀 ${me.value.team} · 팀원 ${partnerNames}`
+    : `팀 ${me.value.team} · 1인 팀`
 })
 
 /**

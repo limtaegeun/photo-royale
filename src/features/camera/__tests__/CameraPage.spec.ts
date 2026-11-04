@@ -1036,9 +1036,52 @@ describe('CameraPage', () => {
 
     expect(wrapper.text()).toContain('상대 완장 알파벳을 찍어 제출하세요.')
     expect(wrapper.text()).toContain('20:00')
-    expect(wrapper.text()).toContain('팀 A · 하린')
+    expect(wrapper.text()).toContain('팀 A · 팀원 하린')
+    // 칩에는 내 이름(민우)이 실리지 않는다 — 팀원 이름이 내 이름으로 읽히지 않게 '팀원'을 붙인다
+    expect(wrapper.text()).not.toContain('민우')
     expect(wrapper.text()).toContain('2팀 참가')
     expect(wrapper.text()).toContain('기록')
+  })
+
+  it('팀원이 없으면 팀 칩에 1인 팀이라고 적는다', async () => {
+    subscribeParticipantsMock.mockImplementation((_code, onChange) => {
+      onChange([
+        {
+          id: 'player1',
+          name: '민우',
+          team: 'A',
+          assignedRound: 1,
+          gender: 'male',
+          isXTeam: false,
+          sameGenderStreak: 0,
+          previousPartnerIds: [],
+          carryoverBase: null,
+          hasBeenAssigned: false,
+          isReady: true,
+        },
+        {
+          id: 'player3',
+          name: '도윤',
+          team: 'B',
+          assignedRound: 1,
+          gender: 'male',
+          isXTeam: false,
+          sameGenderStreak: 0,
+          previousPartnerIds: [],
+          carryoverBase: null,
+          hasBeenAssigned: false,
+          isReady: true,
+        },
+      ])
+      return unsubscribeParticipantsMock
+    })
+    const deliverRoom = captureRoomSnapshot()
+    const wrapper = await mountWithActiveCamera()
+    deliverRoom(playingRoom())
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('팀 A · 1인 팀')
+    expect(wrapper.text()).not.toContain('· 팀원')
   })
 
   /**
