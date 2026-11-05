@@ -211,7 +211,13 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
       return
     }
 
-    unsubscribeRoom = subscribeToRoom(code, (nextRoom) => {
+    // 구독이 오류로 끝나면 SDK는 다시 살리지 않는다 — 마지막 스냅샷으로 멈춰 있지 않고 안내로 넘어간다
+    const handleSubscriptionError = () => {
+      phase.value = 'error'
+    }
+    unsubscribeRoom = subscribeToRoom(
+      code,
+      (nextRoom) => {
       room.value = nextRoom
       phase.value = nextRoom === null ? 'not-found' : 'ready'
       if (nextRoom === null) {
@@ -229,13 +235,23 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
         return
       }
       subscribeToCurrentRoundSubmissions(code, nextRoom.assignmentRound ?? 0)
-    })
-    unsubscribeParticipants = subscribeToParticipants(code, (nextParticipants) => {
-      participants.value = nextParticipants
-    })
-    unsubscribeNotice = subscribeToLatestNotice(code, (notice) => {
-      latestNotice.value = notice
-    })
+      },
+      handleSubscriptionError,
+    )
+    unsubscribeParticipants = subscribeToParticipants(
+      code,
+      (nextParticipants) => {
+        participants.value = nextParticipants
+      },
+      handleSubscriptionError,
+    )
+    unsubscribeNotice = subscribeToLatestNotice(
+      code,
+      (notice) => {
+        latestNotice.value = notice
+      },
+      handleSubscriptionError,
+    )
   }
 
   /** 화면 이탈 시 구독 해제 + 로컬 대기값 폐기(다음 진입에 이전 조정이 남지 않게) */

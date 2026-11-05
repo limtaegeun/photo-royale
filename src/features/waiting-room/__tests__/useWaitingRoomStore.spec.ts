@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import type { Participant, RoomInfo } from '../api/rooms'
 import type { RoundLedger } from '@/features/round-ledger'
@@ -32,9 +32,21 @@ const kickParticipantMock =
 const unsubscribeParticipantsMock = vi.fn<() => void>()
 const unsubscribeRoomMock = vi.fn<() => void>()
 const subscribeParticipantsMock =
-  vi.fn<(code: string, onChange: (participants: Participant[]) => void) => () => void>()
+  vi.fn<
+    (
+      code: string,
+      onChange: (participants: Participant[]) => void,
+      onError?: (error: Error) => void,
+    ) => () => void
+  >()
 const subscribeRoomMock =
-  vi.fn<(code: string, onChange: (room: RoomInfo | null) => void) => () => void>()
+  vi.fn<
+    (
+      code: string,
+      onChange: (room: RoomInfo | null) => void,
+      onError?: (error: Error) => void,
+    ) => () => void
+  >()
 
 // 행사장 지도(P08 §2.2) — 지도 문서는 방 문서와 따로 받는다(useVenueMapStore). 이 스펙은 입장이 구독을
 // 시작하는 시점과 호스트 저장만 본다
@@ -42,6 +54,11 @@ const saveVenueMapImageMock = vi.fn<(code: string, image: string) => Promise<voi
 const unsubscribeVenueMapMock = vi.fn<() => void>()
 const subscribeVenueMapMock =
   vi.fn<(code: string, onChange: (image: string | null) => void) => () => void>()
+const restartFirestoreNetworkMock = vi.fn<() => Promise<void>>()
+vi.mock('@/shared/api/firestoreConnection', () => ({
+  restartFirestoreNetwork: () => restartFirestoreNetworkMock(),
+}))
+
 vi.mock('../api/venueMap', () => ({
   saveVenueMapImage: (code: string, image: string) => saveVenueMapImageMock(code, image),
   subscribeToVenueMapImage: (code: string, onChange: (image: string | null) => void) =>
@@ -67,10 +84,16 @@ vi.mock('../api/rooms', () => ({
     uid: string,
     snapshotRemoval?: { roundNo: number; armband: string },
   ) => kickParticipantMock(code, uid, snapshotRemoval),
-  subscribeToParticipants: (code: string, onChange: (participants: Participant[]) => void) =>
-    subscribeParticipantsMock(code, onChange),
-  subscribeToRoom: (code: string, onChange: (room: RoomInfo | null) => void) =>
-    subscribeRoomMock(code, onChange),
+  subscribeToParticipants: (
+    code: string,
+    onChange: (participants: Participant[]) => void,
+    onError?: (error: Error) => void,
+  ) => subscribeParticipantsMock(code, onChange, onError),
+  subscribeToRoom: (
+    code: string,
+    onChange: (room: RoomInfo | null) => void,
+    onError?: (error: Error) => void,
+  ) => subscribeRoomMock(code, onChange, onError),
 }))
 
 const unsubscribeLedgersMock = vi.fn<() => void>()
@@ -294,6 +317,138 @@ describe('useWaitingRoomStore', () => {
     expect(store.participants).toEqual([OTHER_READY])
     expect(store.participantCount).toBe(1)
     expect(store.readyCount).toBe(1)
+  })
+
+  describe('입장 재시도', () => {
+    beforeEach(() => {
+      vi.useFakeTimers()
+      restartFirestoreNetworkMock.mockReset().mockResolvedValue()
+    })
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('방 읽기가 멎으면 연결을 새로 열고 다시 해서 입장한다', async () => {
+      getRoomMock.mockReturnValueOnce(new Promise(() => {}))
+      const store = useWaitingRoomStore()
+
+      const entering = store.enter('AB2C')
+      await vi.advanceTimersByTimeAsync(8000)
+      expect(store.phase).toBe('joining')
+      expect(restartFirestoreNetworkMock).toHaveBeenCalledTimes(1)
+
+      await vi.advanceTimersByTimeAsync(1000)
+      await entering
+
+      expect(getRoomMock).toHaveBeenCalledTimes(2)
+      expect(store.phase).toBe('joined')
+    })
+
+    it('참가 등록이 멎어도 같은 방법으로 입장한다', async () => {
+      joinRoomMock.mockReturnValueOnce(new Promise(() => {}))
+      const store = useWaitingRoomStore()
+
+      const entering = store.enter('AB2C')
+      await vi.advanceTimersByTimeAsync(9000)
+      await entering
+
+      expect(joinRoomMock).toHaveBeenCalledTimes(2)
+      expect(store.phase).toBe('joined')
+    })
+
+    it('프로필 읽기가 멎으면 성별을 빈 값으로 쓰지 않고 다시 읽는다', async () => {
+      fetchMyGenderMock.mockReturnValueOnce(new Promise(() => {}))
+      fetchMyGenderMock.mockResolvedValue('female')
+      const store = useWaitingRoomStore()
+
+      const entering = store.enter('AB2C')
+      await vi.advanceTimersByTimeAsync(9000)
+      await entering
+
+      expect(joinRoomMock).toHaveBeenCalledExactlyOnceWith(
+        'AB2C',
+        expect.objectContaining({ gender: 'female' }),
+      )
+    })
+
+    it('마지막 시도에서도 프로필을 못 읽으면 성별 없이 입장한다', async () => {
+      fetchMyGenderMock.mockReturnValue(new Promise(() => {}))
+      const store = useWaitingRoomStore()
+
+      const entering = store.enter('AB2C')
+      await vi.advanceTimersByTimeAsync(8000 * 3 + 1000 * 2)
+      await entering
+
+      expect(joinRoomMock).toHaveBeenCalledExactlyOnceWith(
+        'AB2C',
+        expect.objectContaining({ gender: null }),
+      )
+      expect(store.phase).toBe('joined')
+    })
+
+    it('오프라인 오류가 이어지면 세 번 시도한 뒤 error로 끝나고 구독하지 않는다', async () => {
+      getRoomMock.mockRejectedValue({ code: 'unavailable' })
+      const store = useWaitingRoomStore()
+
+      const entering = store.enter('AB2C')
+      await vi.advanceTimersByTimeAsync(2000)
+      await entering
+
+      expect(getRoomMock).toHaveBeenCalledTimes(3)
+      expect(restartFirestoreNetworkMock).toHaveBeenCalledTimes(2)
+      expect(store.phase).toBe('error')
+      expect(subscribeRoomMock).not.toHaveBeenCalled()
+    })
+
+    it('권한 거부는 반복해도 같으므로 다시 시도하지 않는다', async () => {
+      joinRoomMock.mockRejectedValue({ code: 'permission-denied' })
+      const store = useWaitingRoomStore()
+
+      await store.enter('AB2C')
+
+      expect(joinRoomMock).toHaveBeenCalledTimes(1)
+      expect(restartFirestoreNetworkMock).not.toHaveBeenCalled()
+      expect(store.phase).toBe('error')
+    })
+
+    it('재시도를 기다리는 사이 화면을 떠나면 다시 시도하지 않는다', async () => {
+      getRoomMock.mockReturnValueOnce(new Promise(() => {}))
+      const store = useWaitingRoomStore()
+
+      const entering = store.enter('AB2C')
+      await vi.advanceTimersByTimeAsync(8000)
+      store.leave()
+      await vi.advanceTimersByTimeAsync(1000)
+      await entering
+
+      expect(getRoomMock).toHaveBeenCalledTimes(1)
+      expect(store.phase).toBe('idle')
+      expect(subscribeRoomMock).not.toHaveBeenCalled()
+    })
+  })
+
+  it('방 구독이 오류로 끝나면 나머지 구독도 내리고 error로 넘어가며, 다시 들어올 수 있다', async () => {
+    const store = useWaitingRoomStore()
+    await store.enter('AB2C')
+    const onError = subscribeRoomMock.mock.calls[0]![2]!
+
+    onError(new Error('permission-denied'))
+
+    expect(store.phase).toBe('error')
+    expect(unsubscribeParticipantsMock).toHaveBeenCalled()
+
+    await store.enter('AB2C')
+    expect(store.phase).toBe('joined')
+  })
+
+  it('명단 구독이 오류로 끝나도 error로 넘어간다', async () => {
+    const store = useWaitingRoomStore()
+    await store.enter('AB2C')
+    const onError = subscribeParticipantsMock.mock.calls[0]![2]!
+
+    onError(new Error('permission-denied'))
+
+    expect(store.phase).toBe('error')
   })
 
   it('방이 없으면 phase가 not-found가 되고 참가·구독하지 않는다', async () => {

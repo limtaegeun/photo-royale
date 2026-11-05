@@ -2,6 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import EntryPage from '../EntryPage.vue'
 
+const restartFirestoreNetworkMock = vi.fn<() => Promise<void>>()
+vi.mock('@/shared/api/firestoreConnection', () => ({
+  restartFirestoreNetwork: () => restartFirestoreNetworkMock(),
+}))
+
 // 테스트마다 로그인/비로그인 상태를 바꿀 수 있도록 getter로 참조한다
 const authState = { user: null as { uid: string; displayName: string } | null }
 vi.mock('@/features/auth', () => ({
@@ -114,6 +119,39 @@ describe('EntryPage', () => {
 
     expect(roomExistsMock).toHaveBeenCalledWith('AB2C')
     expect(pushMock).toHaveBeenCalledWith({ name: 'waiting-room', params: { roomCode: 'AB2C' } })
+  })
+
+  it('코드 확인에 답이 없으면 스피너를 멈추고 안내하며, 다음 시도를 위해 연결을 새로 연다', async () => {
+    vi.useFakeTimers()
+    try {
+      restartFirestoreNetworkMock.mockReset().mockResolvedValue()
+      roomExistsMock.mockReturnValue(new Promise(() => {}))
+      const wrapper = mount(EntryPage, { attachTo: document.body })
+
+      await wrapper.find('input').setValue('AB2C')
+      await findButton(wrapper, '입장하기')!.trigger('click')
+      await vi.advanceTimersByTimeAsync(10_000)
+
+      expect(wrapper.text()).toContain('입장에 실패했어요. 잠시 후 다시 시도해 주세요.')
+      expect(restartFirestoreNetworkMock).toHaveBeenCalledTimes(1)
+      expect(pushMock).not.toHaveBeenCalled()
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('없는 코드라는 답은 연결 문제가 아니라 연결을 건드리지 않는다', async () => {
+    restartFirestoreNetworkMock.mockReset().mockResolvedValue()
+    roomExistsMock.mockResolvedValue(false)
+    const wrapper = mount(EntryPage, { attachTo: document.body })
+
+    await wrapper.find('input').setValue('AB2C')
+    await findButton(wrapper, '입장하기')!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('해당 초대 코드의 방을 찾을 수 없어요.')
+    expect(restartFirestoreNetworkMock).not.toHaveBeenCalled()
   })
 
   /** 11/01 QA 탐색 EX-02 — 모바일 키보드의 '이동'(Enter)이 아무 반응도 없었다 */

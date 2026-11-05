@@ -21,6 +21,8 @@ import { hasPlayedRound, markRoundPlayed } from '../roundPlayMarker'
 import { isRoundLiveAt, isRoundOverAt } from '../roundClock'
 import { serverNow } from '../serverClock'
 import { useVenueMapStore } from './useVenueMapStore'
+import { restartFirestoreNetwork } from '@/shared/api/firestoreConnection'
+import { TimeoutError, withTimeout } from '@/shared/utils/withTimeout'
 
 /**
  * joining: 입장 처리 중(입장 직후 로딩) / joined: 명단 구독 중 /
@@ -32,35 +34,25 @@ export type WaitingRoomPhase = 'idle' | 'joining' | 'joined' | 'not-found' | 'er
 /** 준비 완료 쓰기 타임아웃(ms) — 이 시간 안에 서버 ack가 없으면 오프라인으로 간주한다(QA D-03) */
 const READY_WRITE_TIMEOUT_MS = 8000
 
+/** 입장 단계(방 읽기·프로필 읽기·참가 등록)마다 기다리는 시간(ms) — 넘기면 연결을 새로 열고 처음부터 다시 한다 */
+const ENTER_STEP_TIMEOUT_MS = 8000
+/** 입장 시도 횟수 — 다 실패하면 '대기실에 입장하는 중…'에 두지 않고 다시 시도할 수 있는 안내로 넘어간다 */
+const ENTER_MAX_ATTEMPTS = 3
+/** 재시도 전 대기(ms) — 음영에서는 읽기가 바로 실패해서 쉬지 않으면 시도를 금세 다 써 버린다 */
+const ENTER_RETRY_DELAY_MS = 1000
+
+/** 연결 때문에 생긴 실패인가 — 다시 해 볼 만한 것만 재시도한다. 권한 거부 같은 실패는 반복해도 같다 */
+function isConnectionError(error: unknown): boolean {
+  if (error instanceof TimeoutError) return true
+  const code = (error as { code?: unknown } | null)?.code
+  return code === 'unavailable' || code === 'deadline-exceeded'
+}
+
 /** 준비 완료 불안정 안내 — 타임아웃 시 표시하고, 뒤늦은 쓰기가 커밋되면 이 메시지를 보고 제거한다 */
 const READY_UNSTABLE_MESSAGE = '연결이 불안정해 준비 완료를 확인하지 못했어요. 연결되면 자동으로 반영돼요.'
 
 /** 행사장 지도 저장 실패 안내 — 권한·형식 거부와 네트워크 실패가 모두 이 한 문구로 수렴한다 */
 const MAP_IMAGE_SAVE_FAILED_MESSAGE = '행사장 지도를 저장하지 못했어요. 다시 시도해 주세요.'
-
-/** withTimeout이 시간 초과로 reject할 때 쓰는 표식 에러 — 진짜 실패(네트워크 거부 등)와 구분한다 */
-class ReadyWriteTimeoutError extends Error {}
-
-/**
- * Firestore 오프라인 쓰기는 서버 ack까지 resolve되지 않아 스피너가 영원히 돈다(QA D-03).
- * promise가 ms 안에 끝나지 않으면 ReadyWriteTimeoutError로 reject하는 경주를 붙인다.
- * 원래 promise는 계속 진행되고(취소 불가), 연결이 복구되면 그 쓰기가 그대로 커밋된다.
- */
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new ReadyWriteTimeoutError()), ms)
-    promise.then(
-      (value) => {
-        clearTimeout(timer)
-        resolve(value)
-      },
-      (error: unknown) => {
-        clearTimeout(timer)
-        reject(error)
-      },
-    )
-  })
-}
 
 /**
  * P02 대기실 상태 — Firestore rooms/{code} 문서와 participants 하위 컬렉션을 실시간
@@ -248,38 +240,62 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
       return
     }
 
-    try {
-      const roomInfo = await getRoom(code)
-      if (generation !== enterGeneration) return
-      if (!roomInfo) {
-        phase.value = 'not-found'
-        return
-      }
-      // 구독 스냅샷이 오기 전에도 호스트/게스트 분기가 서도록 즉시 반영한다
-      room.value = roomInfo
+    for (let attempt = 1; ; attempt += 1) {
+      const isLastAttempt = attempt === ENTER_MAX_ATTEMPTS
+      try {
+        const roomInfo = await withTimeout(getRoom(code), ENTER_STEP_TIMEOUT_MS)
+        if (generation !== enterGeneration) return
+        if (!roomInfo) {
+          phase.value = 'not-found'
+          return
+        }
+        // 구독 스냅샷이 오기 전에도 호스트/게스트 분기가 서도록 즉시 반영한다
+        room.value = roomInfo
 
-      if (roomInfo.hostUid !== user.uid) {
-        // 성별은 명단 표기용 보조 정보 — 프로필 조회가 실패해도 입장을 막지 않는다
-        const gender = await fetchMyGender(user.uid).catch(() => null)
+        if (roomInfo.hostUid !== user.uid) {
+          // 성별은 명단 표기용 보조 정보 — 프로필 조회가 실패해도 입장을 막지 않는다. 다만 참가 문서에 한 번
+          // 쓰면 고치지 않으므로, 연결 때문에 못 읽었으면 시도가 남아 있는 동안에는 빈 값으로 넘어가지 않는다
+          const gender = await withTimeout(fetchMyGender(user.uid), ENTER_STEP_TIMEOUT_MS).catch(
+            (error: unknown) => {
+              if (!isLastAttempt && isConnectionError(error)) throw error
+              return null
+            },
+          )
+          if (generation !== enterGeneration) return
+          await withTimeout(
+            joinRoom(code, { uid: user.uid, nickname: user.displayName ?? '', gender }),
+            ENTER_STEP_TIMEOUT_MS,
+          )
+          if (generation !== enterGeneration) return
+        }
+        break
+      } catch (error) {
         if (generation !== enterGeneration) return
-        await joinRoom(code, { uid: user.uid, nickname: user.displayName ?? '', gender })
+        if (isLastAttempt || !isConnectionError(error)) {
+          // getRoom과 joinRoom 사이에 방이 사라진 레이스도 잘못된 코드와 같은 안내로 수렴시킨다
+          phase.value = error instanceof RoomNotFoundError ? 'not-found' : 'error'
+          return
+        }
+        // 멎은 연결에서는 몇 번을 물어도 답이 오지 않는다 — 새로 연 뒤에 처음부터 다시 한다.
+        // 참가 등록은 멱등이라, 늦게 끝난 앞선 시도와 겹쳐도 문서는 하나다
+        await restartFirestoreNetwork().catch(() => {})
+        await new Promise((resolve) => setTimeout(resolve, ENTER_RETRY_DELAY_MS))
         if (generation !== enterGeneration) return
       }
-    } catch (error) {
-      if (generation !== enterGeneration) return
-      // getRoom과 joinRoom 사이에 방이 사라진 레이스도 잘못된 코드와 같은 안내로 수렴시킨다
-      phase.value = error instanceof RoomNotFoundError ? 'not-found' : 'error'
-      return
     }
 
     // 행사장 지도는 입장(참가 등록)이 끝난 뒤에 받는다 — rules가 그 방 참가자와 호스트에게만 읽기를 연다.
     // 대기실을 떠나도 구독을 남겨 두는 별도 스토어라, 콕핏에 가서도 다시 내려받지 않는다
     venueMap.track(code)
-    unsubscribeRoom = subscribeToRoom(code, (nextRoom) => {
-      room.value = nextRoom
-      // 입장 후 방 문서가 사라진 경우(정리 등) — 잘못된 코드와 같은 안내로 수렴시킨다
-      if (nextRoom === null) phase.value = 'not-found'
-    })
+    unsubscribeRoom = subscribeToRoom(
+      code,
+      (nextRoom) => {
+        room.value = nextRoom
+        // 입장 후 방 문서가 사라진 경우(정리 등) — 잘못된 코드와 같은 안내로 수렴시킨다
+        if (nextRoom === null) phase.value = 'not-found'
+      },
+      handleSubscriptionError,
+    )
     unsubscribeLedgers = subscribeToRoundLedgers(
       code,
       (nextLedgers) => {
@@ -291,23 +307,36 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
     )
     // 이 구독에서 내 참가자 문서를 한 번이라도 봤는가 — 강퇴 판정의 래치(아래)
     let hasSeenMyDoc = false
-    unsubscribeParticipants = subscribeToParticipants(code, (nextParticipants) => {
-      allParticipants.value = nextParticipants
-      const includesMe =
-        myId.value !== null && nextParticipants.some((participant) => participant.id === myId.value)
-      if (includesMe) hasSeenMyDoc = true
-      // 강퇴 감지 — **내 문서를 본 뒤에** 명단에서 내가 빠지면 진행자가 내 참가자 문서를 지운
-      // 것이다. 호스트는 참가자로 등록되지 않아(진행자 모델) 명단 부재가 정상이므로 대상에서 뺀다.
-      //
-      // "본 뒤에"가 필요한 이유: 내보내진 폰이 같은 코드로 다시 들어오면 재입장(joinRoom 트랜잭션)
-      // 직후 첫 스냅샷이 아직 내 문서가 없는 명단으로 와서, 막 다시 들어온 사람을 또 '내보냈어요'로
-      // 판정하고 구독까지 끊었다(10/28 최종 QA D1 — 서버엔 새 참가자 문서가 있는데 그 폰만 강퇴 화면,
-      // 새로고침해야 풀렸다). 트랜잭션 쓰기는 지연 보상이 없어 첫 스냅샷이 그 쓰기를 못 볼 수 있다.
-      if (phase.value === 'joined' && hasSeenMyDoc && !isHost.value && !includesMe) {
-        markKicked()
-      }
-    })
+    unsubscribeParticipants = subscribeToParticipants(
+      code,
+      (nextParticipants) => {
+        allParticipants.value = nextParticipants
+        const includesMe =
+          myId.value !== null && nextParticipants.some((participant) => participant.id === myId.value)
+        if (includesMe) hasSeenMyDoc = true
+        // 강퇴 감지 — **내 문서를 본 뒤에** 명단에서 내가 빠지면 진행자가 내 참가자 문서를 지운
+        // 것이다. 호스트는 참가자로 등록되지 않아(진행자 모델) 명단 부재가 정상이므로 대상에서 뺀다.
+        //
+        // "본 뒤에"가 필요한 이유: 내보내진 폰이 같은 코드로 다시 들어오면 재입장(joinRoom 트랜잭션)
+        // 직후 첫 스냅샷이 아직 내 문서가 없는 명단으로 와서, 막 다시 들어온 사람을 또 '내보냈어요'로
+        // 판정하고 구독까지 끊었다(10/28 최종 QA D1 — 서버엔 새 참가자 문서가 있는데 그 폰만 강퇴 화면,
+        // 새로고침해야 풀렸다). 트랜잭션 쓰기는 지연 보상이 없어 첫 스냅샷이 그 쓰기를 못 볼 수 있다.
+        if (phase.value === 'joined' && hasSeenMyDoc && !isHost.value && !includesMe) {
+          markKicked()
+        }
+      },
+      handleSubscriptionError,
+    )
     phase.value = 'joined'
+  }
+
+  /**
+   * 구독이 오류로 끝났다 — SDK는 이 구독을 다시 살리지 않는다. 그대로 두면 화면에 마지막 스냅샷이 남은 채
+   * 갱신만 멈추므로, 구독을 내리고 다시 시도할 수 있는 안내로 넘어간다.
+   */
+  function handleSubscriptionError() {
+    stopSubscriptions()
+    phase.value = 'error'
   }
 
   /** 방 문서·명단 구독을 함께 내린다 — 구독 수명은 leave와 markKicked가 공유하는 한 지점이다 */
@@ -367,7 +396,7 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
       // 타임아웃은 재시도 상태로만 되돌린다 — Firestore 오프라인 쓰기가 큐잉되어
       // 재연결 시 그대로 커밋되고 스냅샷이 버튼을 '준비 완료'로 바꾼다.
       // 버튼은 latency compensation으로 이미 준비 완료 상태인데, 안내는 불안정함을 설명한다.
-      if (error instanceof ReadyWriteTimeoutError) {
+      if (error instanceof TimeoutError) {
         readyError.value = READY_UNSTABLE_MESSAGE
         // 늦게 도착한 서버 ack가 안내를 거둔다 — 그 사이 다른 오류 문구로 바뀌었으면 건드리지 않는다
         void write.then(() => {

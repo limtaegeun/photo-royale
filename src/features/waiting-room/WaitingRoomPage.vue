@@ -660,14 +660,26 @@ async function copyInviteLink() {
               : '네트워크 상태를 확인하고 잠시 후 다시 시도해 주세요.'
           }}
         </p>
-        <BaseButton
-          variant="primary"
-          size="md"
-          class="mt-5 w-full"
-          @click="router.replace({ name: 'entry' })"
-        >
-          입장 화면으로
-        </BaseButton>
+        <div class="mt-5 flex flex-col gap-3">
+          <!-- 연결 실패는 잠시 뒤 풀리는 일이 많다 — 코드를 다시 넣지 않고 같은 방으로 다시 들어가게 한다 -->
+          <BaseButton
+            v-if="phase === 'error'"
+            variant="primary"
+            size="md"
+            class="w-full"
+            @click="store.enter(normalizeRoomCode(String(route.params.roomCode)))"
+          >
+            다시 시도
+          </BaseButton>
+          <BaseButton
+            :variant="phase === 'error' ? 'ghost' : 'primary'"
+            size="md"
+            class="w-full"
+            @click="router.replace({ name: 'entry' })"
+          >
+            입장 화면으로
+          </BaseButton>
+        </div>
       </BaseCard>
 
       <!-- 참가 등록 중 로딩 -->
