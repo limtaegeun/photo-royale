@@ -19,6 +19,7 @@ import {
   useTeamAssignmentStore,
   type DraftMember,
 } from '@/features/team-assignment'
+import { useFirestoreWatchdog } from '@/shared/composables/useFirestoreWatchdog'
 import { useToast } from '@/shared/composables/useToast'
 import { useAppHeader } from '@/shared/composables/useAppHeader'
 import KickableRosterChip from './components/KickableRosterChip.vue'
@@ -29,6 +30,7 @@ import { hasPlayedRound } from './roundPlayMarker'
 import { useVenueMapStore } from './stores/useVenueMapStore'
 import { useWaitingRoomStore } from './stores/useWaitingRoomStore'
 
+useFirestoreWatchdog()
 const route = useRoute()
 const router = useRouter()
 const { toast, dismissAll } = useToast()
