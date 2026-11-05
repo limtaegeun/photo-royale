@@ -202,7 +202,11 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
           (participant) =>
             isAssignedInRound(participant, assignmentRound.value) && participant.team === me.team,
         )
-        .map((participant) => ({ id: participant.id, name: participant.name })),
+        .map((participant) => ({
+          id: participant.id,
+          name: participant.name,
+          isReady: participant.isReady,
+        })),
     }
   })
 

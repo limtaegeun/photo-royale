@@ -8,8 +8,8 @@ function mountCard(overrides: Partial<Props> = {}) {
   const props: Props = {
     armband: 'A', // A는 blue 그룹
     members: [
-      { id: 'me', name: '오리' },
-      { id: 'u2', name: '하린' },
+      { id: 'me', name: '오리', isReady: false },
+      { id: 'u2', name: '하린', isReady: false },
     ],
     myId: 'me',
     isXTeam: false,
@@ -40,8 +40,33 @@ describe('RoundAssignmentCard', () => {
     expect(wrapper.find('[data-me="true"]').exists()).toBe(true)
   })
 
+  it('멤버마다 준비 상태를 색과 글자로 함께 보인다', () => {
+    const wrapper = mountCard({
+      members: [
+        { id: 'me', name: '오리', isReady: false },
+        { id: 'u2', name: '하린', isReady: true },
+      ],
+    })
+
+    const [me, teammate] = wrapper.findAll('li[data-me]')
+    expect(me!.find('[data-ready]').text()).toBe('대기 중')
+    expect(me!.find('[data-ready]').attributes('data-tone')).toBe('neutral')
+    expect(teammate!.find('[data-ready]').text()).toBe('준비 완료')
+    expect(teammate!.find('[data-ready]').attributes('data-tone')).toBe('success')
+  })
+
+  it('긴 닉네임은 이름만 줄이고 (나)는 줄임 대상에서 뺀다', () => {
+    const wrapper = mountCard({
+      members: [{ id: 'me', name: '바람부는날에사진찍는사람', isReady: false }],
+    })
+
+    const nameParts = wrapper.findAll('[data-me="true"] .truncate')
+    expect(nameParts.map((part) => part.text())).toEqual(['바람부는날에사진찍는사람'])
+    expect(wrapper.text()).toContain('바람부는날에사진찍는사람(나)')
+  })
+
   it('1인 팀이면 목숨·포인트 2배 문구를 표시한다', () => {
-    const wrapper = mountCard({ members: [{ id: 'me', name: '오리' }] })
+    const wrapper = mountCard({ members: [{ id: 'me', name: '오리', isReady: false }] })
 
     expect(wrapper.text()).toContain('1인 팀 · 목숨과 포인트 2배')
     expect(wrapper.text()).toContain('1인 팀입니다.')
@@ -85,7 +110,10 @@ describe('RoundAssignmentCard', () => {
   })
 
   it('1인 팀이 X를 겸직해도 1인 팀 문구와 X 안내가 함께 표시된다(1인 팀도 X 겸직 가능 — 2026-07-24 결정)', () => {
-    const wrapper = mountCard({ members: [{ id: 'me', name: '오리' }], isXTeam: true })
+    const wrapper = mountCard({
+      members: [{ id: 'me', name: '오리', isReady: false }],
+      isXTeam: true,
+    })
 
     expect(wrapper.text()).toContain('1인 팀 · 목숨과 포인트 2배')
     expect(wrapper.text()).toContain('특수 완장 X')
@@ -94,9 +122,9 @@ describe('RoundAssignmentCard', () => {
   it('수동 편집으로 3인 팀이 되면 인원수를 그대로 표기한다(2인 1조로 오표기하지 않는다)', () => {
     const wrapper = mountCard({
       members: [
-        { id: 'me', name: '오리' },
-        { id: 'u2', name: '하린' },
-        { id: 'u3', name: '도윤' },
+        { id: 'me', name: '오리', isReady: false },
+        { id: 'u2', name: '하린', isReady: false },
+        { id: 'u3', name: '도윤', isReady: false },
       ],
     })
 

@@ -678,10 +678,29 @@ describe('useWaitingRoomStore', () => {
         armband: 'A',
         isXTeam: false,
         members: [
-          { id: 'me', name: '오리' },
-          { id: 'u2', name: '하린' },
+          { id: 'me', name: '오리', isReady: true },
+          { id: 'u2', name: '하린', isReady: true },
         ],
       })
+    })
+
+    it('팀원이 준비하면 스냅샷으로 팀원 목록의 준비 상태가 바뀐다', async () => {
+      getRoomMock.mockResolvedValue(ROUND2_ROOM)
+      const deliver = captureSnapshotCallbacks()
+      const store = useWaitingRoomStore()
+      await store.enter('AB2C')
+      deliver.room(ROUND2_ROOM)
+      const me = { ...assigned('me', '오리', 'A', 2), isReady: false }
+      const teammate = { ...assigned('u2', '하린', 'A', 2), isReady: false }
+      deliver.participants([me, teammate])
+      expect(store.myAssignment!.members.map((member) => member.isReady)).toEqual([false, false])
+
+      deliver.participants([me, { ...teammate, isReady: true }])
+
+      expect(store.myAssignment!.members).toEqual([
+        { id: 'me', name: '오리', isReady: false },
+        { id: 'u2', name: '하린', isReady: true },
+      ])
     })
   })
 

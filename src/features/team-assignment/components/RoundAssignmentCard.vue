@@ -14,8 +14,8 @@ import {
 interface Props {
   /** 내 완장 알파벳 — 그룹 색은 완장에서 파생 */
   armband: string
-  /** 같은 팀 멤버(본인 포함) */
-  members: Array<{ id: string; name: string }>
+  /** 같은 팀 멤버(본인 포함) — isReady는 이번 라운드 준비 여부로, 멤버 행의 상태 배지가 쓴다 */
+  members: Array<{ id: string; name: string; isReady: boolean }>
   /** 본인 참가자 id — 멤버 목록에서 '나' 강조에 쓴다 */
   myId: string
   /** 특수 완장 X 겸직 여부 */
@@ -55,44 +55,49 @@ const compositionLabel = computed(() => {
   <!-- P03 참가자 배정 카드 — 대기실(라이트) 안에서 렌더된다. 하단 준비 CTA는 페이지가 담당한다.
        페이지 타이틀('라운드 N 배정')은 앱 셸 헤더(AppHeader)가 담당한다(자체 h1 없음). -->
   <section class="flex flex-col gap-6">
-    <!-- 완장 히어로 카드 -->
-    <BaseCard padding="lg" class="flex gap-4">
-      <!-- 완장 타일: 상단 그룹 색 바 + 중앙 알파벳(그룹 색) -->
-      <div
-        class="flex size-20 shrink-0 flex-col overflow-hidden rounded-md border border-stroke bg-surface"
-        aria-hidden="true"
-      >
-        <span class="h-2 w-full shrink-0" :class="armbandBarClass"></span>
-        <span
-          class="flex flex-1 items-center justify-center text-display"
-          :class="armbandTextClass"
+    <!-- 완장 히어로 카드 — 위는 완장 요약, 구분선 아래는 팀원별 준비 상태다 -->
+    <BaseCard padding="lg" class="flex flex-col gap-4">
+      <div class="flex items-center gap-4">
+        <!-- 완장 타일: 상단 그룹 색 바 + 중앙 알파벳(그룹 색) -->
+        <div
+          class="flex size-20 shrink-0 flex-col overflow-hidden rounded-md border border-stroke bg-surface"
+          aria-hidden="true"
         >
-          {{ armband }}
-        </span>
-      </div>
-
-      <!-- 완장 설명 -->
-      <div class="flex min-w-0 flex-col gap-1">
-        <p class="text-heading text-content">{{ armbandLabelKo }} 완장 {{ armband }}</p>
-        <p class="text-caption text-content-secondary">
-          그룹 {{ armbandLabelEn }} · {{ compositionLabel }}
-        </p>
-        <p v-if="isSolo" class="text-caption font-semibold text-warning">
-          1인 팀 · 목숨과 포인트 2배
-        </p>
-        <div v-if="isXTeam" class="mt-1 flex flex-col gap-1">
-          <BaseBadge tone="warning" size="sm" class="self-start">특수 완장 X</BaseBadge>
-          <p class="text-caption text-content-secondary">{{ xTeamCaption }}</p>
+          <span class="h-2 w-full shrink-0" :class="armbandBarClass"></span>
+          <span
+            class="flex flex-1 items-center justify-center text-display"
+            :class="armbandTextClass"
+          >
+            {{ armband }}
+          </span>
         </div>
 
-        <!-- 멤버 목록 -->
-        <ul class="mt-2 flex flex-col gap-2">
-          <li
-            v-for="member in members"
-            :key="member.id"
-            class="flex items-center gap-2"
-            :data-me="member.id === myId"
-          >
+        <!-- 완장 설명 -->
+        <div class="flex min-w-0 flex-col gap-1">
+          <p class="text-heading text-content">{{ armbandLabelKo }} 완장 {{ armband }}</p>
+          <p class="text-caption text-content-secondary">
+            그룹 {{ armbandLabelEn }} · {{ compositionLabel }}
+          </p>
+          <p v-if="isSolo" class="text-caption font-semibold text-warning">
+            1인 팀 · 목숨과 포인트 2배
+          </p>
+          <div v-if="isXTeam" class="mt-1 flex flex-col gap-1">
+            <BaseBadge tone="warning" size="sm" class="self-start">특수 완장 X</BaseBadge>
+            <p class="text-caption text-content-secondary">{{ xTeamCaption }}</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 멤버 목록 — 카드 전체 폭을 써서 닉네임 자리를 남기고, 상태 배지는 오른쪽 끝에 맞춘다.
+           닉네임이 길면 이름만 줄이고 (나)는 남긴다 -->
+      <ul class="flex flex-col gap-2 border-t border-stroke pt-4">
+        <li
+          v-for="member in members"
+          :key="member.id"
+          class="flex items-center gap-3"
+          :data-me="member.id === myId"
+        >
+          <div class="flex min-w-0 flex-1 items-center gap-2">
             <span
               class="flex size-8 shrink-0 items-center justify-center rounded-full border-2 text-caption font-bold text-content"
               :class="armbandBorderClass"
@@ -101,14 +106,23 @@ const compositionLabel = computed(() => {
               {{ member.name.charAt(0) }}
             </span>
             <span
-              class="truncate text-body"
+              class="flex min-w-0 text-body"
               :class="member.id === myId ? 'font-bold text-content' : 'text-content-secondary'"
             >
-              {{ member.id === myId ? `${member.name}(나)` : member.name }}
+              <span class="truncate">{{ member.name }}</span>
+              <span v-if="member.id === myId" class="shrink-0">(나)</span>
             </span>
-          </li>
-        </ul>
-      </div>
+          </div>
+          <BaseBadge
+            :tone="member.isReady ? 'success' : 'neutral'"
+            size="sm"
+            class="shrink-0"
+            :data-ready="member.isReady"
+          >
+            {{ member.isReady ? '준비 완료' : '대기 중' }}
+          </BaseBadge>
+        </li>
+      </ul>
     </BaseCard>
 
     <!-- 규칙서 — 모드별 규칙은 game-mode 기능이 소유하고, 카드는 배정 컨텍스트만 넘긴다 -->
