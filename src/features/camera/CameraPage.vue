@@ -695,9 +695,7 @@ function subscribeToCurrentRoundLedger(roundNumber: number) {
               class="min-h-16 w-16 text-caption"
               @click="isMapSheetOpen = true"
             >
-              <span class="flex flex-col items-center leading-tight">
-                <span class="font-semibold">3</span><span>지도</span>
-              </span>
+              지도
             </BaseButton>
           </div>
           <div class="col-start-3 row-start-1 flex flex-col items-center gap-3">
@@ -710,9 +708,7 @@ function subscribeToCurrentRoundLedger(roundNumber: number) {
               class="min-h-16 w-16 text-caption"
               @click="isRecordSheetOpen = true"
             >
-              <span class="flex flex-col items-center leading-tight">
-                <span class="font-semibold">4</span><span>기록</span>
-              </span>
+              기록
             </BaseButton>
           </div>
           <!-- 셔터가 빠져도 칸 너비를 지켜 지도·기록 버튼이 라운드 종료 순간에 움직이지 않게 한다 -->

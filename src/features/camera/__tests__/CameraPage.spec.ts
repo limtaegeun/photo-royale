@@ -1131,14 +1131,14 @@ describe('CameraPage', () => {
     const recordButton = wrapper.find('button[aria-label="내 기록 열기"]')
     expect(recordButton.exists()).toBe(true)
     expect(recordButton.attributes('disabled')).toBeUndefined()
-    expect(recordButton.text()).toContain('기록')
+    expect(recordButton.text()).toBe('기록')
   })
 
   /**
    * P08 §2.2 — 진행자가 올린 지도를 받았으면 왼쪽 칸에 지도 슬롯이 열린다. 지도는 방 문서가 아니라
    * 따로 받아 두는 스토어에 있어, 콕핏은 이 방을 추적만 하고(대기실에서 이미 받았으면 그대로) 이미지를 읽는다.
    */
-  describe('지도 슬롯(3)', () => {
+  describe('지도 슬롯', () => {
     const MAP_IMAGE = 'data:image/jpeg;base64,venue-map'
 
     it('콕핏에 들어오면 이 방의 지도를 추적한다 — 새로고침으로 대기실을 거치지 않아도 지도를 받는다', async () => {
@@ -1169,8 +1169,7 @@ describe('CameraPage', () => {
       const mapButton = wrapper.find('button[aria-label="행사장 지도 열기"]')
       expect(mapButton.exists()).toBe(true)
       expect(mapButton.attributes('disabled')).toBeUndefined()
-      expect(mapButton.text()).toContain('3')
-      expect(mapButton.text()).toContain('지도')
+      expect(mapButton.text()).toBe('지도')
       // 기록 슬롯은 그대로 오른쪽에 남는다
       expect(wrapper.find('button[aria-label="내 기록 열기"]').exists()).toBe(true)
 
