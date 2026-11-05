@@ -11,6 +11,7 @@ import { GAME_MODES } from '@/features/game-mode'
 import { aliveTeamCount } from '@/features/round-ledger'
 import { normalizeRoomCode } from '@/features/waiting-room'
 import { useAppHeader } from '@/shared/composables/useAppHeader'
+import { useFirestoreWatchdog } from '@/shared/composables/useFirestoreWatchdog'
 import { useToast } from '@/shared/composables/useToast'
 import type { KillMultiplier, SubmissionRecord, SubmissionTarget } from './api/submissions'
 import JudgeQueueList from './components/JudgeQueueList.vue'
@@ -37,6 +38,7 @@ import { useRoundOpsStore } from './stores/useRoundOpsStore'
  * 기록 탭은 같은 submissions 컬렉션의 전 라운드 이력(대기 포함)을 최신순으로 되짚어 본다.
  */
 
+useFirestoreWatchdog()
 const route = useRoute()
 const router = useRouter()
 const { toast } = useToast()

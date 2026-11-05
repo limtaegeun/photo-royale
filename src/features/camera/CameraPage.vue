@@ -16,6 +16,7 @@ import {
 import { useAuthStore } from '@/features/auth'
 import { GAME_MODES } from '@/features/game-mode'
 import { groupTextClass } from '@/features/team-assignment'
+import { useFirestoreWatchdog } from '@/shared/composables/useFirestoreWatchdog'
 import { useToast } from '@/shared/composables/useToast'
 import {
   formatRelativeTime,
@@ -37,6 +38,7 @@ import { useJudgmentFeedback } from './composables/useJudgmentFeedback'
 import { discardPendingKillshot, useKillshotSubmit } from './composables/useKillshotSubmit'
 import { usePhotoCapture } from './composables/usePhotoCapture'
 
+useFirestoreWatchdog()
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
