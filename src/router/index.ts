@@ -44,11 +44,8 @@ const router = createRouter({
         requiresAuth: true,
         appHeaderTitle: '대기실',
         appHeaderDescription: '준비 전 안전 수칙을 확인합니다',
-        // 화면만 홈으로 옮긴다 — 참가자 명단은 그대로라 같은 초대 코드로 다시 들어온다.
-        // 초대 링크로 들어오면 히스토리에 홈이 없어 브라우저 뒤로가기로는 앱 밖으로 나간다.
-        // 게임 중·배정 편집 중에는 페이지가 이 링크를 숨긴다(WaitingRoomPage의 setBackLinkHidden)
-        appHeaderBackTo: { name: 'entry' },
-        appHeaderBackLabel: '홈으로',
+        // 이탈 링크를 두지 않는다. 홈으로 나가도 명단에는 남아서, 나간 사람이 돌아올 때까지 게임
+        // 시작이 막히거나 혼자 게임을 놓친다(P15). 홈으로 가야 하면 프로필의 '홈으로'를 거친다
       },
     },
     {
