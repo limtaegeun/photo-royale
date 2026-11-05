@@ -199,6 +199,7 @@ const { mySubmissions } = useJudgmentFeedback({
   roomCode: computed(() => roomCode),
   uid: computed(() => me.value?.id ?? null),
   round: computed(() => room.value?.assignmentRound ?? null),
+  isMyTeamOut,
   toast,
 })
 

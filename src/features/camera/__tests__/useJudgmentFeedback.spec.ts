@@ -39,6 +39,7 @@ function record(overrides: Partial<SubmissionRecord> = {}): SubmissionRecord {
     targetTeam: null,
     multiplier: 1,
     judgedAtMs: null,
+    rejectReason: null,
     ...overrides,
   }
 }
@@ -47,10 +48,11 @@ function setupInScope() {
   const roomCode = ref<string | null>('AB2C')
   const uid = ref<string | null>('player1')
   const round = ref<number | null>(2)
+  const isMyTeamOut = ref(false)
   const toast = vi.fn<(t: { title: string; description?: string; tone: string }) => void>()
   const scope = effectScope()
-  const result = scope.run(() => useJudgmentFeedback({ roomCode, uid, round, toast }))!
-  return { scope, roomCode, uid, round, toast, mySubmissions: result.mySubmissions }
+  const result = scope.run(() => useJudgmentFeedback({ roomCode, uid, round, isMyTeamOut, toast }))!
+  return { scope, roomCode, uid, round, isMyTeamOut, toast, mySubmissions: result.mySubmissions }
 }
 
 beforeEach(() => {
@@ -106,6 +108,35 @@ describe('useJudgmentFeedback', () => {
     expect(toast).toHaveBeenCalledExactlyOnceWith({
       title: '킬샷이 반려됐어요.',
       description: '다시 찍어 제출할 수 있어요.',
+      tone: 'neutral',
+    })
+  })
+
+  it('자동 반려는 내 팀 상태가 아직 안 바뀌었어도 문서의 사유로 먼저 잡혔다고 알린다', () => {
+    const { toast, isMyTeamOut } = setupInScope()
+    const onChange = subscribeToMySubmissionsMock.mock.calls[0]![3]
+    isMyTeamOut.value = false
+
+    onChange([record({ status: 'pending' })])
+    onChange([record({ status: 'rejected', rejectReason: 'team-out' })])
+
+    expect(toast).toHaveBeenCalledExactlyOnceWith({
+      title: '우리 팀이 먼저 잡혀서 반려됐어요.',
+      tone: 'neutral',
+    })
+  })
+
+  it('탈락한 뒤 직접 반려된 킬샷은 재제출을 안내하지 않는다', () => {
+    const { toast, isMyTeamOut } = setupInScope()
+    const onChange = subscribeToMySubmissionsMock.mock.calls[0]![3]
+    isMyTeamOut.value = true
+
+    onChange([record({ status: 'pending' })])
+    onChange([record({ status: 'rejected' })])
+
+    expect(toast).toHaveBeenCalledExactlyOnceWith({
+      title: '킬샷이 반려됐어요.',
+      description: undefined,
       tone: 'neutral',
     })
   })
@@ -189,7 +220,7 @@ describe('useJudgmentFeedback', () => {
       const toast = vi.fn<(t: { title: string; description?: string; tone: string }) => void>()
       const scope = effectScope()
 
-      const result = scope.run(() => useJudgmentFeedback({ roomCode, uid, round, toast }))!
+      const result = scope.run(() => useJudgmentFeedback({ roomCode, uid, round, isMyTeamOut: ref(false), toast }))!
 
       expect(result.mySubmissions.value).toEqual([])
     })
@@ -203,7 +234,7 @@ describe('useJudgmentFeedback', () => {
     const scope = effectScope()
 
     scope.run(() => {
-      useJudgmentFeedback({ roomCode, uid, round, toast })
+      useJudgmentFeedback({ roomCode, uid, round, isMyTeamOut: ref(false), toast })
     })
 
     expect(subscribeToMySubmissionsMock).not.toHaveBeenCalled()
