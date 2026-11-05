@@ -458,6 +458,32 @@ describe('WaitingRoomPage', () => {
     expect(replaceMock).toHaveBeenCalledWith({ name: 'entry' })
   })
 
+  it('연결 실패로 입장하지 못하면 다시 시도 버튼을 보여주고, 누르면 같은 방으로 다시 들어간다', async () => {
+    joinRoomMock.mockRejectedValueOnce({ code: 'permission-denied' })
+    const wrapper = mountPage()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('입장에 실패했어요')
+    const retry = wrapper.findAll('button').find((button) => button.text() === '다시 시도')
+    expect(retry).toBeDefined()
+
+    await retry!.trigger('click')
+    await flushPromises()
+
+    expect(getRoomMock).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).not.toContain('입장에 실패했어요')
+    expect(wrapper.text()).toContain('입장 명단')
+  })
+
+  it('방이 없을 때는 다시 시도 버튼을 보여주지 않는다', async () => {
+    getRoomMock.mockResolvedValue(null)
+    const wrapper = mountPage()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('방을 찾을 수 없어요')
+    expect(wrapper.findAll('button').some((button) => button.text() === '다시 시도')).toBe(false)
+  })
+
   it('입장 도중 방이 사라진 레이스도 방 없음 안내로 수렴한다', async () => {
     joinRoomMock.mockRejectedValue(new RoomNotFoundError('사라진 방'))
     const wrapper = mountPage()

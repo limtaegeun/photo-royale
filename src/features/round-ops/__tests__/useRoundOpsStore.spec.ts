@@ -21,11 +21,29 @@ const unsubscribeNoticeMock = vi.fn<() => void>()
 const unsubscribeSubmissionsMock = vi.fn<() => void>()
 const unsubscribeRecordsMock = vi.fn<() => void>()
 const subscribeRoomMock =
-  vi.fn<(code: string, onChange: (room: RoomInfo | null) => void) => () => void>()
+  vi.fn<
+    (
+      code: string,
+      onChange: (room: RoomInfo | null) => void,
+      onError?: (error: Error) => void,
+    ) => () => void
+  >()
 const subscribeParticipantsMock =
-  vi.fn<(code: string, onChange: (participants: Participant[]) => void) => () => void>()
+  vi.fn<
+    (
+      code: string,
+      onChange: (participants: Participant[]) => void,
+      onError?: (error: Error) => void,
+    ) => () => void
+  >()
 const subscribeNoticeMock =
-  vi.fn<(code: string, onChange: (notice: Notice | null) => void) => () => void>()
+  vi.fn<
+    (
+      code: string,
+      onChange: (notice: Notice | null) => void,
+      onError?: (error: Error) => void,
+    ) => () => void
+  >()
 const subscribeSubmissionsMock =
   vi.fn<
     (
@@ -63,10 +81,16 @@ vi.mock('@/features/waiting-room', async (importOriginal) => ({
   markRoundPlayed: (code: string, round: number) => markRoundPlayedMock(code, round),
   ROUND_DURATION_DEFAULT_MS: 20 * 60 * 1000,
   startRound: (code: string) => startRoundMock(code),
-  subscribeToRoom: (code: string, onChange: (room: RoomInfo | null) => void) =>
-    subscribeRoomMock(code, onChange),
-  subscribeToParticipants: (code: string, onChange: (participants: Participant[]) => void) =>
-    subscribeParticipantsMock(code, onChange),
+  subscribeToRoom: (
+    code: string,
+    onChange: (room: RoomInfo | null) => void,
+    onError?: (error: Error) => void,
+  ) => subscribeRoomMock(code, onChange, onError),
+  subscribeToParticipants: (
+    code: string,
+    onChange: (participants: Participant[]) => void,
+    onError?: (error: Error) => void,
+  ) => subscribeParticipantsMock(code, onChange, onError),
 }))
 
 const pauseRoundMock = vi.fn<(code: string, remainingMs: number) => Promise<void>>()
@@ -90,8 +114,11 @@ const sendNoticeMock = vi.fn<(code: string, text: string) => Promise<void>>()
 vi.mock('../api/notices', () => ({
   NOTICE_TEXT_MAX_LENGTH: 100,
   sendNotice: (code: string, text: string) => sendNoticeMock(code, text),
-  subscribeToLatestNotice: (code: string, onChange: (notice: Notice | null) => void) =>
-    subscribeNoticeMock(code, onChange),
+  subscribeToLatestNotice: (
+    code: string,
+    onChange: (notice: Notice | null) => void,
+    onError?: (error: Error) => void,
+  ) => subscribeNoticeMock(code, onChange, onError),
 }))
 
 const unsubscribeLedgerMock = vi.fn<() => void>()
@@ -324,9 +351,17 @@ describe('useRoundOpsStore', () => {
       store.enter('AB2C')
 
       expect(store.phase).toBe('loading')
-      expect(subscribeRoomMock).toHaveBeenCalledWith('AB2C', expect.any(Function))
-      expect(subscribeParticipantsMock).toHaveBeenCalledWith('AB2C', expect.any(Function))
-      expect(subscribeNoticeMock).toHaveBeenCalledWith('AB2C', expect.any(Function))
+      expect(subscribeRoomMock).toHaveBeenCalledWith('AB2C', expect.any(Function), expect.any(Function))
+      expect(subscribeParticipantsMock).toHaveBeenCalledWith(
+        'AB2C',
+        expect.any(Function),
+        expect.any(Function),
+      )
+      expect(subscribeNoticeMock).toHaveBeenCalledWith(
+        'AB2C',
+        expect.any(Function),
+        expect.any(Function),
+      )
 
       deliver.room(room({ round: RUNNING }))
 
@@ -350,6 +385,17 @@ describe('useRoundOpsStore', () => {
 
       expect(store.phase).toBe('error')
       expect(subscribeRoomMock).not.toHaveBeenCalled()
+    })
+
+    it('방·명단·공지 구독 중 하나가 오류로 끝나면 error로 넘어간다', () => {
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      subscribeRoomMock.mock.calls[0]![1](null)
+      expect(store.phase).toBe('not-found')
+
+      subscribeParticipantsMock.mock.calls[0]![2]!(new Error('permission-denied'))
+
+      expect(store.phase).toBe('error')
     })
 
     it('방 문서가 없으면 not-found로 수렴한다', () => {
