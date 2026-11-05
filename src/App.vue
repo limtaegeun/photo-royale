@@ -9,12 +9,10 @@ const route = useRoute()
 const authStore = useAuthStore()
 
 // 헤더 타이틀·설명 — 기본값은 라우트 meta, 페이지가 setHeader로 덮어쓰면 그 값이 우선한다.
-// 이탈 링크도 meta가 기본값이고, 페이지가 setBackLinkHidden으로 상태에 따라 숨길 수 있다.
-// 페이지가 setBackAction을 걸면 같은 자리에 그 하위 화면을 닫는 버튼이 링크 대신 뜬다
+// 이탈 링크는 meta가 정하고, 페이지가 setBackAction을 걸면 같은 자리에 그 하위 화면을 닫는 버튼이 대신 뜬다
 const {
   title: headerTitle,
   description: headerDescription,
-  backLinkHidden: headerBackLinkHidden,
   backAction: headerBackAction,
   hidden: headerHidden,
 } = useAppHeader()
@@ -31,7 +29,7 @@ const {
         :show-profile-link="authStore.isLoggedIn"
         :title="headerTitle ?? route.meta.appHeaderTitle"
         :description="headerDescription ?? route.meta.appHeaderDescription"
-        :back-to="headerBackLinkHidden ? undefined : route.meta.appHeaderBackTo"
+        :back-to="route.meta.appHeaderBackTo"
         :back-label="headerBackAction?.label ?? route.meta.appHeaderBackLabel"
         :show-back-button="headerBackAction !== undefined"
         @back="headerBackAction?.run()"

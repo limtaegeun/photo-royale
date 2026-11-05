@@ -653,22 +653,39 @@ describe('CameraPage 뒤로가기', () => {
 
 describe('CameraPage 라운드 종료 게이트', () => {
   /**
-   * 종료되면 셔터가 잠긴 채 남는 대신 출구 하나로 바뀐다 — 잠긴 버튼만 남기면
-   * 호스트가 게임을 종료할 때까지 플레이어가 누를 것이 없는 화면에 갇힌다(A-4).
+   * 종료되면 셔터만 빠진다 — 잠긴 버튼을 남기지 않고 출구 버튼도 두지 않는다(P15).
+   * 게스트는 진행자가 라운드를 끝낼 때까지 기다리고, 그때 스냅샷으로 대기실에 간다.
    */
-  it('라운드가 종료되면 셔터 대신 대기실 출구가 자리를 넘겨받는다', async () => {
+  it('라운드가 종료되면 셔터를 빼고 출구 버튼을 두지 않는다', async () => {
     mockDisplayState.value = 'ended'
     const wrapper = await mountWithActiveCamera()
 
     expect(findShutter(wrapper).exists()).toBe(false)
-    expect(findButtonByText(wrapper, '대기실로 돌아가기')).toBeDefined()
+    expect(findButtonByText(wrapper, '대기실로 돌아가기')).toBeUndefined()
+    wrapper.unmount()
   })
 
-  it('출구를 누르면 방 코드를 담아 대기실로 이동한다', async () => {
+  it('라운드가 종료돼도 기록 버튼은 남아 시트를 연다', async () => {
     mockDisplayState.value = 'ended'
     const wrapper = await mountWithActiveCamera()
 
-    await findButtonByText(wrapper, '대기실로 돌아가기')!.trigger('click')
+    await wrapper.find('button[aria-label="내 기록 열기"]').trigger('click')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('이번 라운드 내 킬샷')
+    wrapper.unmount()
+  })
+
+  it('종료 화면에서 기다리다 진행자가 라운드를 끝내면 스스로 대기실로 간다', async () => {
+    mockDisplayState.value = 'ended'
+    const deliverRoom = captureRoomSnapshot()
+    await mountWithActiveCamera()
+    deliverRoom(playingRoom())
+    await flushPromises()
+    expect(replaceMock).not.toHaveBeenCalled()
+
+    deliverRoom({ ...playingRoom(), status: 'waiting', round: null })
+    await flushPromises()
 
     expect(replaceMock).toHaveBeenCalledWith({
       name: 'waiting-room',
@@ -676,7 +693,7 @@ describe('CameraPage 라운드 종료 게이트', () => {
     })
   })
 
-  it('라운드가 진행 중이면 출구를 노출하지 않는다', async () => {
+  it('라운드가 진행 중이면 셔터가 있다', async () => {
     const wrapper = await mountWithActiveCamera()
 
     expect(findShutter(wrapper).exists()).toBe(true)
@@ -732,7 +749,7 @@ describe('CameraPage 라운드 종료 게이트', () => {
 
     const submitButton = findButtonByText(wrapper, '킬샷 제출')!
     expect(submitButton.attributes('disabled')).toBeDefined()
-    expect(wrapper.text()).toContain('라운드가 종료되어 제출할 수 없어요. 돌아가면 대기실로 나갈 수 있어요.')
+    expect(wrapper.text()).toContain('라운드가 종료되어 제출할 수 없어요. 진행자 안내를 기다려 주세요.')
     // 종료 뒤에는 다시 찍을 수 없으므로 버튼 라벨도 사실에 맞춘다
     expect(findButtonByText(wrapper, '돌아가기')).toBeDefined()
     expect(findButtonByText(wrapper, '다시 찍기')).toBeUndefined()
@@ -852,6 +869,19 @@ describe('CameraPage 탈락 게이트 (P07 M3)', () => {
  * 수동으로 기록하므로, 콕핏은 셔터를 잠그고 모드 정의가 소유한 문구로 이유를 보여준다.
  */
 describe('CameraPage 모드 킬샷 잠금 (스태프 추격전)', () => {
+  it('라운드가 끝나면 잠긴 셔터와 잠금 문구가 모두 빠지고 기록 버튼만 남는다', async () => {
+    mockDisplayState.value = 'ended'
+    const deliverRoom = captureRoomSnapshot()
+    const wrapper = await mountWithActiveCamera()
+    deliverRoom(playingRoom({ gameMode: 'staff-chase' }))
+    await flushPromises()
+
+    expect(findShutter(wrapper).exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('이 모드에서는 킬샷을 찍지 않아요.')
+    expect(findButtonByText(wrapper, '대기실로 돌아가기')).toBeUndefined()
+    expect(wrapper.find('button[aria-label="내 기록 열기"]').exists()).toBe(true)
+  })
+
   it('스태프 추격전 방은 셔터를 잠그고 모드 문구로 이유를 보여준다', async () => {
     const deliverRoom = captureRoomSnapshot()
     const wrapper = await mountWithActiveCamera()
@@ -1115,6 +1145,18 @@ describe('CameraPage', () => {
       await mountWithActiveCamera()
 
       expect(venueMapMock.track).toHaveBeenCalledExactlyOnceWith('AB2C')
+    })
+
+    it('라운드가 종료돼도 지도 버튼은 남는다', async () => {
+      mockDisplayState.value = 'ended'
+      const deliverRoom = captureRoomSnapshot()
+      const wrapper = await mountWithActiveCamera()
+      deliverRoom(playingRoom())
+      venueMapMock.image = MAP_IMAGE
+      await flushPromises()
+
+      expect(wrapper.find('button[aria-label="행사장 지도 열기"]').exists()).toBe(true)
+      expect(findShutter(wrapper).exists()).toBe(false)
     })
 
     it('지도를 받았으면 왼쪽 칸에 지도 버튼이 나타나고, 없어지면 다시 숨는다', async () => {

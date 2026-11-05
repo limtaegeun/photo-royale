@@ -32,7 +32,7 @@ import { useWaitingRoomStore } from './stores/useWaitingRoomStore'
 const route = useRoute()
 const router = useRouter()
 const { toast, dismissAll } = useToast()
-const { setHeader, setBackLinkHidden, setBackAction, clearHeader } = useAppHeader()
+const { setHeader, setBackAction, clearHeader } = useAppHeader()
 const store = useWaitingRoomStore()
 const {
   roomCode,
@@ -329,13 +329,7 @@ watchEffect(() => {
   } else {
     clearHeader()
   }
-  // 홈으로 링크는 게임 시작 전 대기 화면에서만 연다. 게임 중 게스트는 라운드 사이에 여기서 기다리는데,
-  // 홈으로 가면 방 구독이 끊겨 라운드가 시작돼도 콕핏으로 넘어가지 못한다(홈의 '돌아가기'는 내가 만든
-  // 방만 보여 줘서 게스트는 초대 코드를 다시 쳐야 돌아온다). 배정 보드를 편집하는 동안에도 숨긴다 —
-  // 잘못 누르면 확정 전 드래프트가 사라진다. 방을 불러오기 전(status 없음)에도 숨겨 게임 중인 방에
-  // 들어올 때 링크가 잠깐 비쳤다 사라지지 않게 한다
-  setBackLinkHidden(gameStatus.value !== 'waiting' || showAssignmentBoard.value)
-  // 보드가 열린 동안은 같은 자리에 '대기실로' 버튼을 둔다 — 홈이 아니라 보드만 닫는다
+  // 보드가 열린 동안은 헤더 왼쪽에 '대기실로' 버튼을 둔다 — 보드만 닫고 대기실에 머문다
   setBackAction(
     showAssignmentBoard.value ? { label: '대기실로', run: requestLeaveBoard } : undefined,
   )
@@ -475,8 +469,8 @@ async function copyInviteLink() {
          보드의 액션 영역이 화면 하단에 붙지 않는다. 세 뷰의 상단 여백은 여기서 한 번만 준다 -->
     <div class="flex flex-1 flex-col gap-4 pt-3">
       <template v-if="phase === 'joined'">
-        <!-- 라운드는 끝났는데 진행자가 아직 게임을 닫지 않은 구간 — 게스트가 콕핏에서 나와
-             여기로 돌아오는 유일한 경로다(A-4). 게임 중(playing)인데 대기실에 있는 이유와,
+        <!-- 라운드는 끝났는데 진행자가 아직 게임을 닫지 않은 구간 — 콕핏에는 출구 버튼이 없고(P15),
+             브라우저 뒤로가기나 링크 재접속으로 여기에 온다. 게임 중(playing)인데 대기실에 있는 이유와,
              다음 라운드가 시작되면 화면이 알아서 넘어간다는 것을 같이 알린다.
              배정 카드는 그대로 아래 남아 완장·팀원을 계속 확인할 수 있다. -->
         <BaseCard v-if="isRoundOverAwaitingHost" role="status">
