@@ -112,6 +112,7 @@ function createVenueMapMock() {
   return reactive({
     image: null as string | null,
     track: vi.fn<(code: string) => void>(),
+    refresh: vi.fn<() => Promise<void>>(),
   })
 }
 let venueMapMock = createVenueMapMock()

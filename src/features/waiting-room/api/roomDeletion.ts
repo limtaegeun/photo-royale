@@ -7,7 +7,8 @@ import {
   updateDoc,
   writeBatch,
 } from 'firebase/firestore'
-import { auth, db } from '@/shared/api/firebase'
+import { db } from '@/shared/api/firebase'
+import { fetchFirestoreRest } from './firestoreRest'
 import type { RoomStatus } from './rooms'
 
 /**
@@ -63,23 +64,16 @@ export async function fetchRoomDeletionSummary(code: string): Promise<RoomDeleti
  * 권한은 SDK와 같은 rules가 진행자 토큰으로 판정한다.
  */
 async function listChildDocumentIds(code: string, name: RoomChildCollection): Promise<string[]> {
-  const user = auth.currentUser
-  if (user === null) throw new Error('방을 지우려면 로그인이 필요하다')
-  const token = await user.getIdToken()
-  const projectId = db.app.options.projectId
-  const response = await fetch(
-    `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/rooms/${code}:runQuery`,
-    {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        structuredQuery: {
-          from: [{ collectionId: name }],
-          select: { fields: [{ fieldPath: '__name__' }] },
-        },
-      }),
-    },
-  )
+  const response = await fetchFirestoreRest(`rooms/${code}:runQuery`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId: name }],
+        select: { fields: [{ fieldPath: '__name__' }] },
+      },
+    }),
+  })
   if (!response.ok) throw new Error(`${name} 목록을 읽지 못했다 (${response.status})`)
   // 결과가 없으면 문서 없이 readTime만 든 행 하나가 온다
   const rows = (await response.json()) as Array<{ document?: { name: string } }>

@@ -285,7 +285,7 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
     }
 
     // 행사장 지도는 입장(참가 등록)이 끝난 뒤에 받는다 — rules가 그 방 참가자와 호스트에게만 읽기를 연다.
-    // 대기실을 떠나도 구독을 남겨 두는 별도 스토어라, 콕핏에 가서도 다시 내려받지 않는다
+    // 대기실을 떠나도 추적을 남겨 두는 별도 스토어라, 콕핏에 가서도 다시 내려받지 않는다
     venueMap.track(code)
     unsubscribeRoom = subscribeToRoom(
       code,
@@ -492,6 +492,7 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
     mapImageError.value = null
     try {
       await saveVenueMapImage(roomCode.value, image)
+      void venueMap.adoptSaved(image)
       return true
     } catch {
       mapImageError.value = MAP_IMAGE_SAVE_FAILED_MESSAGE

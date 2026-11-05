@@ -51,9 +51,7 @@ const subscribeRoomMock =
 // 행사장 지도(P08 §2.2) — 지도 문서는 방 문서와 따로 받는다(useVenueMapStore). 이 스펙은 입장이 구독을
 // 시작하는 시점과 호스트 저장만 본다
 const saveVenueMapImageMock = vi.fn<(code: string, image: string) => Promise<void>>()
-const unsubscribeVenueMapMock = vi.fn<() => void>()
-const subscribeVenueMapMock =
-  vi.fn<(code: string, onChange: (image: string | null) => void) => () => void>()
+const fetchVenueMapVersionMock = vi.fn<(code: string) => Promise<string | null>>()
 const restartFirestoreNetworkMock = vi.fn<() => Promise<void>>()
 vi.mock('@/shared/api/firestoreConnection', () => ({
   restartFirestoreNetwork: () => restartFirestoreNetworkMock(),
@@ -61,8 +59,8 @@ vi.mock('@/shared/api/firestoreConnection', () => ({
 
 vi.mock('../api/venueMap', () => ({
   saveVenueMapImage: (code: string, image: string) => saveVenueMapImageMock(code, image),
-  subscribeToVenueMapImage: (code: string, onChange: (image: string | null) => void) =>
-    subscribeVenueMapMock(code, onChange),
+  fetchVenueMapVersion: (code: string) => fetchVenueMapVersionMock(code),
+  fetchVenueMap: () => Promise.resolve(null),
 }))
 
 vi.mock('../api/rooms', () => ({
@@ -119,6 +117,7 @@ vi.mock('@/features/round-ledger', async (importOriginal) => ({
 
 import { RoomNotFoundError } from '../api/rooms'
 import { useWaitingRoomStore } from '../stores/useWaitingRoomStore'
+import { useVenueMapStore } from '../stores/useVenueMapStore'
 import { hasPlayedRound } from '../roundPlayMarker'
 
 /** 구독 콜백들을 붙잡아 테스트가 스냅샷 도착을 흉내 낼 수 있게 한다 */
@@ -245,8 +244,7 @@ describe('useWaitingRoomStore', () => {
     startGameMock.mockReset().mockResolvedValue(undefined)
     kickParticipantMock.mockReset().mockResolvedValue(undefined)
     saveVenueMapImageMock.mockReset().mockResolvedValue(undefined)
-    subscribeVenueMapMock.mockReset().mockReturnValue(unsubscribeVenueMapMock)
-    unsubscribeVenueMapMock.mockReset()
+    fetchVenueMapVersionMock.mockReset().mockResolvedValue(null)
     subscribeParticipantsMock.mockReset().mockReturnValue(unsubscribeParticipantsMock)
     subscribeRoomMock.mockReset().mockReturnValue(unsubscribeRoomMock)
     subscribeLedgersMock.mockReset().mockReturnValue(unsubscribeLedgersMock)
@@ -1126,14 +1124,14 @@ describe('useWaitingRoomStore', () => {
       return store
     }
 
-    it('게스트는 참가 등록이 끝난 뒤에 지도 구독을 시작한다', async () => {
+    it('게스트는 참가 등록이 끝난 뒤에 지도를 받기 시작한다', async () => {
       const order: string[] = []
       joinRoomMock.mockImplementation(async () => {
         order.push('join')
       })
-      subscribeVenueMapMock.mockImplementation((code) => {
+      fetchVenueMapVersionMock.mockImplementation(async (code) => {
         order.push(`venueMap:${code}`)
-        return unsubscribeVenueMapMock
+        return null
       })
       captureSnapshotCallbacks()
       const store = useWaitingRoomStore()
@@ -1143,28 +1141,28 @@ describe('useWaitingRoomStore', () => {
       expect(order).toEqual(['join', 'venueMap:AB2C'])
     })
 
-    it('호스트도 입장하면 지도 구독을 시작한다(등록 여부·미리보기)', async () => {
+    it('호스트도 입장하면 지도를 받기 시작한다(등록 여부·미리보기)', async () => {
       await enterAsHost()
 
-      expect(subscribeVenueMapMock).toHaveBeenCalledExactlyOnceWith('AB2C', expect.any(Function))
+      expect(fetchVenueMapVersionMock).toHaveBeenCalledExactlyOnceWith('AB2C')
     })
 
-    it('없는 방이면 지도 구독을 시작하지 않는다', async () => {
+    it('없는 방이면 지도를 받지 않는다', async () => {
       getRoomMock.mockResolvedValue(null)
       const store = useWaitingRoomStore()
 
       await store.enter('ZZZZ')
 
-      expect(subscribeVenueMapMock).not.toHaveBeenCalled()
+      expect(fetchVenueMapVersionMock).not.toHaveBeenCalled()
     })
 
-    it('화면을 떠나도 지도 구독은 남는다 — 콕핏이 다시 내려받지 않게', async () => {
+    it('화면을 떠나도 지도 추적은 남는다 — 콕핏이 다시 내려받지 않게', async () => {
       const store = await enterAsHost()
 
       store.leave()
 
       expect(unsubscribeRoomMock).toHaveBeenCalled()
-      expect(unsubscribeVenueMapMock).not.toHaveBeenCalled()
+      expect(useVenueMapStore().roomCode).toBe('AB2C')
     })
 
     it('호스트가 저장하면 지도 문서에 쓰고 true를 돌려준다', async () => {
