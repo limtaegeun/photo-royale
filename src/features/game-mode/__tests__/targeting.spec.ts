@@ -39,7 +39,7 @@ describe('TAIL_CHASE_TARGETING', () => {
   })
 
   it('막힌 이유 배지는 "다음 알파벳 아님"이다', () => {
-    expect(TAIL_CHASE_TARGETING.blockedBadge).toBe('다음 알파벳 아님')
+    expect(TAIL_CHASE_TARGETING.blockedBadge).toBe('대상 아님')
   })
 })
 

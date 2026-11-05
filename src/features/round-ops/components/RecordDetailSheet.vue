@@ -13,7 +13,7 @@ import { participantName, teamChipLabel } from '../submissionDisplay'
 /**
  * 기록 상세 시트 — 리스트 썸네일로는 사진 속 완장을 확인하기 어려워 사진을 크게 보여주고,
  * 판정 결과(확정이면 잡힌 팀)를 함께 남긴다. 읽기 전용이며 판정 액션은 없다 — 대기 건의
- * 판정은 호출부가 판정 시트(JudgeSheet)로 보낸다.
+ * 판정은 호출부가 판정 탭의 카드로 보낸다.
  */
 interface Props {
   /** 확인할 기록 — 시트가 닫혀 있으면 null일 수 있다 */
@@ -53,14 +53,14 @@ const memberNamesByTeam = computed(() => {
   return byTeam
 })
 
-/** 팀원 이름 나열 — 완장만으로는 현장에서 누구인지 떠올리기 어렵다(JudgeSheet와 같은 표기) */
+/** 팀원 이름 나열 — 완장만으로는 현장에서 누구인지 떠올리기 어렵다(스태프 아웃 시트와 같은 표기) */
 function memberNames(team: string): string {
   return (memberNamesByTeam.value.get(team) ?? []).join(' · ')
 }
 
 /**
  * 상태별 보조 설명 — 확정은 잡힌 팀 배지가 정보를 전달하므로 나머지 두 상태만 문장이 필요하다.
- * 이번 라운드의 대기 건은 호출부가 판정 시트로 보내므로, 여기 오는 대기 건은 판정되지 않은 채
+ * 이번 라운드의 대기 건은 호출부가 판정 탭으로 보내므로, 여기 오는 대기 건은 판정되지 않은 채
  * 라운드가 지난 제출뿐이다(rules가 지난 라운드 판정을 막는다). approved는 키가 없다 —
  * Partial이라 타입이 그 사실을 그대로 드러낸다.
  */

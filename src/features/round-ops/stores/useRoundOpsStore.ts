@@ -149,7 +149,7 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     }))
   })
 
-  /** 탈락한 팀 완장(P07 M3) — 판정 시트가 대상에서 비활성화한다. 원장이 없으면 빈 배열 */
+  /** 탈락한 팀 완장(P07 M3) — 판정 카드가 대상에서 비활성화한다. 원장이 없으면 빈 배열 */
   const outTeams = computed(() => {
     const ledger = currentLedger.value
     if (ledger === null) return []

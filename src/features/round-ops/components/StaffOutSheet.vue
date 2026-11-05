@@ -9,7 +9,7 @@ import TeamPickList from './TeamPickList.vue'
 
 /**
  * 스태프 아웃 처리 시트(P07 §4.5) — 스태프에게 잡힌 팀을 진행자가 직접 골라 원장에 기록한다.
- * 판정 시트(JudgeSheet)의 팀 목록·그룹 섹션 패턴을 그대로 따르되, 제출자·모드 대상 제한 개념이
+ * 판정 카드와 같은 팀 목록(groupTeamSections)을 쓰고 그룹 섹션 패턴을 그대로 따르되, 제출자·모드 대상 제한 개념이
  * 없어(스태프는 참가자가 아니다) 이미 탈락한 팀만 선택을 막는다.
  */
 interface Props {
@@ -44,7 +44,7 @@ watch(open, (isOpen) => {
 })
 
 /**
- * 팀 하나에 탈락 배지·1인 팀 캡션을 얹는다 — 판정 시트와 달리 둘 다 서로 독립이라(한 팀이
+ * 팀 하나에 탈락 배지·1인 팀 캡션을 얹는다 — 판정 카드와 달리 둘 다 서로 독립이라(한 팀이
  * 탈락하면서 동시에 1인 팀일 수 있다) 배지·캡션을 각자 조건으로 판단한다.
  */
 function decorate(team: TeamSectionTeam): TeamPickOption {

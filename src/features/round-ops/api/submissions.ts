@@ -98,7 +98,7 @@ export interface SubmissionRecord extends Submission {
 
 /**
  * 킬 배율(P07 M2) — 1은 일반 킬(+10), 3은 낙오 포착 킬(+30: 팀원과 2m 넘게 떨어진 사람을 찍은 킬,
- * 사진으로 거리를 판별할 수 없어 호스트가 판정 시트에서 정한다). rules가 이 두 값만 허용한다.
+ * 사진으로 거리를 판별할 수 없어 호스트가 판정 카드에서 정한다). rules가 이 두 값만 허용한다.
  */
 export type KillMultiplier = 1 | 3
 
