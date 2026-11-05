@@ -16,6 +16,7 @@ const {
   description: headerDescription,
   backLinkHidden: headerBackLinkHidden,
   backAction: headerBackAction,
+  hidden: headerHidden,
 } = useAppHeader()
 </script>
 
@@ -23,9 +24,10 @@ const {
   <!-- 앱 셸 — 모바일 뷰포트를 데스크톱에선 가운데 정렬해 폭을 제한 -->
   <div class="flex min-h-dvh justify-center bg-canvas">
     <main class="flex w-full max-w-md flex-col">
-      <!-- 공용 헤더 — 카메라 콕핏 등 풀스크린 라우트는 meta.hideAppHeader로 제외 -->
+      <!-- 공용 헤더 — 카메라 콕핏 등 풀스크린 라우트는 meta.hideAppHeader로, 한 라우트 안의 특정 탭은
+           setHeaderHidden으로 제외 -->
       <AppHeader
-        v-if="!route.meta.hideAppHeader"
+        v-if="!route.meta.hideAppHeader && !headerHidden"
         :show-profile-link="authStore.isLoggedIn"
         :title="headerTitle ?? route.meta.appHeaderTitle"
         :description="headerDescription ?? route.meta.appHeaderDescription"
