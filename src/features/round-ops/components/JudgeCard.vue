@@ -220,7 +220,7 @@ function handleApprove() {
                   ? 'border-stroke text-content-disabled'
                   : pickedTile?.armband === tile.armband
                     ? [
-                        'border-transparent ring-2 ring-accent',
+                        'border-transparent',
                         groupSolidBgClass(tile.armband),
                         groupOnSolidTextClass(tile.armband),
                       ]
