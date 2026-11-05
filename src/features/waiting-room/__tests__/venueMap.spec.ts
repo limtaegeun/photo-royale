@@ -1,9 +1,12 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest'
 import { JPEG_DATA_URL_PREFIX } from '@/shared/utils/encodeJpegDataUrl'
 
-vi.mock('@/shared/api/firebase', () => ({ db: {} }))
+vi.mock('@/shared/api/firebase', () => ({
+  db: { app: { options: { projectId: 'demo' } } },
+  auth: { currentUser: { getIdToken: () => Promise.resolve('token') } },
+}))
 
 /** 실제 DocumentReference 대신 쓰는 식별자 — doc() mock이 만들어 호출 검증에 쓴다 */
 interface FakeRef {
@@ -11,37 +14,24 @@ interface FakeRef {
 }
 
 const setDocMock = vi.fn<(ref: FakeRef, data: Record<string, unknown>) => Promise<void>>()
-const onSnapshotMock =
-  vi.fn<
-    (
-      ref: FakeRef,
-      onNext: (snapshot: { data: () => Record<string, unknown> | undefined }) => void,
-      onError?: (error: Error) => void,
-    ) => () => void
-  >()
 
 vi.mock('firebase/firestore', () => ({
   doc: (_db: unknown, ...segments: string[]): FakeRef => ({ path: segments.join('/') }),
   setDoc: (ref: FakeRef, data: Record<string, unknown>) => setDocMock(ref, data),
-  onSnapshot: (
-    ref: FakeRef,
-    onNext: (snapshot: { data: () => Record<string, unknown> | undefined }) => void,
-    onError?: (error: Error) => void,
-  ) => onSnapshotMock(ref, onNext, onError),
   serverTimestamp: () => 'server-timestamp',
 }))
 
 import {
   VENUE_MAP_IMAGE_MAX_LENGTH,
+  fetchVenueMap,
+  fetchVenueMapVersion,
   saveVenueMapImage,
-  subscribeToVenueMapImage,
 } from '../api/venueMap'
 
 const MAP_IMAGE = `${JPEG_DATA_URL_PREFIX}map`
 
 beforeEach(() => {
   setDocMock.mockReset().mockResolvedValue(undefined)
-  onSnapshotMock.mockReset().mockReturnValue(() => {})
 })
 
 describe('saveVenueMapImage', () => {
@@ -61,49 +51,78 @@ describe('saveVenueMapImage', () => {
   })
 })
 
-describe('subscribeToVenueMapImage', () => {
-  function subscribe() {
-    const onChange = vi.fn<(image: string | null) => void>()
-    const onError = vi.fn<(error: Error) => void>()
-    subscribeToVenueMapImage('AB2C', onChange, onError)
-    const [ref, onNext, passedOnError] = onSnapshotMock.mock.calls[0]!
-    return { ref, onNext, passedOnError, onChange, onError }
-  }
+describe('행사장 지도 읽기(REST)', () => {
+  const fetchMock = vi.fn<typeof fetch>()
+  const jsonResponse = (status: number, body: unknown = {}) =>
+    new Response(JSON.stringify(body), { status })
 
-  it('지도 문서를 구독하고, JPEG 데이터 URL이면 그대로 전달한다', () => {
-    const { ref, onNext, onChange } = subscribe()
-    expect(ref).toEqual({ path: 'rooms/AB2C/assets/venueMap' })
-
-    onNext({ data: () => ({ image: MAP_IMAGE, updatedAt: 'ts' }) })
-
-    expect(onChange).toHaveBeenLastCalledWith(MAP_IMAGE)
+  beforeEach(() => {
+    fetchMock.mockReset()
+    vi.stubGlobal('fetch', fetchMock)
   })
 
-  it('문서가 없거나(등록 전) JPEG 데이터 URL이 아니면 null — 콕핏이 지도 슬롯을 숨긴다', () => {
-    const { onNext, onChange } = subscribe()
-
-    onNext({ data: () => undefined })
-    expect(onChange).toHaveBeenLastCalledWith(null)
-
-    onNext({ data: () => ({ image: 'https://example.com/map.png' }) })
-    expect(onChange).toHaveBeenLastCalledWith(null)
-
-    onNext({ data: () => ({ image: 42 }) })
-    expect(onChange).toHaveBeenLastCalledWith(null)
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
-  it('구독 오류 콜백을 그대로 넘긴다', () => {
-    const { passedOnError, onError } = subscribe()
+  it('판 확인은 갱신 시각 필드만 달라고 하고 로그인 토큰을 싣는다', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, {
+        documents: [
+          {
+            name: 'projects/demo/databases/(default)/documents/rooms/AB2C/assets/venueMap',
+            fields: { updatedAt: { timestampValue: '2026-11-05T01:00:00Z' } },
+          },
+        ],
+      }),
+    )
 
-    expect(passedOnError).toBe(onError)
+    await expect(fetchVenueMapVersion('AB2C')).resolves.toBe('2026-11-05T01:00:00Z')
+
+    const [url, init] = fetchMock.mock.calls[0]!
+    expect(url).toBe(
+      'https://firestore.googleapis.com/v1/projects/demo/databases/(default)/documents/rooms/AB2C/assets?mask.fieldPaths=updatedAt',
+    )
+    expect(init?.headers).toEqual({ Authorization: 'Bearer token' })
+  })
+
+  it('지도가 등록 전이면 판과 지도 모두 null이다', async () => {
+    fetchMock.mockImplementation(async (url) =>
+      String(url).includes('mask.fieldPaths') ? jsonResponse(200, {}) : jsonResponse(404),
+    )
+
+    await expect(fetchVenueMapVersion('AB2C')).resolves.toBeNull()
+    await expect(fetchVenueMap('AB2C')).resolves.toBeNull()
+  })
+
+  it('권한 거부처럼 다른 오류는 호출부로 전파한다', async () => {
+    fetchMock.mockImplementation(async () => jsonResponse(403))
+
+    await expect(fetchVenueMapVersion('AB2C')).rejects.toThrow('403')
+    await expect(fetchVenueMap('AB2C')).rejects.toThrow('403')
+  })
+
+  it('지도와 판을 돌려주고, JPEG 데이터 URL이 아니면 이미지는 null이다', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        fields: {
+          image: { stringValue: MAP_IMAGE },
+          updatedAt: { timestampValue: '2026-11-05T01:00:00Z' },
+        },
+      }),
+    )
+    await expect(fetchVenueMap('AB2C')).resolves.toEqual({
+      image: MAP_IMAGE,
+      version: '2026-11-05T01:00:00Z',
+    })
+
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, { fields: { image: { stringValue: 'https://example.com/map.png' } } }),
+    )
+    await expect(fetchVenueMap('AB2C')).resolves.toEqual({ image: null, version: null })
   })
 })
 
-/**
- * 행사장 지도(P08 §2.2) — rules의 assets 갈래는 호스트가 venueMap 문서 하나만, JPEG 데이터 URL로,
- * 길이 상한 안에서 쓰게 한다. 상한은 클라 VENUE_MAP_IMAGE_MAX_LENGTH의 이중 정의라 여기서 대조하고,
- * 문서 ID·접두 검사가 rules에 남아 있는지도 함께 고정한다.
- */
 describe('firestore.rules 행사장 지도 규칙 동기화 가드', () => {
   const rules = readFileSync(resolve(process.cwd(), 'firestore.rules'), 'utf8')
   const assetsBlock = rules.slice(rules.indexOf('match /assets/{assetId}'), rules.indexOf('match /notices/'))

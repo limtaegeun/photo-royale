@@ -71,15 +71,15 @@ vi.mock('../api/rooms', async (importOriginal) => {
   }
 })
 
-// 행사장 지도(P08 §2.2) — 지도 문서 구독은 콜백을 잡아 두고 테스트가 지도를 전달한다
+// 행사장 지도(P08 §2.2) — 내려받기는 흉내 내지 않고 테스트가 지도 도착을 스토어에 직접 넣는다
 const saveVenueMapImageMock = vi.fn<(code: string, image: string) => Promise<void>>()
-let deliverVenueMap: (image: string | null) => void = () => {}
+function deliverVenueMap(image: string | null) {
+  useVenueMapStore().image = image
+}
 vi.mock('../api/venueMap', () => ({
   saveVenueMapImage: (code: string, image: string) => saveVenueMapImageMock(code, image),
-  subscribeToVenueMapImage: (_code: string, onChange: (image: string | null) => void) => {
-    deliverVenueMap = onChange
-    return () => {}
-  },
+  fetchVenueMapVersion: () => Promise.resolve(null),
+  fetchVenueMap: () => Promise.resolve(null),
 }))
 // 브라우저 인코딩(createImageBitmap·canvas)은 jsdom에 없다 — 줄인 결과만 흉내 낸다
 const encodeVenueMapImageMock = vi.fn<(file: Blob) => Promise<string | null>>()
@@ -106,6 +106,7 @@ vi.mock('vue-router', () => ({
 }))
 
 import { RoomNotFoundError } from '../api/rooms'
+import { useVenueMapStore } from '../stores/useVenueMapStore'
 import WaitingRoomPage from '../WaitingRoomPage.vue'
 import { markRoundPlayed } from '../roundPlayMarker'
 import PlayerChip from '@/shared/components/PlayerChip.vue'
@@ -234,7 +235,6 @@ describe('WaitingRoomPage', () => {
     kickParticipantMock.mockReset().mockResolvedValue(undefined)
     saveVenueMapImageMock.mockReset().mockResolvedValue(undefined)
     encodeVenueMapImageMock.mockReset()
-    deliverVenueMap = () => {}
     subscribeParticipantsMock.mockReset().mockReturnValue(unsubscribeParticipantsMock)
     subscribeRoomMock.mockReset().mockReturnValue(unsubscribeRoomMock)
     subscribeLedgersMock.mockReset().mockReturnValue(() => {})

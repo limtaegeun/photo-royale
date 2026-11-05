@@ -78,6 +78,11 @@ const noticeMarqueeStyle = computed(() => ({
 const isRecordSheetOpen = ref(false)
 /** 지도 시트(슬롯 3) 열림 — 기록과 같은 읽기 전용 시트라 라운드 상태와 무관하게 연다 */
 const isMapSheetOpen = ref(false)
+/** 지도를 열 때 새 지도가 있는지 함께 본다 — 받아 둔 지도를 먼저 보여 주고, 바뀌었으면 도착하는 대로 갈아 끼운다 */
+function openMapSheet() {
+  isMapSheetOpen.value = true
+  void venueMap.refresh()
+}
 /**
  * 행사장 지도(JPEG 데이터 URL) — null이면 지도 슬롯을 숨긴다(P08 §2.2). 참가자는 대기실에서 이미 받아 두므로
  * 콕핏 진입이 지도를 다시 내려받지 않는다(같은 방이면 track이 기존 구독을 그대로 쓴다)
@@ -435,7 +440,7 @@ onMounted(() => {
   window.addEventListener('resize', measureNoticeOverflow)
   window.addEventListener('beforeunload', warnBeforeUnload)
   start()
-  // 새로고침·재접속으로 대기실을 거치지 않고 들어온 경우에도 지도를 받는다(이미 받는 중이면 그대로 둔다)
+  // 새로고침·재접속으로 대기실을 거치지 않고 들어온 경우에도 지도를 받는다(이미 추적 중이면 그대로 둔다)
   venueMap.track(roomCode)
   unsubscribeRoom = subscribeToRoom(
     roomCode,
@@ -695,7 +700,7 @@ function subscribeToCurrentRoundLedger(roundNumber: number) {
               padding="none"
               aria-label="행사장 지도 열기"
               class="min-h-16 w-16 text-caption"
-              @click="isMapSheetOpen = true"
+              @click="openMapSheet"
             >
               지도
             </BaseButton>
