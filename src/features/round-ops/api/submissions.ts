@@ -32,6 +32,13 @@ export const SUBMISSION_PHOTO_MAX_LENGTH = 900000
 /** pending: 판정 대기 → 호스트가 approved(확정) 또는 rejected(반려)로 한 번만 전이한다 */
 export type SubmissionStatus = 'pending' | 'approved' | 'rejected'
 
+/**
+ * 자동 반려 사유 — 제출 팀이 이 킬샷보다 먼저 찍혀 탈락했다(판정 확정이 같은 배치로 반려한다). 호스트가
+ * 직접 누르는 반려는 사유를 남기지 않는다. firestore.rules의 rejected 갈래와 값까지 같아야 한다
+ * (submissions.spec이 대조 검증).
+ */
+export const SUBMISSION_REJECT_REASON_TEAM_OUT = 'team-out'
+
 /** 서버에 저장된 판정 상태. null은 문서 부재이며 캐시 상태는 사용하지 않는다. */
 export async function getSubmissionStatusFromServer(
   code: string,
@@ -85,6 +92,8 @@ export interface SubmissionRecord extends Submission {
   multiplier: KillMultiplier
   /** 판정 시각 — 대기 중이거나 serverTimestamp 반영 전이면 null */
   judgedAtMs: number | null
+  /** 자동 반려 사유 — 호스트가 직접 반려했거나 반려가 아니면 null */
+  rejectReason: typeof SUBMISSION_REJECT_REASON_TEAM_OUT | null
 }
 
 /**
@@ -150,6 +159,10 @@ function toSubmissionRecord(id: string, data: Record<string, unknown>): Submissi
     targetTeam: data.status === 'approved' && typeof data.targetTeam === 'string' ? data.targetTeam : null,
     multiplier: data.status === 'approved' && data.multiplier === 3 ? 3 : 1,
     judgedAtMs: isFirestoreTimestamp(data.judgedAt) ? data.judgedAt.toMillis() : null,
+    rejectReason:
+      data.status === 'rejected' && data.rejectReason === SUBMISSION_REJECT_REASON_TEAM_OUT
+        ? SUBMISSION_REJECT_REASON_TEAM_OUT
+        : null,
   }
 }
 
@@ -332,6 +345,8 @@ export interface ApprovalTally {
  * 있으면 라운드 원장의 집계 increment(배율 3이면 tripleKills)를 같은 writeBatch에 얹어 원자
  * 커밋한다 — 판정만 남고 집계가 빠지거나 그 반대가 되지 않는다. 원장 문서가 없는 라운드(도입 전
  * 배정)는 tally 없이 부른다: 없는 문서에 update를 얹으면 배치 전체가 실패해 판정까지 막힌다.
+ * lateSubmissionIds는 이 확정으로 탈락하는 팀이 이 킬샷보다 늦게 낸 대기 킬샷이다. 같은 배치로 반려해
+ * 탈락과 반려가 함께 커밋된다.
  */
 export async function approveSubmission(
   code: string,
@@ -339,6 +354,7 @@ export async function approveSubmission(
   target: SubmissionTarget,
   tally?: ApprovalTally,
   multiplier: KillMultiplier = 1,
+  lateSubmissionIds: readonly string[] = [],
 ): Promise<void> {
   const batch = writeBatch(db)
   batch.update(doc(db, 'rooms', code, 'submissions', submissionId), {
@@ -348,6 +364,13 @@ export async function approveSubmission(
     multiplier,
     judgedAt: serverTimestamp(),
   })
+  for (const lateSubmissionId of lateSubmissionIds) {
+    batch.update(doc(db, 'rooms', code, 'submissions', lateSubmissionId), {
+      status: 'rejected',
+      rejectReason: SUBMISSION_REJECT_REASON_TEAM_OUT,
+      judgedAt: serverTimestamp(),
+    })
+  }
   if (tally !== undefined) {
     addTallyToBatch(
       batch,

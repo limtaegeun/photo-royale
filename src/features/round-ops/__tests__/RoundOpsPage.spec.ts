@@ -1116,6 +1116,7 @@ describe('RoundOpsPage', () => {
         targetTeam: 'A',
         multiplier: 1,
         judgedAtMs: Date.now(),
+        rejectReason: null,
         ...overrides,
       }
     }

@@ -420,7 +420,8 @@ service cloud.firestore {
               request.resource.data.team));
 
         // 판정 — 호스트 본인이 pending에 한해 한 번만(단방향). approved(확정)면 잡힌 팀의
-        // 완장(targetTeam)이 필수이고, rejected(반려)는 사유 없이 상태만 남긴다.
+        // 완장(targetTeam)이 필수이고, rejected(반려)는 사유 없이 상태만 남긴다. 예외는 자동 반려다:
+        // 팀을 탈락시키는 확정이 그 팀의 늦은 대기 킬샷을 같은 배치로 반려하며 rejectReason 'team-out'을 남긴다.
         allow update: if request.auth != null
           && get(/databases/$(database)/documents/rooms/$(roomCode)).data.hostUid == request.auth.uid
           && get(/databases/$(database)/documents/rooms/$(roomCode)).data.status == 'playing'
@@ -428,12 +429,13 @@ service cloud.firestore {
           && resource.data.round
             == get(/databases/$(database)/documents/rooms/$(roomCode)).data.assignmentRound
           && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['status', 'targetTeam', 'targetParticipantUid', 'judgedAt', 'multiplier'])
+            .hasOnly(['status', 'targetTeam', 'targetParticipantUid', 'judgedAt', 'multiplier', 'rejectReason'])
           && request.resource.data.judgedAt == request.time
           && (
             // 확정에는 킬 배율(P07 M2)을 붙일 수 있다 — 1(일반) 또는 3(낙오 포착). 배율을 모르는
             // 구버전 클라이언트의 확정도 통과해야 하므로 필드 부재를 허용한다(배포 순서 자유).
             (request.resource.data.status == 'approved'
+              && !('rejectReason' in request.resource.data)
               && (!('multiplier' in request.resource.data)
                 || (request.resource.data.multiplier is int
                   && request.resource.data.multiplier in [1, 3]))
@@ -449,7 +451,9 @@ service cloud.firestore {
             || (request.resource.data.status == 'rejected'
               && !('targetTeam' in request.resource.data)
               && !('targetParticipantUid' in request.resource.data)
-              && !('multiplier' in request.resource.data))
+              && !('multiplier' in request.resource.data)
+              && (!('rejectReason' in request.resource.data)
+                || request.resource.data.rejectReason == 'team-out'))
           );
 
         // 판정 이력은 정정하지 않는다(재판정 없음). 방 삭제(P09) 때만 사진과 함께 지운다.

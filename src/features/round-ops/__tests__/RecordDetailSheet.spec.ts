@@ -34,6 +34,7 @@ function record(overrides: Partial<SubmissionRecord> = {}): SubmissionRecord {
     targetTeam: 'A',
     multiplier: 1,
     judgedAtMs: NOW,
+    rejectReason: null,
     ...overrides,
   }
 }

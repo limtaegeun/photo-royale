@@ -137,6 +137,8 @@ const approveSubmissionMock =
     ) => Promise<void>
   >()
 const rejectSubmissionMock = vi.fn<(code: string, submissionId: string) => Promise<void>>()
+/** 탈락 팀의 늦은 킬샷 — 확정 인자와 따로 받아 기존 판정 테스트의 호출 검증을 건드리지 않는다 */
+const lateSubmissionIdsMock = vi.fn<(ids: readonly string[]) => void>()
 const getSubmissionStatusFromServerMock =
   vi.fn<(code: string, submissionId: string) => Promise<'pending' | 'approved' | 'rejected' | null>>()
 
@@ -147,7 +149,11 @@ vi.mock('../api/submissions', () => ({
     target: { team: string; participantUid: string },
     tally?: ApprovalTallyArg,
     multiplier?: 1 | 3,
-  ) => approveSubmissionMock(code, submissionId, target, tally, multiplier),
+    lateSubmissionIds?: readonly string[],
+  ) => {
+    lateSubmissionIdsMock(lateSubmissionIds ?? [])
+    return approveSubmissionMock(code, submissionId, target, tally, multiplier)
+  },
   rejectSubmission: (code: string, submissionId: string) =>
     rejectSubmissionMock(code, submissionId),
   getSubmissionStatusFromServer: (code: string, submissionId: string) =>
@@ -287,6 +293,7 @@ describe('useRoundOpsStore', () => {
       approveSubmissionMock,
       rejectSubmissionMock,
     ]) {
+      lateSubmissionIdsMock.mockReset()
       mock.mockReset().mockResolvedValue(undefined)
     }
     getSubmissionStatusFromServerMock.mockReset().mockResolvedValue('pending')
@@ -1017,6 +1024,80 @@ describe('useRoundOpsStore', () => {
       expect(rejectSubmissionMock).not.toHaveBeenCalled()
     })
 
+    describe('탈락 팀의 대기 킬샷', () => {
+      /** 큐의 킬샷 한 건 — 제출 시각(초)과 완장만 다르다 */
+      function queued(id: string, team: string, createdAtMs: number | null) {
+        return { id, uid: `uid-${id}`, team, round: 2, photo: 'data:', status: 'pending' as const, createdAtMs }
+      }
+
+      function enterWith(ledgerOverrides: Partial<RoundLedger>, queue: ReturnType<typeof queued>[]) {
+        const deliver = captureSnapshotCallbacks()
+        const store = useRoundOpsStore()
+        store.enter('AB2C')
+        deliver.room(room({ round: RUNNING }))
+        deliver.ledger(ledger(ledgerOverrides))
+        deliver.submissions(queue)
+        return store
+      }
+
+      const twoTeams = { teams: { A: ['u1', 'u2'], B: ['u3', 'u4'] }, hits: {} }
+
+      it('탈락시키는 확정은 그 팀이 더 늦게 낸 킬샷만 함께 반려하고 먼저 낸 건은 남긴다', async () => {
+        const store = enterWith(twoTeams, [
+          queued('early', 'A', NOW - 2000),
+          queued('fatal', 'B', NOW - 1000),
+          queued('late', 'A', NOW),
+          queued('other', 'B', NOW + 1000),
+        ])
+
+        await store.approveSubmission('fatal', { team: 'A', participantUid: 'u1' })
+
+        expect(lateSubmissionIdsMock).toHaveBeenCalledExactlyOnceWith(['late'])
+      })
+
+      it('서버 시각이 아직 없는 킬샷은 가장 늦은 제출로 본다', async () => {
+        const store = enterWith(twoTeams, [queued('fatal', 'B', NOW), queued('late', 'A', null)])
+
+        await store.approveSubmission('fatal', { team: 'A', participantUid: 'u1' })
+
+        expect(lateSubmissionIdsMock).toHaveBeenCalledExactlyOnceWith(['late'])
+      })
+
+      it('1인 팀은 라이프가 2라 첫 피격에는 늦은 킬샷도 큐에 남는다', async () => {
+        const store = enterWith({ teams: { A: ['u1'], B: ['u3', 'u4'] }, hits: {} }, [
+          queued('first', 'B', NOW - 1000),
+          queued('late', 'A', NOW),
+        ])
+
+        await store.approveSubmission('first', { team: 'A', participantUid: 'u1' })
+
+        expect(lateSubmissionIdsMock).toHaveBeenCalledExactlyOnceWith([])
+      })
+
+      it('1인 팀도 두 번째 피격으로 탈락하면 늦은 킬샷을 반려한다', async () => {
+        const store = enterWith({ teams: { A: ['u1'], B: ['u3', 'u4'] }, hits: { A: 1 } }, [
+          queued('second', 'B', NOW - 1000),
+          queued('late', 'A', NOW),
+        ])
+
+        await store.approveSubmission('second', { team: 'A', participantUid: 'u1' })
+
+        expect(lateSubmissionIdsMock).toHaveBeenCalledExactlyOnceWith(['late'])
+      })
+
+      it('원장이 없는 라운드는 탈락이 없어 반려하지 않는다', async () => {
+        const deliver = captureSnapshotCallbacks()
+        const store = useRoundOpsStore()
+        store.enter('AB2C')
+        deliver.room(room({ round: RUNNING }))
+        deliver.submissions([queued('fatal', 'B', NOW - 1000), queued('late', 'A', NOW)])
+
+        await store.approveSubmission('fatal', { team: 'A', participantUid: 'u1' })
+
+        expect(lateSubmissionIdsMock).toHaveBeenCalledExactlyOnceWith([])
+      })
+    })
+
     it('실패하면 false와 안내를 남긴다 — 선판정 충돌(403)이 대표 사례', async () => {
       const deliver = captureSnapshotCallbacks()
       const store = useRoundOpsStore()
@@ -1145,6 +1226,7 @@ describe('useRoundOpsStore', () => {
         targetTeam: 'A',
         multiplier: 1,
         judgedAtMs: NOW,
+        rejectReason: null,
         ...overrides,
       }
     }
