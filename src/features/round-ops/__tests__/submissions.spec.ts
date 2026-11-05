@@ -76,6 +76,7 @@ import {
   RECORD_LOG_LIMIT,
   SUBMISSION_PHOTO_MAX_LENGTH,
   SUBMISSION_PHOTO_PREFIX,
+  SUBMISSION_REJECT_REASON_TEAM_OUT,
   approveSubmission,
   getSubmissionStatusFromServer,
   newSubmissionId,
@@ -299,6 +300,7 @@ describe('subscribeToSubmissionLog', () => {
         // 배율 필드가 없는 확정(배율 도입 전 판정)은 일반 킬로 읽는다
         multiplier: 1,
         judgedAtMs: 2_000,
+        rejectReason: null,
       },
     ])
     expect(result).toBe(unsubscribe)
@@ -408,9 +410,34 @@ describe('subscribeToMySubmissions', () => {
         targetTeam: 'A',
         multiplier: 1,
         judgedAtMs: 2_000,
+        rejectReason: null,
       },
     ])
     expect(result).toBe(unsubscribe)
+  })
+
+  it('자동 반려 사유를 읽고, 모르는 값이나 반려가 아닌 문서의 사유는 무시한다', () => {
+    onSnapshotMock.mockReturnValue(vi.fn<() => void>())
+    const onChange = vi.fn<(records: Array<{ id: string; rejectReason: string | null }>) => void>()
+
+    subscribeToMySubmissions('AB2C', 'player1', 2, onChange)
+    const onNext = onSnapshotMock.mock.calls[0]![1]
+    const createdAt = { toMillis: () => 1_000 }
+    onNext({
+      docs: [
+        pendingDoc('auto', createdAt, { status: 'rejected', rejectReason: 'team-out' }),
+        pendingDoc('manual', createdAt, { status: 'rejected' }),
+        pendingDoc('unknown', createdAt, { status: 'rejected', rejectReason: 'other' }),
+        pendingDoc('approved', createdAt, { status: 'approved', targetTeam: 'A', rejectReason: 'team-out' }),
+      ],
+    })
+
+    expect(onChange.mock.calls[0]![0].map((record) => [record.id, record.rejectReason])).toEqual([
+      ['auto', 'team-out'],
+      ['manual', null],
+      ['unknown', null],
+      ['approved', null],
+    ])
   })
 
   it('오래된 순으로 정렬하고 서버 시각 반영 전(null)은 맨 뒤에 둔다', () => {
@@ -480,6 +507,19 @@ describe('판정 쓰기', () => {
         judgedAt: 'server-timestamp',
       },
     )
+    expect(batchCommitMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('탈락 팀의 늦은 킬샷은 확정과 같은 배치로 사유를 남겨 반려한다', async () => {
+    await approveSubmission('AB2C', 's1', { team: 'A', participantUid: 'u1' }, undefined, 1, ['s2', 's3'])
+
+    expect(batchUpdateMock).toHaveBeenCalledTimes(3)
+    for (const id of ['s2', 's3']) {
+      expect(batchUpdateMock).toHaveBeenCalledWith(
+        { path: `rooms/AB2C/submissions/${id}` },
+        { status: 'rejected', rejectReason: 'team-out', judgedAt: 'server-timestamp' },
+      )
+    }
     expect(batchCommitMock).toHaveBeenCalledTimes(1)
   })
 
@@ -639,11 +679,18 @@ describe('firestore.rules 킬샷 규칙 동기화 가드', () => {
     expect(submissionsBlock[0]).toContain('resource.data.round')
     expect(submissionsBlock[0]).toContain('request.resource.data.targetTeam != resource.data.team')
     expect(submissionsBlock[0]).toContain(
-      "['status', 'targetTeam', 'targetParticipantUid', 'judgedAt', 'multiplier']",
+      "['status', 'targetTeam', 'targetParticipantUid', 'judgedAt', 'multiplier', 'rejectReason']",
+    )
+    // 자동 반려 사유는 정해진 값만, 확정에는 사유가 없어야 한다
+    expect(submissionsBlock[0]).toContain(
+      `request.resource.data.rejectReason == '${SUBMISSION_REJECT_REASON_TEAM_OUT}'`,
+    )
+    expect(submissionsBlock[0]).toMatch(
+      /status == 'approved'\s*&& !\('rejectReason' in request\.resource\.data\)/,
     )
     // 배율은 1·3만, 반려에는 배율이 없어야 한다(P07 M2)
     expect(submissionsBlock[0]).toContain('request.resource.data.multiplier in [1, 3]')
-    expect(submissionsBlock[0]).toContain("!('multiplier' in request.resource.data))")
+    expect(submissionsBlock[0]).toContain("!('multiplier' in request.resource.data)\n")
     // 킬샷은 방 삭제(P09) 때만 사진과 함께 지운다
     expect(submissionsBlock[0]).toContain('allow delete: if isDeletingRoomHost(roomCode);')
   })

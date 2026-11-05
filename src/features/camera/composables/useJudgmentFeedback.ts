@@ -15,6 +15,8 @@ export interface UseJudgmentFeedbackOptions {
   uid: Ref<string | null>
   /** 이번 차수(배정 라운드) — null이면 아직 배정 전이라 구독하지 않는다 */
   round: Ref<number | null>
+  /** 내 팀이 탈락했는가 — 탈락 팀은 다시 제출할 수 없으므로 반려 안내에서 재제출 문구를 뺀다 */
+  isMyTeamOut: Ref<boolean>
   toast: (toast: JudgmentFeedbackToast) => void
 }
 
@@ -80,10 +82,14 @@ export function useJudgmentFeedback(options: UseJudgmentFeedbackOptions): UseJud
               description: record.targetTeam ? `팀 ${record.targetTeam} 킬로 기록됐어요.` : undefined,
               tone: 'success',
             })
+          } else if (record.rejectReason !== null) {
+            // 자동 반려는 탈락과 같은 배치로 커밋돼 원장 스냅샷보다 먼저 올 수 있다. 그래서 내 팀 상태가
+            // 아니라 문서에 남은 사유로 고른다
+            options.toast({ title: '우리 팀이 먼저 잡혀서 반려됐어요.', tone: 'neutral' })
           } else if (record.status === 'rejected') {
             options.toast({
               title: '킬샷이 반려됐어요.',
-              description: '다시 찍어 제출할 수 있어요.',
+              description: options.isMyTeamOut.value ? undefined : '다시 찍어 제출할 수 있어요.',
               tone: 'neutral',
             })
           }

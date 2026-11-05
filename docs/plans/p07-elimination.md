@@ -45,4 +45,5 @@
 ## 5. 남긴 것
 
 - ~~아웃 팀 제출의 서버 차단(rules)~~ — **완료(2026-09-19, `fix/rules-block-out-team-submission`, PR #52)**. submissions create가 이번 라운드 원장의 hits ≥ 라이프인 제출 팀을 거부한다(`isTeamOutInLedger`, 라이프 규칙은 `livesOf`와 동일). 원장 없는 라운드는 통과. rules 배포 완료.
+- 찍힌 뒤 판정 전에 낸 킬샷은 제출 시점에 막을 수 없어서, 탈락시키는 확정이 같은 배치로 반려한다 — `p12-out-team-late-killshots.md`.
 - ~~왕 아웃 −20~~(#43) · ~~스태프전 수동 아웃(호스트 hits 쓰기)~~(#45) — 완료. 꼬리잡기 편입(팀 소속 변경)만 남았다 — 원장 스키마·rules 확장이 필요해 P07 §11 #6 후속(rules 선배포 뒤).

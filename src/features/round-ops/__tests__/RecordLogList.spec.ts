@@ -35,6 +35,7 @@ function record(id: string, overrides: Partial<SubmissionRecord> = {}): Submissi
     targetTeam: null,
     multiplier: 1,
     judgedAtMs: null,
+    rejectReason: null,
     ...overrides,
   }
 }

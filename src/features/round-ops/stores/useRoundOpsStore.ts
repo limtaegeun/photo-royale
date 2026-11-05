@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { useAuthStore } from '@/features/auth'
-import { GAME_MODES, absorbKillEffect } from '@/features/game-mode'
+import { GAME_MODES, absorbKillEffect, isTeamOut } from '@/features/game-mode'
 import {
   endGame,
   markRoundPlayed,
@@ -406,6 +406,24 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
   }
 
   /**
+   * 이 확정으로 피격 팀이 탈락하면, 그 팀의 대기 킬샷 중 확정하는 킬샷보다 늦게 제출된 건의 id를 돌려준다.
+   * 탈락은 판정 때 정해져서 찍힌 팀도 판정 전까지는 제출할 수 있다. 찍힌 뒤에 낸 샷은 킬로 인정하지 않으므로
+   * 판정 탭에 남기지 않고 함께 반려한다. 먼저 낸 샷은 호스트의 판정 순서로 사라지지 않게 큐에 그대로 둔다.
+   * 서버 시각 반영 전(null)은 큐 정렬과 같이 가장 늦은 제출로 본다.
+   */
+  function lateSubmissionIdsOnOut(approved: Submission, targetTeam: string, ledger: RoundLedger): string[] {
+    const hitsAfterApproval = { ...ledger.hits, [targetTeam]: (ledger.hits?.[targetTeam] ?? 0) + 1 }
+    if (!isTeamOut({ teams: ledger.teams, hits: hitsAfterApproval }, targetTeam)) return []
+    const approvedAtMs = approved.createdAtMs ?? Number.MAX_SAFE_INTEGER
+    return pendingSubmissions.value
+      .filter(
+        (entry) =>
+          entry.team === targetTeam && (entry.createdAtMs ?? Number.MAX_SAFE_INTEGER) > approvedAtMs,
+      )
+      .map((entry) => entry.id)
+  }
+
+  /**
    * 판정 확정 — 사진 속 완장의 팀을 기록한다. rules가 pending → approved 단방향만 허용하므로
    * 다른 기기에서 먼저 판정된 문서면 실패한다(화면은 에러 토스트 후 스냅샷으로 수렴).
    */
@@ -440,9 +458,14 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
               : {}),
           }
         : undefined
+    const lateSubmissionIds =
+      tally !== undefined && ledger !== null && submission !== undefined
+        ? lateSubmissionIdsOnOut(submission, target.team, ledger)
+        : []
     return runAction(
       'judge',
-      () => requestApproveSubmission(roomCode.value!, submissionId, target, tally, multiplier),
+      () =>
+        requestApproveSubmission(roomCode.value!, submissionId, target, tally, multiplier, lateSubmissionIds),
       false,
     )
   }
