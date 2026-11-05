@@ -16,12 +16,15 @@ export interface AppHeaderBackAction {
  * 이탈 링크도 같은 방식이다 — meta로 선언한 링크를 상태에 따라 setBackLinkHidden으로 잠시 숨긴다.
  * 라우트가 아니라 페이지 안의 하위 화면(예: 대기실 위에 열린 배정 보드)에서 빠져나와야 하면
  * setBackAction으로 같은 자리에 버튼을 둔다 — meta 이탈 링크보다 우선한다.
+ * 라우트는 그대로인데 한 탭에서만 세로 공간이 모자란 화면(라운드 운영의 판정 탭)은 setHeaderHidden으로
+ * 헤더를 통째로 뺀다 — 이때 페이지가 h1과 상단 안전 영역 여백을 대신 맡아야 한다.
  * 화면을 벗어날 때는 clearHeader로 비워 meta 기본값으로 되돌린다.
  */
 const title = ref<string>()
 const description = ref<string>()
 const backLinkHidden = ref(false)
 const backAction = ref<AppHeaderBackAction>()
+const hidden = ref(false)
 
 export function useAppHeader() {
   function setHeader(nextTitle: string, nextDescription?: string) {
@@ -34,20 +37,26 @@ export function useAppHeader() {
   function setBackAction(nextBackAction: AppHeaderBackAction | undefined) {
     backAction.value = nextBackAction
   }
+  function setHeaderHidden(nextHidden: boolean) {
+    hidden.value = nextHidden
+  }
   function clearHeader() {
     title.value = undefined
     description.value = undefined
     backLinkHidden.value = false
     backAction.value = undefined
+    hidden.value = false
   }
   return {
     title,
     description,
     backLinkHidden,
     backAction,
+    hidden,
     setHeader,
     setBackLinkHidden,
     setBackAction,
+    setHeaderHidden,
     clearHeader,
   }
 }

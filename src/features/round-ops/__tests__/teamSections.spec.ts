@@ -78,4 +78,12 @@ describe('groupTeamSections', () => {
     expect(sections).toHaveLength(1)
     expect(sections[0]!.group).toBe('blue')
   })
+
+  it('타일이 줄마다 쌓을 수 있게 팀원 이름을 배열로도 준다', () => {
+    const sections = groupTeamSections([participant('u1', 'A'), participant('u2', 'A')], 2)
+
+    const team = sections[0]!.teams[0]!
+    expect(team.members).toEqual(['이름-u1', '이름-u2'])
+    expect(team.memberNames).toBe('이름-u1 · 이름-u2')
+  })
 })

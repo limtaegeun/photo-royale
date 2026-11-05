@@ -1,7 +1,7 @@
 // 게임 모드 기능 public API — 모드 레지스트리(정의·규칙서 데이터)와 규칙서 렌더러만 노출한다.
 // 데이터 계층(waiting-room rooms)·배정 UI(team-assignment)가 함께 소비한다.
 export { DEFAULT_GAME_MODE, GAME_MODE_IDS, GAME_MODES, isGameModeId } from './registry'
-// 완장 → 그룹 색 규칙 — 배정 보드·판정 시트·모드 원점수 규칙이 함께 쓴다
+// 완장 → 그룹 색 규칙 — 배정 보드·판정 카드·모드 원점수 규칙이 함께 쓴다
 export {
   GROUP_LABELS,
   SPECIAL_ARMBAND,

@@ -3,16 +3,18 @@ import { displayGroup, groupTextClass } from '@/features/team-assignment'
 import { isAssignedInRound, type Participant } from '@/features/waiting-room'
 
 /**
- * 판정 시트(JudgeSheet)·스태프 아웃 시트(StaffOutSheet)가 공유하는 "이번 라운드 팀을 그룹 색
+ * 판정 카드(JudgeCard)·스태프 아웃 시트(StaffOutSheet)가 공유하는 "이번 라운드 팀을 그룹 색
  * 순서로 섹션화한 목록" 계산 — 두 시트가 같은 그룹 섹션 구조를 문자 그대로 중복 구현하고
  * 있었다. 선택 가능 여부·배지 같은 시트별 규칙은 각 호출부가 이 결과를 감싸서 얹는다
- * (TeamPickList의 TeamPickOption/TeamPickSection 참고).
+ * (TeamPickList의 TeamPickOption/TeamPickSection, JudgeCard의 타일 참고).
  */
 
 export interface TeamSectionTeam {
   armband: string
   /** 팀원 이름 나열 — 완장만으로는 현장에서 누구인지 떠올리기 어렵다 */
   memberNames: string
+  /** 같은 이름의 배열 — 판정 카드의 타일은 이름을 줄마다 쌓는다 */
+  members: string[]
   /** Rules가 이 참가자 문서로 현재 라운드의 실제 팀인지 검증한다 */
   participantUid: string
 }
@@ -25,7 +27,7 @@ export interface TeamSection {
   teams: TeamSectionTeam[]
 }
 
-/** 이번 라운드 배정 팀을 그룹 색 순서(파랑→주황→초록→빨강)로 섹션화한다 — 판정 시트·스태프 아웃 시트가 같은 목록을 쓴다 */
+/** 이번 라운드 배정 팀을 그룹 색 순서(파랑→주황→초록→빨강)로 섹션화한다 — 판정 카드·스태프 아웃 시트가 같은 목록을 쓴다 */
 export function groupTeamSections(
   participants: Participant[],
   assignmentRound: number,
@@ -50,6 +52,7 @@ export function groupTeamSections(
       .map(([armband, members]) => ({
         armband,
         memberNames: members.names.join(' · '),
+        members: members.names,
         participantUid: members.participantUid,
       }))
     const firstTeam = teams[0]

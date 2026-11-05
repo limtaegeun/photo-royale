@@ -4,7 +4,7 @@ import { groupSolidBgClass } from '@/features/team-assignment'
 import type { TeamPickOption, TeamPickSection } from '../teamSections'
 
 /**
- * 판정 시트(JudgeSheet)·스태프 아웃 시트(StaffOutSheet)가 공유하는 팀 선택 목록 — 그룹 섹션
+ * 스태프 아웃 시트(StaffOutSheet)의 팀 선택 목록 — 그룹 섹션
  * 마크업만 이 컴포넌트가 갖고, 어떤 팀을 왜 선택할 수 없는지(배지·캡션·disabled)는 호출부가
  * 옵션에 실어 보낸다.
  */

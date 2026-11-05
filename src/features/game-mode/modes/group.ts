@@ -15,7 +15,7 @@ export const groupMode: GameModeDefinition = {
   ],
   // 그룹전 원점수(P07 §4.3) — 내 팀 킬 10 · 같은 그룹 다른 팀의 킬 5, 팀원 각자에게
   scoring: groupScoring,
-  // 동맹은 잡을 수 없다 — 판정 시트에서 제출 팀과 같은 그룹을 비활성화한다
+  // 동맹은 잡을 수 없다 — 판정 카드에서 제출 팀과 같은 그룹을 비활성화한다
   targeting: ALLY_GROUP_TARGETING,
   // 규칙서에 X 규칙이 없고, 4색이 모두 인쇄된 X 완장은 "같은 색은 동맹"으로 편을 가를 수 없다
   xModule: 'off',

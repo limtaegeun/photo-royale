@@ -8,7 +8,7 @@ import type { ModeScoringInput, ModeScoringOutput } from './types'
 
 /** 킬 1건의 원점수 — 기획서의 3배(+30)·2배(+20)에서 역산한 확정값 */
 export const KILL_POINTS = 10
-/** 낙오(팀원과 2m 이탈) 포착 킬 — 판정 시트 토글로 호스트가 정한다(M2) */
+/** 낙오(팀원과 2m 이탈) 포착 킬 — 판정 카드 토글로 호스트가 정한다(M2) */
 export const TRIPLE_KILL_POINTS = 30
 
 /** 공격 완장 1개의 킬 원점수 — 일반 킬 10 + 낙오 3배 킬 30 */

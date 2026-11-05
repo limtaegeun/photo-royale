@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 import BaseBadge from '@/shared/components/BaseBadge.vue'
@@ -10,10 +10,10 @@ import BaseSegmented from '@/shared/components/BaseSegmented.vue'
 import { GAME_MODES } from '@/features/game-mode'
 import { aliveTeamCount } from '@/features/round-ledger'
 import { normalizeRoomCode } from '@/features/waiting-room'
+import { useAppHeader } from '@/shared/composables/useAppHeader'
 import { useToast } from '@/shared/composables/useToast'
-import type { KillMultiplier, Submission, SubmissionRecord, SubmissionTarget } from './api/submissions'
+import type { KillMultiplier, SubmissionRecord, SubmissionTarget } from './api/submissions'
 import JudgeQueueList from './components/JudgeQueueList.vue'
-import JudgeSheet from './components/JudgeSheet.vue'
 import NoticeCard from './components/NoticeCard.vue'
 import NoticeSheet from './components/NoticeSheet.vue'
 import RecordDetailSheet from './components/RecordDetailSheet.vue'
@@ -23,6 +23,7 @@ import RoundSettlementCard from './components/RoundSettlementCard.vue'
 import StaffOutCard from './components/StaffOutCard.vue'
 import StaffOutSheet from './components/StaffOutSheet.vue'
 import TimeAdjustCard from './components/TimeAdjustCard.vue'
+import { useKillshotJudging } from './composables/useKillshotJudging'
 import { useRoundTimer } from './composables/useRoundTimer'
 import { ROUND_STATE_LABEL, ROUND_STATE_TIME_CLASS, ROUND_STATE_TONE } from './roundStateStyles'
 import { useRoundOpsStore } from './stores/useRoundOpsStore'
@@ -70,7 +71,6 @@ const {
 const routeRoomCode = computed(() => normalizeRoomCode(String(route.params.roomCode)))
 
 const { nowMs, formatted, displayState } = useRoundTimer(round)
-const JUDGE_ERROR_MESSAGE = '판정을 처리하지 못했어요. 다시 시도해 주세요.'
 const END_GAME_ERROR_MESSAGE = '게임을 종료하지 못했어요. 다시 시도해 주세요.'
 const END_ROUND_ERROR_MESSAGE = '라운드를 종료하지 못했어요. 다시 시도해 주세요.'
 
@@ -110,11 +110,11 @@ const isFinishRoundDialogOpen = ref(false)
  * 판단한 근거와 실제로 확인 중인 대상이 어긋난다.
  */
 const finishDialogInfo = ref<{ count: number; uncertain: boolean; stale: boolean } | null>(null)
-const isJudgeSheetOpen = ref(false)
-/** 시트에서 판정 중인 킬샷 — 큐에서 고른 스냅샷을 들고 있는다(닫힌 뒤에도 애니메이션 동안 유지) */
-const judgingSubmission = ref<Submission | null>(null)
+const judging = useKillshotJudging()
+const queueListRef = useTemplateRef('queueList')
+const statusBarRef = useTemplateRef('statusBar')
 const isRecordSheetOpen = ref(false)
-/** 상세 시트에서 보는 기록 — 판정 시트와 같은 이유로 스냅샷을 들고 있는다 */
+/** 상세 시트에서 보는 기록 — 닫힌 뒤에도 애니메이션 동안 보이도록 스냅샷을 들고 있는다 */
 const viewingRecord = ref<SubmissionRecord | null>(null)
 /** 기록 필터 — 탭을 오가며 목록이 언마운트돼도 좁혀 둔 조건을 잃지 않게 페이지가 들고 있는다 */
 const recordStatusFilter = ref<string>('all')
@@ -135,7 +135,7 @@ const canControlTimer = computed(
  */
 const isRoundEnded = computed(() => displayState.value === 'ended')
 
-/** 이번 모드의 판정 대상 제한(그룹전의 동맹 제외 등) — 모드 정의가 소유하고 시트는 결과만 받는다 */
+/** 이번 모드의 판정 대상 제한(그룹전의 동맹 제외 등) — 모드 정의가 소유하고 카드는 결과만 받는다 */
 const targetRule = computed(() => (room.value ? (GAME_MODES[room.value.gameMode].targeting ?? null) : null))
 
 /**
@@ -337,96 +337,72 @@ async function markStaffOut(armband: string) {
   toast({ title: `팀 ${armband} 아웃으로 기록했어요.`, tone: 'success' })
 }
 
-function openJudgeSheet(submission: Submission) {
-  if (pendingAction.value === 'judge') return
-  judgingSubmission.value = submission
-  isJudgeSheetOpen.value = true
+/** 판정 탭으로 옮겨 그 킬샷의 카드를 화면에 올린다 */
+async function goToJudgeCard(submissionId: string) {
+  activeTab.value = 'judge'
+  await nextTick()
+  queueListRef.value?.cardElement(submissionId)?.scrollIntoView({ block: 'start' })
 }
 
 /**
- * 기록 행 선택 — 이번 라운드의 대기 건이면 기록 탭에서도 바로 판정할 수 있게 판정 시트를
- * 연다(판정 큐와 같은 문서라 기존 판정 플로우를 그대로 탄다). 그 외(판정 완료, 판정 없이
- * 라운드가 지난 대기 건)는 사진을 크게 확인하는 읽기 전용 상세 시트로 보낸다 —
- * rules가 지난 라운드 판정을 막으므로 판정 시트를 열어 줘도 확정이 실패한다.
+ * 기록 행 선택 — 이번 라운드의 대기 건이면 판정 탭의 그 카드로 보낸다(판정 큐와 같은 문서다).
+ * 그 외(판정 완료, 판정 없이 라운드가 지난 대기 건)는 사진을 크게 확인하는 읽기 전용 상세 시트로
+ * 보낸다 — rules가 지난 라운드 판정을 막으므로 판정 카드로 보내도 확정이 실패한다.
  */
 function openRecord(record: SubmissionRecord) {
   if (record.status === 'pending' && record.round === assignmentRound.value && isPlaying.value) {
-    openJudgeSheet(record)
+    void goToJudgeCard(record.id)
     return
   }
   viewingRecord.value = record
   isRecordSheetOpen.value = true
 }
 
-/** 실패 원인을 큐의 로컬 상태로 추정하지 않고 서버 문서의 확정 상태로 판별한다. */
-async function handleJudgeFailure(submissionId: string) {
-  let status = null
-  try {
-    status = await store.getSubmissionStatus(submissionId)
-  } catch {
-    // 서버 확인까지 실패하면 선판정으로 단정하지 않고 재시도 가능한 일반 오류로 남긴다.
-  }
-  if (!isJudgeSheetOpen.value || judgingSubmission.value?.id !== submissionId) return
-  if (status === 'approved' || status === 'rejected') {
-    isJudgeSheetOpen.value = false
-    toast({ title: '이미 판정된 킬샷이에요.', tone: 'neutral' })
-    return
-  }
-  toast({ title: JUDGE_ERROR_MESSAGE, tone: 'danger' })
+/**
+ * 판정한 카드가 빠지면 다음 카드가 그 자리로 올라온다. 카드가 한 화면보다 큰 기기에서는 타일을 보려고
+ * 내린 스크롤이 남아 다음 카드의 프로필이 상태 줄 위로 가려지므로, 그때만 카드 머리까지 되돌린다.
+ * 누른 버튼이 카드와 함께 사라지면 포커스가 페이지 밖으로 빠지므로 다음 카드로 옮긴다 — 키보드·낭독기
+ * 사용자가 목록 처음부터 다시 찾지 않게 한다.
+ */
+async function revealCardAt(index: number) {
+  await nextTick()
+  const card = queueListRef.value?.cardElementAt(index)
+  if (!card) return
+  if (document.activeElement === document.body) card.focus({ preventScroll: true })
+  const statusBarBottom = statusBarRef.value?.getBoundingClientRect().bottom ?? 0
+  if (card.getBoundingClientRect().top < statusBarBottom) card.scrollIntoView({ block: 'start' })
 }
 
-async function approveKillshot(target: SubmissionTarget, multiplier: KillMultiplier) {
-  const current = judgingSubmission.value
-  if (current === null) return
-  const approved = await store.approveSubmission(current.id, target, multiplier)
-  if (judgingSubmission.value?.id !== current.id) return
-  if (!approved) {
-    await handleJudgeFailure(current.id)
-    return
-  }
-  isJudgeSheetOpen.value = false
-  toast({
-    title:
-      multiplier === 3
-        ? `팀 ${target.team} 낙오 포착 킬샷(3배)으로 판정했어요.`
-        : `팀 ${target.team} 킬샷으로 판정했어요.`,
-    tone: 'success',
-  })
+function queueIndexOf(submissionId: string) {
+  return pendingSubmissions.value.findIndex((submission) => submission.id === submissionId)
 }
 
-async function rejectKillshot() {
-  const current = judgingSubmission.value
-  if (current === null) return
-  const rejected = await store.rejectSubmission(current.id)
-  if (judgingSubmission.value?.id !== current.id) return
-  if (!rejected) {
-    await handleJudgeFailure(current.id)
-    return
-  }
-  isJudgeSheetOpen.value = false
-  toast({ title: '킬샷을 반려했어요.', tone: 'neutral' })
+async function approveKillshot(
+  submissionId: string,
+  target: SubmissionTarget,
+  multiplier: KillMultiplier,
+) {
+  const index = queueIndexOf(submissionId)
+  if (await judging.approve(submissionId, target, multiplier)) await revealCardAt(index)
 }
 
-// 같은 계정 다른 기기에서 먼저 판정된 킬샷이 시트에 남아 이중 판정을 시도하지 않게 닫는다.
-// 내 판정 성공 직후의 스냅샷은 시트가 이미 닫혀 있어(open 가드) 토스트가 중복되지 않는다.
-watch(pendingSubmissions, (submissions) => {
-  const current = judgingSubmission.value
-  if (!isJudgeSheetOpen.value || current === null || pendingAction.value === 'judge') return
-  if (submissions.some((submission) => submission.id === current.id)) return
-  // Listen 자체가 종료되며 store가 stale 큐를 비운 경우는 다른 기기의 선판정이 아니다.
-  // 오류 카드를 가리는 stale 시트만 닫고, 원인을 오인시키는 "이미 판정" 안내는 내보내지 않는다.
-  if (submissionListenError.value !== null) {
-    isJudgeSheetOpen.value = false
-    return
-  }
-  isJudgeSheetOpen.value = false
-  toast({ title: '이미 판정된 킬샷이에요.', tone: 'neutral' })
-})
+async function rejectKillshot(submissionId: string) {
+  const index = queueIndexOf(submissionId)
+  if (await judging.reject(submissionId)) await revealCardAt(index)
+}
+
+/**
+ * 판정 탭은 카드 한 장이 한 화면에 들어와야 사진과 타일을 같이 보고 판정할 수 있어서 공용 헤더를 뺀다.
+ * 설명 문구가 운영 탭 내용이라 이 탭에서 잃는 정보는 없고, 프로필 링크는 운영 탭에 남는다.
+ */
+const { setHeaderHidden } = useAppHeader()
+watch(activeTab, (tab) => setHeaderHidden(tab === 'judge'), { immediate: true })
 
 onMounted(() => {
   store.enter(routeRoomCode.value)
 })
 onUnmounted(() => {
+  setHeaderHidden(false)
   store.leave()
 })
 </script>
@@ -435,13 +411,22 @@ onUnmounted(() => {
   <!-- 타이틀·설명 헤더는 앱 셸 공용 헤더(AppHeader)가 route meta로 담당한다 -->
   <!-- 하단 safe-area는 화면이 아니라 아래의 sticky 탭 바가 직접 갖는다 — sticky는 뷰포트 하단에
        붙으므로 부모 패딩으로는 홈 인디케이터를 피할 수 없다 -->
-  <section class="flex flex-1 flex-col bg-canvas px-6 pt-3">
+  <!-- --judge-action-bottom: 판정 카드의 액션 바가 멈출 자리 = 하단 탭 바 높이(위 여백 24 + 세그먼트 50 + 아래 여백 16) -->
+  <section
+    class="flex flex-1 flex-col bg-canvas px-6
+           [--judge-action-bottom:calc(var(--pr-inset-bottom-safe)+5.625rem)]"
+  >
+    <!-- 판정 탭은 공용 헤더를 뺀다 — 페이지 제목(h1)은 낭독기를 위해 남긴다 -->
+    <h1 v-if="activeTab === 'judge'" class="sr-only">라운드 운영</h1>
     <!-- 상태 줄 — 방 코드·라운드 상태·남은 시간은 어느 탭에 있든 보여야 한다. 운영 탭 안에만
          두면 판정·기록 탭을 보는 동안 시간이 다 가도 화면에 아무 변화가 없어, 진행자가 라운드가
          끝난 줄 모르고 계속 판정한다(QA A-3). 목록이 길어져도 가려지지 않게 상단에 붙인다 -->
+    <!-- 위 여백을 줄 안에 둬서 스크롤해도 화면 끝에 붙지 않는다. 판정 탭은 공용 헤더가 없어 안전 영역도 맡는다 -->
     <div
+      ref="statusBar"
       class="sticky top-0 z-(--pr-z-hud) -mx-6 flex items-center justify-between gap-3
              bg-canvas px-6 pb-3"
+      :class="activeTab === 'judge' ? 'pt-[calc(var(--pr-inset-top-safe)+0.75rem)]' : 'pt-3'"
     >
       <!-- 방 코드는 받아 적는 값이라 mono + 자간으로 오독을 줄인다 -->
       <p class="text-label text-content-secondary">
@@ -630,10 +615,21 @@ onUnmounted(() => {
             서버와 연결이 불안정해요. 목록이 최신이 아닐 수 있어요.
           </p>
           <JudgeQueueList
+            ref="queueList"
             :submissions="pendingSubmissions"
             :participants="participants"
+            :assignment-round="assignmentRound"
             :now-ms="nowMs"
-            @select="openJudgeSheet"
+            :draft-of="judging.draftOf"
+            :active-judgement="judging.activeJudgement.value"
+            :locked="judging.isLocked.value"
+            :allow-triple-kill="room?.gameMode === 'normal'"
+            :out-teams="outTeams"
+            :x-teams="currentLedger?.xTeams ?? []"
+            :target-rule="targetRule"
+            @update-draft="judging.updateDraft"
+            @approve="approveKillshot"
+            @reject="rejectKillshot"
           />
         </div>
 
@@ -706,21 +702,6 @@ onUnmounted(() => {
       v-model:open="isNoticeSheetOpen"
       :sending="isSendingNotice"
       @send="sendNotice"
-    />
-
-    <JudgeSheet
-      v-model:open="isJudgeSheetOpen"
-      :submission="judgingSubmission"
-      :participants="participants"
-      :assignment-round="assignmentRound"
-      :judging="pendingAction === 'judge'"
-      :now-ms="nowMs"
-      :allow-triple-kill="room?.gameMode === 'normal'"
-      :out-teams="outTeams"
-      :x-teams="currentLedger?.xTeams ?? []"
-      :target-rule="targetRule"
-      @approve="approveKillshot"
-      @reject="rejectKillshot"
     />
 
     <RecordDetailSheet

@@ -10,7 +10,7 @@ import { GAME_MODES, isTeamOut } from '@/features/game-mode'
 import type { RoundLedger, RoundResult } from './types'
 
 /**
- * 탈락 모델(P07 M3) — 원장 문서 기준 팀별 아웃 여부. 콕핏·판정 시트·운영 화면이 같은 함수를 쓴다.
+ * 탈락 모델(P07 M3) — 원장 문서 기준 팀별 아웃 여부. 콕핏·판정 카드·운영 화면이 같은 함수를 쓴다.
  * 원장이 없는 라운드는 호출부가 null을 들고 있으므로 여기 오지 않는다.
  */
 export function teamOutStatus(ledger: RoundLedger): Record<string, boolean> {
