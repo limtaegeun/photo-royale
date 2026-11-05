@@ -205,7 +205,7 @@ const { mySubmissions } = useJudgmentFeedback({
 
 /**
  * 콕핏이 스스로 내보내는 이동인가 — 아래 뒤로가기 가드가 이 이동은 막지 않게 표시한다.
- * 콕핏을 떠나는 코드 경로(게임 종료·방 사라짐·구독 실패·미배정·대기실 출구)는 전부 여기로 지난다.
+ * 콕핏을 떠나는 코드 경로(게임 종료·방 사라짐·구독 실패·미배정)는 전부 여기로 지난다.
  */
 let isCockpitExit = false
 function exitCockpit(to: RouteLocationRaw) {
@@ -220,7 +220,7 @@ function exitCockpit(to: RouteLocationRaw) {
  *
  * - 확인 화면에 사진이 있거나 제출 중이면 떠나지 않는다 — 현장에서 같은 장면을 다시 만들 수 없다
  * - 뛸 시간이 남은 라운드면 떠나지 않는다 — 대기실로 보내도 곧바로 콕핏으로 되돌아온다
- * - 라운드가 끝났으면(0:00) 첫 화면 대신 대기실로 보낸다 — '대기실로 돌아가기'와 같은 목적지다
+ * - 라운드가 끝났으면(0:00) 첫 화면 대신 대기실로 보낸다 — 앱 안에 출구 버튼이 없어(P15) 스스로 나가는 유일한 길이다
  * - 세션 상실로 가는 로그인 화면, 게임이 끝난 뒤의 이동은 그대로 둔다
  * - 기록·지도 시트가 열려 있으면 그 시트만 닫는다
  */
@@ -245,16 +245,6 @@ function leaveCockpit(nextRoom: RoomInfo | null) {
   if (nextRoom.status !== 'playing' || nextRoom.round === null) {
     exitCockpit({ name: 'waiting-room', params: { roomCode } })
   }
-}
-
-/**
- * 대기실로 나가기 — 타이머가 0에 닿았지만 호스트가 아직 게임을 종료하지 않은 구간의 출구다.
- * 대기실은 '남은 시간이 있는 라운드'에만 콕핏으로 되돌려 보내므로(isRoundLive) 나가면 그대로
- * 머물고, 진행자가 시간을 더하거나 다음 라운드를 시작하면 그 스냅샷으로 자동 재진입한다.
- * replace라 뒤로가기로 죽은 콕핏에 다시 들어오지 않는다(leaveCockpit과 같은 규칙).
- */
-function returnToWaitingRoom() {
-  exitCockpit({ name: 'waiting-room', params: { roomCode } })
 }
 
 function handleSubscriptionError() {
@@ -688,22 +678,13 @@ function subscribeToCurrentRoundLedger(roundNumber: number) {
           촬영에 실패했습니다. 다시 시도해주세요
         </p>
         <!--
-          라운드가 끝나면 컨트롤 자리를 출구 하나로 바꾼다 — 셔터가 잠긴 채 남아 있으면
-          플레이어는 누를 것이 없는 화면에 갇힌다(호스트가 게임을 종료해야 스스로 빠져나간다).
-          자동으로 내보내지는 않는다: 확인 화면에 들고 있던 사진이 사라지고, 종료 판정이 기기
-          시계 기준이라 시계가 앞선 기기만 혼자 빠져나가기 때문이다. 나갈지는 플레이어가 정한다.
-        -->
-        <div v-if="isRoundEnded" class="px-6 pb-5">
-          <BaseButton variant="primary" size="lg" class="w-full" @click="returnToWaitingRoom">
-            대기실로 돌아가기
-          </BaseButton>
-        </div>
-        <!--
           셔터 좌우 한 칸씩(P08 §2.5). 왼쪽은 지도 — 행사장 지도를 받은 뒤에만 나타나고, 없으면
           칸을 비워 셔터가 가운데를 지킨다. 오른쪽은 기록 시트. 둘 다 읽기만 하는 시트라 라운드 상태
-          (일시정지·탈락·모드 잠금)와 무관하게 언제든 열 수 있고 셔터·제출 게이트에 끼지 않는다.
+          (일시정지·탈락·모드 잠금·종료)와 무관하게 언제든 열 수 있고 셔터·제출 게이트에 끼지 않는다.
+          라운드가 끝나면 셔터만 뺀다. 잠긴 버튼을 남기지 않고, 진행자가 라운드를 끝내면 스냅샷으로
+          대기실에 간다(leaveCockpit). 출구 버튼은 두지 않는다 — 진행자가 끝낼 때까지 기다린다(P15).
         -->
-        <div v-else class="grid grid-cols-[1fr_auto_1fr] items-end gap-5 px-6 pb-5">
+        <div class="grid grid-cols-[1fr_auto_1fr] items-end gap-5 px-6 pb-5">
           <div v-if="mapImage !== null" class="col-start-1 row-start-1 flex flex-col items-center gap-3">
             <BaseButton
               variant="hud"
@@ -734,7 +715,10 @@ function subscribeToCurrentRoundLedger(roundNumber: number) {
               </span>
             </BaseButton>
           </div>
+          <!-- 셔터가 빠져도 칸 너비를 지켜 지도·기록 버튼이 라운드 종료 순간에 움직이지 않게 한다 -->
+          <div v-if="isRoundEnded" class="col-start-2 row-start-1 w-20" aria-hidden="true"></div>
           <BaseButton
+            v-else
             variant="shutter"
             size="lg"
             shape="circle"
@@ -784,7 +768,7 @@ function subscribeToCurrentRoundLedger(roundNumber: number) {
           v-else-if="isRoundEnded"
           class="text-center text-caption break-keep text-content-secondary"
         >
-          라운드가 종료되어 제출할 수 없어요. 돌아가면 대기실로 나갈 수 있어요.
+          라운드가 종료되어 제출할 수 없어요. 진행자 안내를 기다려 주세요.
         </p>
         <p
           v-else-if="isPaused"

@@ -475,8 +475,8 @@ async function copyInviteLink() {
          보드의 액션 영역이 화면 하단에 붙지 않는다. 세 뷰의 상단 여백은 여기서 한 번만 준다 -->
     <div class="flex flex-1 flex-col gap-4 pt-3">
       <template v-if="phase === 'joined'">
-        <!-- 라운드는 끝났는데 진행자가 아직 게임을 닫지 않은 구간 — 게스트가 콕핏에서 나와
-             여기로 돌아오는 유일한 경로다(A-4). 게임 중(playing)인데 대기실에 있는 이유와,
+        <!-- 라운드는 끝났는데 진행자가 아직 게임을 닫지 않은 구간 — 콕핏에는 출구 버튼이 없고(P15),
+             브라우저 뒤로가기나 링크 재접속으로 여기에 온다. 게임 중(playing)인데 대기실에 있는 이유와,
              다음 라운드가 시작되면 화면이 알아서 넘어간다는 것을 같이 알린다.
              배정 카드는 그대로 아래 남아 완장·팀원을 계속 확인할 수 있다. -->
         <BaseCard v-if="isRoundOverAwaitingHost" role="status">
