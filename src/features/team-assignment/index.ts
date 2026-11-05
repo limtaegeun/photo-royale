@@ -9,6 +9,7 @@ export {
   groupBorderClass,
   groupLabelEn,
   groupLabelKo,
+  groupOnSolidTextClass,
   groupSolidBgClass,
   groupSolidBorderClass,
   groupTextClass,

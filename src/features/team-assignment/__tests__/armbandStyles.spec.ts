@@ -4,6 +4,7 @@ import {
   groupBorderClass,
   groupLabelEn,
   groupLabelKo,
+  groupOnSolidTextClass,
   groupSolidBgClass,
   groupSolidBorderClass,
   groupTextClass,
@@ -33,6 +34,7 @@ describe('armbandStyles', () => {
     expect(groupSolidBgClass('B')).toBe('bg-team-orange-solid')
     expect(groupBorderClass('C')).toBe('border-team-green')
     expect(groupSolidBorderClass('D')).toBe('border-team-red-solid')
+    expect(groupOnSolidTextClass('C')).toBe('text-on-team-green')
   })
 
   it('중립일 때는 각 용도에 맞는 중립 토큰 클래스로 떨어진다', () => {
@@ -40,6 +42,7 @@ describe('armbandStyles', () => {
     expect(groupSolidBgClass(null)).toBe('bg-neutral')
     expect(groupBorderClass(null)).toBe('border-stroke-strong')
     expect(groupSolidBorderClass(null)).toBe('border-stroke')
+    expect(groupOnSolidTextClass(null)).toBe('text-content')
   })
 
   it('색약 대응 라벨은 한글·영문 모두 제공하고, 중립이면 빈 문자열이다', () => {

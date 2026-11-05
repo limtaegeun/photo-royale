@@ -26,6 +26,14 @@ const GROUP_SOLID_BG = {
   red: 'bg-team-red-solid',
 } as const satisfies Record<TeamGroup, string>
 
+/** 채운 면 위의 글자 색 — 그룹마다 대비가 맞는 값이 다르다(주황·초록은 어두운 글자) */
+const GROUP_ON_SOLID_TEXT = {
+  blue: 'text-on-team-blue',
+  orange: 'text-on-team-orange',
+  green: 'text-on-team-green',
+  red: 'text-on-team-red',
+} as const satisfies Record<TeamGroup, string>
+
 /** 얇은 보더(1px 아바타 링 등)로 쓰는 그룹 색 — 읽기용 텍스트 색과 같은 값 */
 const GROUP_BORDER = {
   blue: 'border-team-blue',
@@ -62,6 +70,12 @@ export function groupTextClass(armband: string | null | undefined): string {
 export function groupSolidBgClass(armband: string | null | undefined): string {
   const group = displayGroup(armband)
   return group === null ? 'bg-neutral' : GROUP_SOLID_BG[group]
+}
+
+/** 그룹 색 채운 면 위의 글자 클래스 — 그룹을 정할 수 없으면 중립 글자 색 */
+export function groupOnSolidTextClass(armband: string | null | undefined): string {
+  const group = displayGroup(armband)
+  return group === null ? 'text-content' : GROUP_ON_SOLID_TEXT[group]
 }
 
 /** 그룹 색 얇은 보더 클래스 — 그룹을 정할 수 없으면 중립 보더 */
