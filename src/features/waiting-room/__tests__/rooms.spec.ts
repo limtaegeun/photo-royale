@@ -32,6 +32,7 @@ const onSnapshotMock =
       query: unknown,
       onNext: (snapshot: unknown) => void,
       onError?: (error: Error) => void,
+      options?: unknown,
     ) => () => void
   >()
 
@@ -43,11 +44,16 @@ vi.mock('firebase/firestore', () => ({
   query: (source: FakeRef, ...constraints: unknown[]) => ({ source, constraints }),
   orderBy: (field: string, direction: string) => ({ orderBy: field, direction }),
   where: (field: string, op: string, value: unknown) => ({ where: field, op, value }),
-  onSnapshot: (
-    query: unknown,
-    onNext: (snapshot: unknown) => void,
-    onError?: (error: Error) => void,
-  ) => onSnapshotMock(query, onNext, onError),
+  // onSnapshot(대상, 콜백, 오류) · onSnapshot(대상, 옵션, 콜백, 오류) 두 형태를 같은 인자 순서로 기록한다
+  onSnapshot: (query: unknown, ...rest: unknown[]) =>
+    typeof rest[0] === 'function'
+      ? onSnapshotMock(query, rest[0] as (snapshot: unknown) => void, rest[1] as (error: Error) => void)
+      : onSnapshotMock(
+          query,
+          rest[1] as (snapshot: unknown) => void,
+          rest[2] as (error: Error) => void,
+          rest[0],
+        ),
   // 실제 runTransaction의 재시도는 커밋 경합에서만 일어나므로, 콜백 1회 실행으로 충분하다
   runTransaction: <T>(
     _db: unknown,
@@ -601,6 +607,43 @@ describe('subscribeToRoom', () => {
     onNext({ exists: () => false, metadata: { fromCache: false, hasPendingWrites: false } })
     expect(onChange).toHaveBeenLastCalledWith(null)
     expect(result).toBe(unsubscribe)
+  })
+
+  it('캐시의 문서 없음은 방 삭제로 읽지 않고, 서버가 확인한 부재만 null로 전달한다', () => {
+    onSnapshotMock.mockReturnValue(vi.fn<() => void>())
+    const onChange = vi.fn<(room: unknown) => void>()
+
+    subscribeToRoom('AB2C', onChange)
+
+    const [, onNext, , options] = onSnapshotMock.mock.calls[0]!
+    // 서버의 '없음' 확인은 메타데이터만 바뀐 스냅샷이라 이 옵션이 없으면 오지 않는다
+    expect(options).toEqual({ includeMetadataChanges: true })
+
+    onNext({ exists: () => false, metadata: { fromCache: true, hasPendingWrites: false } })
+    expect(onChange).not.toHaveBeenCalled()
+
+    onNext({ exists: () => false, metadata: { fromCache: false, hasPendingWrites: false } })
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(null)
+  })
+
+  it('메타데이터만 바뀐 스냅샷은 화면에 다시 전달하지 않는다', () => {
+    onSnapshotMock.mockReturnValue(vi.fn<() => void>())
+    const onChange = vi.fn<(room: unknown) => void>()
+    subscribeToRoom('AB2C', onChange)
+    const onNext = onSnapshotMock.mock.calls[0]![1]
+    const snapshot = (fromCache: boolean, status: string) => ({
+      exists: () => true,
+      metadata: { fromCache, hasPendingWrites: false },
+      data: () => ({ hostUid: 'host-1', status }),
+    })
+
+    onNext(snapshot(true, 'waiting'))
+    onNext(snapshot(false, 'waiting'))
+    expect(onChange).toHaveBeenCalledTimes(1)
+
+    onNext(snapshot(false, 'playing'))
+    expect(onChange).toHaveBeenCalledTimes(2)
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'playing' }))
   })
 
   it('영구 Listen 오류 콜백을 Firestore에 전달한다', () => {

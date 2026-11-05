@@ -13,8 +13,8 @@
 
 | # | 항목 | 브랜치 | 상태 |
 |---|---|---|---|
-| 1 | Firestore 전송을 long polling 으로 고정한다 | `fix/firestore-long-polling` | PR 대기 |
-| 2 | 캐시에서 온 '문서 없음'을 방 삭제로 읽지 않는다 | `fix/room-missing-from-cache` | 대기 |
+| 1 | Firestore 전송을 long polling 으로 고정한다 | `fix/firestore-long-polling` | 완료 #114 |
+| 2 | 캐시에서 온 '문서 없음'을 방 삭제로 읽지 않는다 | `fix/room-missing-from-cache` | 진행 중 |
 | 3 | 화면 복귀와 주기 점검으로 죽은 연결을 다시 연다 | `fix/firestore-reconnect` | 대기 |
 | 4 | 대기실 입장에 시간 제한과 재시도를 둔다 | `fix/room-enter-retry` | 대기 |
 | 5 | 행사장 지도를 구독 연결 밖으로 뺀다 | `fix/venue-map-off-stream` | 대기 |
@@ -73,3 +73,11 @@ Firestore 기본 전송은 응답 연결을 열어 둔 채 데이터를 흘린�
 | 큰 문서 | 1Mbps 폰, 지도 1MB | 배정 반영 15초(지도 없으면 0.9초), long polling 에서도 9초 |
 
 long polling 은 조용히 죽은 연결의 복구 시간을 줄이지 못한다(`timeoutSeconds` 5, 10, 30 모두 약 32초). 그래서 항목 3이 따로 필요하다.
+
+## 5. 항목 2: 캐시의 '문서 없음'
+
+SDK 는 첫 응답을 받기 전에 오프라인이 되면 빈 캐시로 '문서 없음' 스냅샷을 알린다. `subscribeToRoom` 이 이것을 방 삭제로 전달해서, 음영에서 콕핏을 새로고침하면 10초 뒤 첫 화면으로 쫓겨나고 돌아오지 않았다.
+
+- 부재는 서버가 확인했을 때만 전달한다(`metadata.fromCache` 가 false).
+- 서버의 '없음' 확인은 데이터가 같은 메타데이터 변경이라 `includeMetadataChanges` 를 켜야 받는다.
+- 그 옵션으로 늘어나는 스냅샷은 같은 내용이면 걸러서 화면이 받는 횟수를 그대로 둔다.

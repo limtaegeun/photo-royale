@@ -341,7 +341,7 @@ export async function joinRoom(
 
 /**
  * 방 문서 실시간 구독 — 호스트 판별(hostUid)과 게임 시작(status 전이)을 화면이
- * 실시간으로 반영하게 한다. 문서가 사라지면 null을 전달한다.
+ * 실시간으로 반영하게 한다. 서버가 확인한 문서 부재면 null을 전달한다.
  */
 export function subscribeToRoom(
   code: string,
@@ -352,14 +352,27 @@ export function subscribeToRoom(
   // 관측자는 구독마다 새로 만든다: '첫 스냅샷은 샘플이 아니다'가 구독 단위 판정이라, 방을
   // 갈아탄 새 구독이 이전 이력을 이어 쓰면 진행 중이던 라운드의 과거 앵커를 샘플로 잡는다
   const observeRoundAnchor = createRoundAnchorObserver()
+  /** 마지막으로 전달한 방 — 메타데이터만 바뀐 스냅샷을 걸러 화면이 받는 횟수를 그대로 둔다 */
+  let lastRoomJson: string | null = null
   return onSnapshot(
     doc(db, 'rooms', code),
+    // 캐시의 '문서 없음'을 무시하므로, 나중에 서버가 같은 '없음'을 확인해 줄 때도 스냅샷을 받아야 한다.
+    // 이 옵션이 없으면 데이터가 같은 그 확인은 오지 않아, 정말 지워진 방을 영영 모른다.
+    { includeMetadataChanges: true },
     (snapshot) => {
       if (!snapshot.exists()) {
+        // 첫 응답 전에 연결이 끊기면 SDK는 빈 캐시를 '문서 없음'으로 알린다. 이것을 방 삭제로 읽으면 신호가
+        // 약할 때 콕핏을 새로고침한 참가자가 '방을 찾을 수 없어요'로 첫 화면에 쫓겨나 돌아오지 못한다.
+        // 서버가 확인한 부재만 방이 사라진 것으로 전달한다.
+        if (snapshot.metadata.fromCache) return
+        lastRoomJson = null
         onChange(null)
         return
       }
       const room = toRoomInfo(snapshot.data())
+      const roomJson = JSON.stringify(room)
+      if (roomJson === lastRoomJson) return
+      lastRoomJson = roomJson
       observeRoundAnchor(room.round?.startedAtMs ?? null, snapshot.metadata.fromCache)
       onChange(room)
     },
