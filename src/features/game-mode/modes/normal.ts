@@ -1,4 +1,5 @@
 import type { GameModeDefinition } from '../types'
+import { NORMAL_JUDGE_GUIDE } from '../judgeGuides'
 import { normalScoring } from '../scoring'
 import { X_ONLY_TARGETING } from '../targeting'
 
@@ -16,6 +17,7 @@ export const normalMode: GameModeDefinition = {
   scoring: normalScoring,
   // X 팀과 일반 팀은 서로 잡을 수 없다 — 판정 카드에서 X 여부가 다른 팀을 비활성화한다. X를 끈 라운드는 막지 않는다
   targeting: X_ONLY_TARGETING,
+  judgeGuide: NORMAL_JUDGE_GUIDE,
   // 규칙서 §3.1이 X 규칙("오직 X끼리만 서로를 사냥")을 정한 모드 — 진행자가 켜고 끈다
   xModule: 'optional',
   available: true,

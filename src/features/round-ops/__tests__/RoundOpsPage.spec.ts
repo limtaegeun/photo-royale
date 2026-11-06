@@ -288,14 +288,9 @@ function deferred<T = void>() {
   return { promise, resolve, reject }
 }
 
-/** jsdom에는 scrollIntoView가 없다 — 어느 요소를 올렸는지 mock.contexts로 본다 */
-const scrollIntoViewMock = vi.fn<(options?: ScrollIntoViewOptions) => void>()
-
 describe('RoundOpsPage', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    scrollIntoViewMock.mockReset()
-    Element.prototype.scrollIntoView = scrollIntoViewMock
     authUser.value = { uid: 'me' }
     for (const key of Object.keys(routeQuery)) delete routeQuery[key]
     toastMock.mockReset()
@@ -764,18 +759,19 @@ describe('RoundOpsPage', () => {
       await findButton(wrapper, '아웃 처리')!.trigger('click')
       await flushPromises()
 
-      const teamA = document.body.querySelector<HTMLButtonElement>('button[data-team="A"]')
+      expect(sheetButton('아웃 확정')!.hasAttribute('disabled')).toBe(true)
+      const teamA = document.body.querySelector<HTMLElement>('[data-team="A"]')
       expect(teamA).not.toBeNull()
       teamA!.click()
       await flushPromises()
-      sheetButton('아웃 확정')!.click()
+      sheetButton('팀 A 아웃 확정')!.click()
       await flushPromises()
 
       expect(recordStaffOutMock).toHaveBeenCalledExactlyOnceWith('AB2C', 2, 'A')
       expect(toastMock).toHaveBeenCalledWith({ title: '팀 A 아웃으로 기록했어요.', tone: 'success' })
     })
 
-    it('이미 탈락한 팀은 시트에서 선택할 수 없다', async () => {
+    it('이미 탈락한 팀은 다이얼에서 빠지고 제외 줄에 적힌다', async () => {
       const deliver = captureSnapshotCallbacks()
       const wrapper = mountPage()
       deliver.room(hostRoom({ round: running(), gameMode: 'staff-chase' }))
@@ -791,13 +787,31 @@ describe('RoundOpsPage', () => {
       await findButton(wrapper, '아웃 처리')!.trigger('click')
       await flushPromises()
 
-      const teamB = document.body.querySelector<HTMLButtonElement>('button[data-team="B"]')!
-      expect(teamB.disabled).toBe(true)
-      expect(teamB.textContent).toContain('탈락')
+      expect(document.body.querySelector('[data-team="B"]')).toBeNull()
+      expect(document.body.querySelector('[data-team="A"]')).not.toBeNull()
+      expect(document.body.querySelector('[data-testid="staff-exclusion"]')?.textContent?.trim()).toBe(
+        '제외 B 탈락',
+      )
+      expect(document.body.textContent).toContain('생존 1 / 2팀 · 잡힌 팀을 골라 주세요')
+    })
+
+    it('1인 팀은 다이얼 줄에 남은 목숨이 붙는다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      deliver.room(hostRoom({ round: running(), gameMode: 'staff-chase' }))
+      deliver.participants([assigned('u1', 'A'), assigned('u3', 'B'), assigned('u4', 'B')])
+      deliver.ledger(staffChaseLedger({ teams: { A: ['u1'], B: ['u3', 'u4'] }, hits: { A: 1 } }))
+      await flushPromises()
+
+      await findButton(wrapper, '아웃 처리')!.trigger('click')
+      await flushPromises()
+
+      expect(document.body.querySelector('[data-team="A"]')?.textContent).toContain('1인 · 목숨 1')
+      expect(document.body.querySelector('[data-team="B"]')?.textContent).not.toContain('목숨')
     })
 
     /** 참가자 전원이 동맹이라 킬이 성립하지 않는다 — 판정 카드는 제출 팀 외 모든 팀을 막는다 */
-    it('판정 카드는 제출 팀 외 모든 팀을 동맹으로 막는다', async () => {
+    it('잘못 올라온 킬샷은 다이얼에 팀이 없어 반려만 할 수 있다', async () => {
       const deliver = captureSnapshotCallbacks()
       const wrapper = mountPage()
       deliver.room(hostRoom({ round: running(), gameMode: 'staff-chase' }))
@@ -817,10 +831,13 @@ describe('RoundOpsPage', () => {
       await wrapper.find('[data-value="judge"]').trigger('click')
       await flushPromises()
 
-      const otherTeam = wrapper.get<HTMLButtonElement>('button[data-team="A"]')
-      expect(otherTeam.element.disabled).toBe(true)
-      expect(otherTeam.text()).toContain('동맹')
+      expect(wrapper.find('[data-team]').exists()).toBe(false)
+      expect(wrapper.text()).toContain('고를 수 있는 팀이 없어요')
+      expect(wrapper.get('[data-testid="judge-exclusion"]').text()).toBe(
+        '전원 동맹이라 고를 팀이 없어요. 반려만 할 수 있어요.',
+      )
       expect(findButton(wrapper, '판정 확정')!.attributes('disabled')).toBeDefined()
+      expect(findButton(wrapper, '반려')!.attributes('disabled')).toBeUndefined()
     })
   })
 
@@ -1202,9 +1219,7 @@ describe('RoundOpsPage', () => {
 
       expect(wrapper.get('[role="radio"][aria-checked="true"]').attributes('data-value')).toBe('judge')
       const card = wrapper.get('[data-submission="r1"]')
-      expect(card.text()).toContain('잡힌 팀 선택')
-      expect(scrollIntoViewMock).toHaveBeenCalledOnce()
-      expect(scrollIntoViewMock.mock.contexts[0]).toBe(card.element)
+      expect(card.text()).toContain('돌려서 팀 고르기')
       // 시트로 열지 않는다
       expect(document.body.querySelector('[role="dialog"]')).toBeNull()
     })
@@ -1219,7 +1234,7 @@ describe('RoundOpsPage', () => {
 
       expect(document.body.textContent).toContain('킬샷 기록')
       expect(document.body.textContent).toContain('판정되지 않은 채 라운드가 지난 제출이에요.')
-      expect(document.body.textContent).not.toContain('잡힌 팀 선택')
+      expect(document.body.textContent).not.toContain('돌려서 팀 고르기')
     })
 
     it('기록 Listen 오류는 오류 카드와 토스트로 알린다', async () => {
@@ -1342,7 +1357,7 @@ describe('RoundOpsPage', () => {
       expect(endGameMock).not.toHaveBeenCalled()
       expect(document.body.textContent).not.toContain('판정하지 않은 킬샷이 있어요')
       // 판정 탭으로 전환됐다 — 대기 킬샷 카드가 보인다
-      expect(wrapper.text()).toContain('잡힌 팀 선택')
+      expect(wrapper.find('[data-submission]').exists()).toBe(true)
     })
 
     it('확인하면 대기 건을 남겨 둔 채 라운드를 종료한다', async () => {
@@ -1640,8 +1655,22 @@ describe('RoundOpsPage', () => {
       return wrapper.get(`[data-submission="${submissionId}"]`)
     }
 
-    function tile(wrapper: PageWrapper, armband: string, submissionId = 's1') {
-      return card(wrapper, submissionId).get<HTMLButtonElement>(`button[data-team="${armband}"]`)
+    /** 다이얼 줄 — 고를 수 있는 팀만 있다 */
+    function row(wrapper: PageWrapper, armband: string, submissionId = 's1') {
+      return card(wrapper, submissionId).get(`[data-team="${armband}"]`)
+    }
+
+    function hasRow(wrapper: PageWrapper, armband: string, submissionId = 's1') {
+      return card(wrapper, submissionId).find(`[data-team="${armband}"]`).exists()
+    }
+
+    function exclusion(wrapper: PageWrapper, submissionId = 's1') {
+      return card(wrapper, submissionId).get('[data-testid="judge-exclusion"]').text()
+    }
+
+    async function move(wrapper: PageWrapper, direction: 'previous' | 'next') {
+      await wrapper.get(`[data-testid="pager-${direction}"]`).trigger('click')
+      await flushPromises()
     }
 
     function rejectButton(wrapper: PageWrapper, submissionId = 's1') {
@@ -1653,7 +1682,7 @@ describe('RoundOpsPage', () => {
     }
 
     async function pick(wrapper: PageWrapper, armband: string, submissionId = 's1') {
-      await tile(wrapper, armband, submissionId).trigger('click')
+      await row(wrapper, armband, submissionId).trigger('click')
       await flushPromises()
     }
 
@@ -1680,7 +1709,7 @@ describe('RoundOpsPage', () => {
       expect(judgeTab.find('.count-badge').exists()).toBe(false)
     })
 
-    it('대기 킬샷을 제출 팀·제출자·사진과 함께 카드로 나열한다', async () => {
+    it('대기 킬샷을 제출 팀·제출자·사진과 함께 보여 준다', async () => {
       const { wrapper } = await openJudgeTab()
 
       expect(card(wrapper).text()).toContain('팀 B · 주황')
@@ -1715,7 +1744,7 @@ describe('RoundOpsPage', () => {
       expect(hidden.value).toBe(false)
     })
 
-    it('타일은 알파벳 순서이고 팀원 이름을 줄마다 보여 준다', async () => {
+    it('다이얼은 고를 수 있는 팀을 알파벳 순서로 깔고 팀원 이름을 보여 준다', async () => {
       const { deliver, wrapper } = await openJudgeTab()
       deliver.participants([
         assigned('u4', 'E'),
@@ -1726,18 +1755,13 @@ describe('RoundOpsPage', () => {
       ])
       await flushPromises()
 
-      const tiles = card(wrapper).findAll('button[data-team]')
-      expect(tiles.map((option) => option.attributes('data-team'))).toEqual(['A', 'B', 'C', 'E'])
-      expect(tile(wrapper, 'A').findAll('[data-tile-member]').map((line) => line.text())).toEqual([
-        'u1',
-        'u2',
-      ])
-      // 화면에는 색 이름이 없지만 낭독기에는 알려 준다
-      expect(tile(wrapper, 'A').attributes('aria-label')).toBe('팀 A 파랑, u1, u2')
-      expect(tile(wrapper, 'A').text()).not.toContain('파랑')
+      const rows = card(wrapper).findAll('[data-team]')
+      expect(rows.map((option) => option.attributes('data-team'))).toEqual(['A', 'C', 'E'])
+      expect(row(wrapper, 'A').text()).toContain('u1 · u2')
+      expect(row(wrapper, 'A').attributes('aria-label')).toBe('team A u1, u2')
     })
 
-    it('닉네임이 길어도 고른 팀의 이름은 줄이지 않은 값으로 위 줄에 나온다', async () => {
+    it('긴 닉네임도 줄이지 않은 값으로 줄에 들어간다', async () => {
       const longNames = ['세상에서제일빠른치타라네', '세상에서제일귀여운고양이']
       const { deliver, wrapper } = await openJudgeTab()
       deliver.participants([
@@ -1747,27 +1771,89 @@ describe('RoundOpsPage', () => {
       ])
       await flushPromises()
 
-      await pick(wrapper, 'A')
-
-      expect(card(wrapper).findAll('[data-picked-member]').map((line) => line.text())).toEqual(longNames)
+      expect(row(wrapper, 'A').text()).toContain(longNames.join(' · '))
     })
 
-    it('팀을 고르면 확정 문구에 팀이 들어가고, 다시 누르면 선택이 풀린다', async () => {
+    it('팀을 고르면 확정 문구에 팀이 들어가고, 안내 줄로 돌아오면 선택이 풀린다', async () => {
       const { wrapper } = await openJudgeTab()
       expect(approveButton(wrapper).text()).toBe('판정 확정')
       expect(approveButton(wrapper).element.disabled).toBe(true)
-      expect(card(wrapper).text()).toContain('잡힌 팀 선택')
+      expect(card(wrapper).text()).toContain('돌려서 팀 고르기')
 
       await pick(wrapper, 'A')
-      expect(tile(wrapper, 'A').attributes('aria-pressed')).toBe('true')
+      expect(row(wrapper, 'A').attributes('aria-selected')).toBe('true')
       expect(approveButton(wrapper).text()).toBe('팀 A 판정 확정')
       expect(approveButton(wrapper).element.disabled).toBe(false)
-      expect(card(wrapper).text()).not.toContain('잡힌 팀 선택')
 
-      await pick(wrapper, 'A')
-      expect(tile(wrapper, 'A').attributes('aria-pressed')).toBe('false')
+      await card(wrapper).get('[data-dial-row]:not([data-team])').trigger('click')
+      await flushPromises()
+      expect(row(wrapper, 'A').attributes('aria-selected')).toBe('false')
       expect(approveButton(wrapper).text()).toBe('판정 확정')
       expect(approveButton(wrapper).element.disabled).toBe(true)
+    })
+
+    it('한 번에 한 건을 보여 주고 이전·다음으로 넘긴다', async () => {
+      const { wrapper } = await openJudgeTab([
+        pendingSubmission(),
+        pendingSubmission({ id: 's2', uid: 'u1', team: 'A' }),
+      ])
+      expect(wrapper.findAll('[data-submission]')).toHaveLength(1)
+      expect(wrapper.get('[data-testid="pager-count"]').text()).toBe('1/2')
+      expect(wrapper.get<HTMLButtonElement>('[data-testid="pager-previous"]').element.disabled).toBe(true)
+
+      await move(wrapper, 'next')
+      expect(card(wrapper, 's2').text()).toContain('팀 A · 파랑')
+      expect(wrapper.get('[data-testid="pager-count"]').text()).toBe('2/2')
+      expect(wrapper.get<HTMLButtonElement>('[data-testid="pager-next"]').element.disabled).toBe(true)
+
+      await move(wrapper, 'previous')
+      expect(wrapper.find('[data-submission="s1"]').exists()).toBe(true)
+    })
+
+    it('탭을 오가도 보던 건이 남는다', async () => {
+      const { wrapper } = await openJudgeTab([
+        pendingSubmission(),
+        pendingSubmission({ id: 's2', uid: 'u1', team: 'A' }),
+      ])
+      await move(wrapper, 'next')
+
+      await wrapper.find('[data-value="ops"]').trigger('click')
+      await wrapper.find('[data-value="judge"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.find('[data-submission="s2"]').exists()).toBe(true)
+    })
+
+    it('앞 건이 다른 기기에서 판정돼도 보던 건을 계속 본다', async () => {
+      const { deliver, wrapper } = await openJudgeTab([
+        pendingSubmission(),
+        pendingSubmission({ id: 's2', uid: 'u1', team: 'A' }),
+      ])
+      await move(wrapper, 'next')
+
+      deliver.submissions([pendingSubmission({ id: 's2', uid: 'u1', team: 'A' })])
+      await flushPromises()
+
+      expect(wrapper.find('[data-submission="s2"]').exists()).toBe(true)
+      expect(wrapper.get('[data-testid="pager-count"]').text()).toBe('1/1')
+    })
+
+    it('마지막 건을 판정하면 앞 건으로 돌아가고, 가운데 건이면 뒤 건이 그 자리를 잇는다', async () => {
+      const queue = [
+        pendingSubmission(),
+        pendingSubmission({ id: 's2', uid: 'u1', team: 'A' }),
+        pendingSubmission({ id: 's3', uid: 'u2', team: 'A' }),
+      ]
+      const { deliver, wrapper } = await openJudgeTab(queue)
+      await move(wrapper, 'next')
+
+      deliver.submissions([queue[0]!, queue[2]!])
+      await flushPromises()
+      expect(wrapper.find('[data-submission="s3"]').exists()).toBe(true)
+
+      deliver.submissions([queue[0]!])
+      await flushPromises()
+      expect(wrapper.find('[data-submission="s1"]').exists()).toBe(true)
     })
 
     it('탭을 오가도 고른 팀과 3배 토글이 남는다', async () => {
@@ -1780,7 +1866,7 @@ describe('RoundOpsPage', () => {
       await wrapper.find('[data-value="judge"]').trigger('click')
       await flushPromises()
 
-      expect(tile(wrapper, 'A').attributes('aria-pressed')).toBe('true')
+      expect(row(wrapper, 'A').attributes('aria-selected')).toBe('true')
       expect(approveButton(wrapper).text()).toBe('팀 A 3배 판정 확정')
     })
 
@@ -1791,18 +1877,22 @@ describe('RoundOpsPage', () => {
       ])
 
       await pick(wrapper, 'A')
-
       expect(approveButton(wrapper, 's1').text()).toBe('팀 A 판정 확정')
+
+      await move(wrapper, 'next')
       expect(approveButton(wrapper, 's2').text()).toBe('판정 확정')
       expect(approveButton(wrapper, 's2').element.disabled).toBe(true)
+
+      await move(wrapper, 'previous')
+      expect(approveButton(wrapper, 's1').text()).toBe('팀 A 판정 확정')
     })
 
     it('대상 팀을 골라 확정하면 서버에 쓰이고, 제출 팀은 고를 수 없다', async () => {
       const { wrapper } = await openJudgeTab()
 
-      // 제출자 본인 팀(B)은 대상에서 비활성화된다
-      expect(tile(wrapper, 'B').element.disabled).toBe(true)
-      expect(tile(wrapper, 'B').text()).toContain('제출 팀')
+      // 제출자 본인 팀(B)은 다이얼에 없다
+      expect(hasRow(wrapper, 'B')).toBe(false)
+      expect(exclusion(wrapper)).toBe('제외 B 제출 팀')
 
       await pickAndApprove(wrapper, 'A')
 
@@ -1845,8 +1935,8 @@ describe('RoundOpsPage', () => {
       })
     })
 
-    /** 탈락 모델(P07 M3) — 원장 hits가 라이프에 닿은 팀은 대상에서 비활성화되고 이유가 붙는다 */
-    it('탈락한 팀은 대상 선택이 비활성화되고 탈락 표시가 붙는다', async () => {
+    /** 탈락 모델(P07 M3) — 원장 hits가 라이프에 닿은 팀은 다이얼에서 빠지고 제외 줄에 적힌다 */
+    it('탈락한 팀은 다이얼에서 빠지고 제외 줄에 적힌다', async () => {
       const { deliver, wrapper } = await openJudgeTab()
       deliver.ledger({
         roundNo: 2,
@@ -1862,9 +1952,9 @@ describe('RoundOpsPage', () => {
       })
       await flushPromises()
 
-      expect(tile(wrapper, 'A').element.disabled).toBe(true)
-      expect(tile(wrapper, 'A').text()).toContain('탈락')
-      await pick(wrapper, 'A')
+      expect(hasRow(wrapper, 'A')).toBe(false)
+      expect(exclusion(wrapper)).toBe('제외 A 탈락 · B 제출 팀')
+      expect(card(wrapper).text()).toContain('고를 수 있는 팀이 없어요')
       expect(approveButton(wrapper).element.disabled).toBe(true)
     })
 
@@ -1889,11 +1979,11 @@ describe('RoundOpsPage', () => {
 
       expect(approveButton(wrapper).text()).toBe('판정 확정')
       expect(approveButton(wrapper).element.disabled).toBe(true)
-      expect(card(wrapper).text()).toContain('잡힌 팀 선택')
+      expect(hasRow(wrapper, 'A')).toBe(false)
     })
 
-    /** 그룹전(P07 M4) — 제출 팀과 같은 색 그룹은 동맹이라 대상에서 비활성화되고 '같은 그룹'이 붙는다 */
-    it('그룹전에서는 제출 팀과 같은 그룹 팀을 고를 수 없고, 다른 그룹은 고를 수 있다', async () => {
+    /** 그룹전(P07 M4) — 제출 팀과 같은 색 그룹은 동맹이라 다이얼에서 빠진다 */
+    it('그룹전에서는 제출 팀과 같은 그룹 팀이 다이얼에 없고, 다른 그룹은 고를 수 있다', async () => {
       const deliver = captureSnapshotCallbacks()
       const wrapper = mountPage()
       deliver.room(hostRoom({ round: running(), gameMode: 'group' }))
@@ -1903,10 +1993,9 @@ describe('RoundOpsPage', () => {
       await flushPromises()
       await wrapper.find('[data-value="judge"]').trigger('click')
 
-      expect(tile(wrapper, 'F').element.disabled).toBe(true)
-      expect(tile(wrapper, 'F').text()).toContain('같은 그룹')
-      expect(tile(wrapper, 'A').element.disabled).toBe(false)
-      expect(tile(wrapper, 'A').text()).not.toContain('같은 그룹')
+      expect(hasRow(wrapper, 'F')).toBe(false)
+      expect(hasRow(wrapper, 'A')).toBe(true)
+      expect(exclusion(wrapper)).toBe('제외 B 제출 팀 · 같은 그룹 1팀')
 
       await pick(wrapper, 'A')
       expect(approveButton(wrapper).element.disabled).toBe(false)
@@ -1928,12 +2017,11 @@ describe('RoundOpsPage', () => {
       await flushPromises()
       await wrapper.find('[data-value="judge"]').trigger('click')
 
-      expect(tile(wrapper, 'C').element.disabled).toBe(false)
-      expect(tile(wrapper, 'C').text()).not.toContain('대상 아님')
-      for (const armband of ['A', 'F']) {
-        expect(tile(wrapper, armband).element.disabled).toBe(true)
-        expect(tile(wrapper, armband).text()).toContain('대상 아님')
-      }
+      expect(card(wrapper).findAll('[data-team]').map((option) => option.attributes('data-team'))).toEqual(['C'])
+      expect(card(wrapper).text()).toContain('대상 팀을 눌러 고르기')
+      expect(exclusion(wrapper)).toBe('B의 대상은 C 하나뿐이에요')
+      // 후보가 하나여도 미리 고르지 않는다 — 판정은 되돌릴 수 없어 연타로 확정되면 안 된다
+      expect(approveButton(wrapper).element.disabled).toBe(true)
 
       // C가 1인 팀으로 탈락(hits 2 ≥ 라이프 2) → B의 다음 대상은 살아 있는 F로 넘어간다
       deliver.ledger({
@@ -1950,11 +2038,98 @@ describe('RoundOpsPage', () => {
       })
       await flushPromises()
 
-      expect(tile(wrapper, 'C').element.disabled).toBe(true)
-      expect(tile(wrapper, 'C').text()).toContain('탈락')
-      expect(tile(wrapper, 'F').element.disabled).toBe(false)
-      expect(tile(wrapper, 'F').text()).not.toContain('대상 아님')
-      expect(tile(wrapper, 'A').element.disabled).toBe(true)
+      expect(card(wrapper).findAll('[data-team]').map((option) => option.attributes('data-team'))).toEqual(['F'])
+      expect(exclusion(wrapper)).toBe('B의 대상은 F 하나뿐이에요 · C 탈락이라 건너뛰었어요')
+    })
+
+    it('꼬리잡기에서 이 킬로 아웃되는 팀을 고르면 편입 안내가 뜨고 토스트도 말한다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      deliver.room(hostRoom({ round: running(), gameMode: 'tail-chase' }))
+      deliver.participants([assigned('u1', 'A'), assigned('u2', 'C'), assigned('u5', 'C'), assigned('u3', 'B')])
+      deliver.submissions([pendingSubmission()])
+      deliver.ledger({
+        roundNo: 2,
+        mode: 'tail-chase',
+        teams: { A: ['u1'], B: ['u3'], C: ['u2', 'u5'] },
+        xTeams: [],
+        confirmedAtMs: 0,
+        tally: null,
+        hits: null,
+        tails: null,
+        credits: null,
+        result: null,
+      })
+      await flushPromises()
+      await wrapper.find('[data-value="judge"]').trigger('click')
+
+      await pick(wrapper, 'C')
+      expect(exclusion(wrapper)).toBe('잡히면 팀 C 전원이 B의 꼬리로 들어가요')
+
+      await approveButton(wrapper).trigger('click')
+      await flushPromises()
+      expect(toastMock).toHaveBeenCalledWith({
+        title: '팀 C 킬샷으로 판정했어요. B의 꼬리로 들어가요.',
+        tone: 'success',
+      })
+    })
+
+    /** 왕잡기 — 왕 표시는 진행자 화면에만 있고, 왕을 고르면 점수 결과를 확정 전에 보여 준다. 왕은 파랑 A, 주황 B */
+    async function openKingHuntRound(submission: Submission) {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      deliver.room(hostRoom({ round: running(), gameMode: 'king-hunt' }))
+      deliver.participants([
+        assigned('u1', 'A'),
+        assigned('u2', 'A'),
+        assigned('u3', 'B'),
+        assigned('u4', 'B'),
+        assigned('u5', 'C'),
+        assigned('u6', 'C'),
+      ])
+      deliver.submissions([submission])
+      deliver.ledger({
+        roundNo: 2,
+        mode: 'king-hunt',
+        teams: { A: ['u1', 'u2'], B: ['u3', 'u4'], C: ['u5', 'u6'] },
+        xTeams: ['A', 'B'],
+        confirmedAtMs: 0,
+        tally: null,
+        hits: null,
+        tails: null,
+        credits: null,
+        result: null,
+      })
+      await flushPromises()
+      await wrapper.find('[data-value="judge"]').trigger('click')
+      return wrapper
+    }
+
+    it('왕잡기에서 왕을 고르면 왕 사냥 문구와 그룹 감점이 보이고 토스트도 말한다', async () => {
+      const wrapper = await openKingHuntRound(pendingSubmission({ id: 's1', uid: 'u5', team: 'C' }))
+
+      expect(row(wrapper, 'A').text()).toContain('왕')
+      await pick(wrapper, 'A')
+
+      expect(approveButton(wrapper).text()).toBe('팀 A 왕 사냥 확정')
+      expect(exclusion(wrapper)).toBe('왕 사냥 +30 · 파랑 그룹 전원 −20')
+
+      await approveButton(wrapper).trigger('click')
+      await flushPromises()
+      expect(toastMock).toHaveBeenCalledWith({
+        title: '팀 A 왕 사냥으로 판정했어요. 파랑 그룹 전원 −20이에요.',
+        tone: 'success',
+      })
+    })
+
+    it('왕잡기에서 왕이 올린 킬샷은 왕의 킬로 확정한다', async () => {
+      const wrapper = await openKingHuntRound(pendingSubmission())
+
+      expect(card(wrapper).text()).toContain('왕')
+      await pick(wrapper, 'C')
+
+      expect(approveButton(wrapper).text()).toBe('팀 C 왕의 킬 확정')
+      expect(exclusion(wrapper)).toBe('왕의 킬 +20')
     })
 
     it('일반전에서는 같은 그룹 팀도 고를 수 있다 — 대상 제한은 모드가 정한다', async () => {
@@ -1962,15 +2137,15 @@ describe('RoundOpsPage', () => {
       deliver.participants([assigned('u1', 'A'), assigned('u2', 'F'), assigned('u3', 'B')])
       await flushPromises()
 
-      expect(tile(wrapper, 'F').element.disabled).toBe(false)
-      expect(tile(wrapper, 'F').text()).not.toContain('같은 그룹')
+      expect(hasRow(wrapper, 'F')).toBe(true)
+      expect(exclusion(wrapper)).toBe('제외 B 제출 팀')
       // X를 끈 라운드(원장 xTeams 없음) — X끼리만 제한도 걸리지 않는다
       expect(wrapper.text()).not.toContain('X끼리만')
     })
 
     /**
      * 일반전 특수 완장 X(규칙서 §3.1 "오직 X끼리만 서로를 사냥") — 원장의 X 팀과 X 여부가 다른 팀은
-     * 대상에서 비활성화되고 'X끼리만'이 붙는다. X는 그룹마다 1팀: 파랑 A·E 중 A, 주황 B·F 중 B
+     * 다이얼에서 빠진다. X는 그룹마다 1팀: 파랑 A·E 중 A, 주황 B·F 중 B
      */
     async function openNormalXRound(submission: Submission) {
       const { deliver, wrapper } = await openJudgeTab()
@@ -2000,26 +2175,19 @@ describe('RoundOpsPage', () => {
     it('일반전 X 라운드에서 X 팀의 킬샷은 다른 X 팀만 고를 수 있다', async () => {
       const wrapper = await openNormalXRound(pendingSubmission())
 
-      expect(tile(wrapper, 'A').element.disabled).toBe(false)
-      expect(tile(wrapper, 'A').text()).not.toContain('X끼리만')
-      for (const armband of ['E', 'F']) {
-        expect(tile(wrapper, armband).element.disabled).toBe(true)
-        expect(tile(wrapper, armband).text()).toContain('X끼리만')
-      }
+      expect(card(wrapper).findAll('[data-team]').map((option) => option.attributes('data-team'))).toEqual(['A'])
+      expect(row(wrapper, 'A').text()).toContain('X')
+      expect(exclusion(wrapper)).toBe('제외 B 제출 팀 · X 아닌 2팀')
 
       await pick(wrapper, 'A')
       expect(approveButton(wrapper).element.disabled).toBe(false)
     })
 
-    it('일반전 X 라운드에서 일반 팀의 킬샷은 X 팀을 고를 수 없고 일반 팀은 고를 수 있다', async () => {
+    it('일반전 X 라운드에서 일반 팀의 킬샷은 X 팀이 빠지고 일반 팀만 남는다', async () => {
       const wrapper = await openNormalXRound(pendingSubmission({ id: 's2', uid: 'u2', team: 'E' }))
 
-      for (const armband of ['A', 'B']) {
-        expect(tile(wrapper, armband, 's2').element.disabled).toBe(true)
-        expect(tile(wrapper, armband, 's2').text()).toContain('X끼리만')
-      }
-      expect(tile(wrapper, 'F', 's2').element.disabled).toBe(false)
-      expect(tile(wrapper, 'F', 's2').text()).not.toContain('X끼리만')
+      expect(card(wrapper, 's2').findAll('[data-team]').map((option) => option.attributes('data-team'))).toEqual(['F'])
+      expect(exclusion(wrapper, 's2')).toBe('제외 X 2팀 · E 제출 팀')
     })
 
     it('일반전이 아니면 낙오 포착 토글이 없다', async () => {
@@ -2081,8 +2249,12 @@ describe('RoundOpsPage', () => {
       expect(approveButton(wrapper).attributes('aria-busy')).toBe('true')
       expect(rejectButton(wrapper).element.disabled).toBe(true)
       expect(rejectButton(wrapper).attributes('aria-busy')).toBeUndefined()
+
+      await move(wrapper, 'next')
       expect(rejectButton(wrapper, 's2').element.disabled).toBe(true)
-      expect(tile(wrapper, 'B', 's2').element.disabled).toBe(true)
+      await row(wrapper, 'B', 's2').trigger('click')
+      await flushPromises()
+      expect(approveButton(wrapper, 's2').text()).toBe('판정 확정')
 
       request.resolve()
       await flushPromises()
@@ -2117,27 +2289,6 @@ describe('RoundOpsPage', () => {
       }
     })
 
-    it('판정한 뒤 스크롤이 남아 다음 카드 머리가 가려지면 카드 머리까지 되돌린다', async () => {
-      const { deliver, wrapper } = await openJudgeTab([
-        pendingSubmission(),
-        pendingSubmission({ id: 's2', uid: 'u1', team: 'A' }),
-      ])
-      // 상태 줄(0~52)보다 다음 카드의 머리가 위에 있는 상황
-      const nextCard = card(wrapper, 's2').element
-      nextCard.getBoundingClientRect = () => ({ top: -120 }) as DOMRect
-      wrapper.get('.sticky.top-0').element.getBoundingClientRect = () => ({ bottom: 52 }) as DOMRect
-
-      await pick(wrapper, 'A')
-      approveSubmissionMock.mockImplementationOnce(async () => {
-        deliver.submissions([pendingSubmission({ id: 's2', uid: 'u1', team: 'A' })])
-      })
-      await approveButton(wrapper).trigger('click')
-      await flushPromises()
-
-      expect(scrollIntoViewMock).toHaveBeenCalledOnce()
-      expect(scrollIntoViewMock.mock.contexts[0]).toBe(nextCard)
-    })
-
     it('판정한 카드와 함께 포커스가 사라지면 다음 카드로 옮긴다', async () => {
       const deliver = captureSnapshotCallbacks()
       const wrapper = mount(RoundOpsPage, { attachTo: document.body, global: { plugins: [createPinia()] } })
@@ -2156,17 +2307,6 @@ describe('RoundOpsPage', () => {
       await flushPromises()
 
       expect(document.activeElement).toBe(card(wrapper, 's2').element)
-    })
-
-    it('다음 카드 머리가 이미 보이면 스크롤을 건드리지 않는다', async () => {
-      const { wrapper } = await openJudgeTab([
-        pendingSubmission(),
-        pendingSubmission({ id: 's2', uid: 'u1', team: 'A' }),
-      ])
-
-      await pickAndApprove(wrapper, 'A')
-
-      expect(scrollIntoViewMock).not.toHaveBeenCalled()
     })
 
     it('팀을 골라 둔 킬샷이 다른 기기에서 먼저 판정되면 카드를 치우고 알린다', async () => {
@@ -2200,7 +2340,9 @@ describe('RoundOpsPage', () => {
         pendingSubmission(),
         pendingSubmission({ id: 's2', uid: 'u1', team: 'A' }),
       ])
+      await move(wrapper, 'next')
       await pick(wrapper, 'B', 's2')
+      await move(wrapper, 'previous')
       approveSubmissionMock.mockImplementationOnce(async () => {
         deliver.submissions([])
       })
@@ -2227,7 +2369,7 @@ describe('RoundOpsPage', () => {
       await flushPromises()
 
       expect(toastMock).toHaveBeenCalledWith({ title: '이미 판정된 킬샷이에요.', tone: 'neutral' })
-      expect(wrapper.text()).not.toContain('잡힌 팀 선택')
+      expect(wrapper.text()).not.toContain('돌려서 팀 고르기')
     })
 
     it('큐 Listen 오류가 나면 stale 카드 대신 지속 오류 상태를 표시한다', async () => {
@@ -2271,7 +2413,7 @@ describe('RoundOpsPage', () => {
     it('팀을 고르던 중 큐 Listen 오류가 나도 선판정으로 오인하지 않는다', async () => {
       const { deliver, wrapper } = await openJudgeTab()
       await pick(wrapper, 'A')
-      expect(tile(wrapper, 'A').attributes('aria-pressed')).toBe('true')
+      expect(row(wrapper, 'A').attributes('aria-selected')).toBe('true')
 
       deliver.submissionsError(new Error('permission-denied'))
       await flushPromises()

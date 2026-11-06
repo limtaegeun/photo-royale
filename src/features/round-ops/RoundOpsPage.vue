@@ -114,7 +114,6 @@ const isFinishRoundDialogOpen = ref(false)
 const finishDialogInfo = ref<{ count: number; uncertain: boolean; stale: boolean } | null>(null)
 const judging = useKillshotJudging()
 const queueListRef = useTemplateRef('queueList')
-const statusBarRef = useTemplateRef('statusBar')
 const isRecordSheetOpen = ref(false)
 /** 상세 시트에서 보는 기록 — 닫힌 뒤에도 애니메이션 동안 보이도록 스냅샷을 들고 있는다 */
 const viewingRecord = ref<SubmissionRecord | null>(null)
@@ -124,6 +123,15 @@ const recordRoundFilter = ref<number | null>(null)
 
 /** 라운드 컨트롤은 게임이 실제로 진행 중일 때만 의미가 있다(rules도 playing에서만 쓰기를 허용한다) */
 const isPlaying = computed(() => gameStatus.value === 'playing')
+/** 판정할 건이 화면에 떠 있는 상태 — 이때만 사진과 다이얼을 화면 높이에 맞춘다 */
+const isJudgingCard = computed(
+  () =>
+    activeTab.value === 'judge' &&
+    phase.value === 'ready' &&
+    isPlaying.value &&
+    submissionListenError.value === null &&
+    pendingSubmissions.value.length > 0,
+)
 /** 시작 전·종료 상태에는 되돌릴 타이머가 없어 일시정지/재개·시간 조정을 감춘다 */
 const canControlTimer = computed(
   () => displayState.value === 'running' || displayState.value === 'paused',
@@ -139,6 +147,8 @@ const isRoundEnded = computed(() => displayState.value === 'ended')
 
 /** 이번 모드의 판정 대상 제한(그룹전의 동맹 제외 등) — 모드 정의가 소유하고 카드는 결과만 받는다 */
 const targetRule = computed(() => (room.value ? (GAME_MODES[room.value.gameMode].targeting ?? null) : null))
+/** 이번 모드의 판정 안내 문구(왕 표시, 꼬리 편입 안내 등) */
+const judgeGuide = computed(() => (room.value ? (GAME_MODES[room.value.gameMode].judgeGuide ?? null) : null))
 
 /**
  * 판정 탭의 "라운드 진행 중이 아님" 카드 본문 — assignmentRound>0(적어도 한 번 라운드를 치른 방)
@@ -339,13 +349,6 @@ async function markStaffOut(armband: string) {
   toast({ title: `팀 ${armband} 아웃으로 기록했어요.`, tone: 'success' })
 }
 
-/** 판정 탭으로 옮겨 그 킬샷의 카드를 화면에 올린다 */
-async function goToJudgeCard(submissionId: string) {
-  activeTab.value = 'judge'
-  await nextTick()
-  queueListRef.value?.cardElement(submissionId)?.scrollIntoView({ block: 'start' })
-}
-
 /**
  * 기록 행 선택 — 이번 라운드의 대기 건이면 판정 탭의 그 카드로 보낸다(판정 큐와 같은 문서다).
  * 그 외(판정 완료, 판정 없이 라운드가 지난 대기 건)는 사진을 크게 확인하는 읽기 전용 상세 시트로
@@ -353,44 +356,31 @@ async function goToJudgeCard(submissionId: string) {
  */
 function openRecord(record: SubmissionRecord) {
   if (record.status === 'pending' && record.round === assignmentRound.value && isPlaying.value) {
-    void goToJudgeCard(record.id)
+    judging.viewSubmission(record.id)
+    activeTab.value = 'judge'
     return
   }
   viewingRecord.value = record
   isRecordSheetOpen.value = true
 }
 
-/**
- * 판정한 카드가 빠지면 다음 카드가 그 자리로 올라온다. 카드가 한 화면보다 큰 기기에서는 타일을 보려고
- * 내린 스크롤이 남아 다음 카드의 프로필이 상태 줄 위로 가려지므로, 그때만 카드 머리까지 되돌린다.
- * 누른 버튼이 카드와 함께 사라지면 포커스가 페이지 밖으로 빠지므로 다음 카드로 옮긴다 — 키보드·낭독기
- * 사용자가 목록 처음부터 다시 찾지 않게 한다.
- */
-async function revealCardAt(index: number) {
+/** 판정한 건이 빠지면 다음 건이 그 자리에 들어온다. 누른 버튼과 함께 사라진 포커스는 다음 건으로 옮긴다 */
+async function focusNextCard() {
   await nextTick()
-  const card = queueListRef.value?.cardElementAt(index)
-  if (!card) return
-  if (document.activeElement === document.body) card.focus({ preventScroll: true })
-  const statusBarBottom = statusBarRef.value?.getBoundingClientRect().bottom ?? 0
-  if (card.getBoundingClientRect().top < statusBarBottom) card.scrollIntoView({ block: 'start' })
-}
-
-function queueIndexOf(submissionId: string) {
-  return pendingSubmissions.value.findIndex((submission) => submission.id === submissionId)
+  if (document.activeElement === document.body) queueListRef.value?.focusViewedCard()
 }
 
 async function approveKillshot(
   submissionId: string,
   target: SubmissionTarget,
   multiplier: KillMultiplier,
+  successToast: string | null,
 ) {
-  const index = queueIndexOf(submissionId)
-  if (await judging.approve(submissionId, target, multiplier)) await revealCardAt(index)
+  if (await judging.approve(submissionId, target, multiplier, successToast)) await focusNextCard()
 }
 
 async function rejectKillshot(submissionId: string) {
-  const index = queueIndexOf(submissionId)
-  if (await judging.reject(submissionId)) await revealCardAt(index)
+  if (await judging.reject(submissionId)) await focusNextCard()
 }
 
 /**
@@ -413,10 +403,10 @@ onUnmounted(() => {
   <!-- 타이틀·설명 헤더는 앱 셸 공용 헤더(AppHeader)가 route meta로 담당한다 -->
   <!-- 하단 safe-area는 화면이 아니라 아래의 sticky 탭 바가 직접 갖는다 — sticky는 뷰포트 하단에
        붙으므로 부모 패딩으로는 홈 인디케이터를 피할 수 없다 -->
-  <!-- --judge-action-bottom: 판정 카드의 액션 바가 멈출 자리 = 하단 탭 바 높이(위 여백 24 + 세그먼트 50 + 아래 여백 16) -->
+  <!-- 판정 중에는 화면 높이에 맞춰 스크롤 없이 사진과 다이얼을 같이 보인다. 가로 화면처럼 아주 낮으면 줄어들지 않고 스크롤된다 -->
   <section
-    class="flex flex-1 flex-col bg-canvas px-6
-           [--judge-action-bottom:calc(var(--pr-inset-bottom-safe)+5.625rem)]"
+    class="flex flex-col bg-canvas px-6"
+    :class="isJudgingCard ? 'h-dvh min-h-120 flex-none' : 'flex-1'"
   >
     <!-- 판정 탭은 공용 헤더를 뺀다 — 페이지 제목(h1)은 낭독기를 위해 남긴다 -->
     <h1 v-if="activeTab === 'judge'" class="sr-only">라운드 운영</h1>
@@ -425,7 +415,6 @@ onUnmounted(() => {
          끝난 줄 모르고 계속 판정한다(QA A-3). 목록이 길어져도 가려지지 않게 상단에 붙인다 -->
     <!-- 위 여백을 줄 안에 둬서 스크롤해도 화면 끝에 붙지 않는다. 판정 탭은 공용 헤더가 없어 안전 영역도 맡는다 -->
     <div
-      ref="statusBar"
       class="sticky top-0 z-(--pr-z-hud) -mx-6 flex items-center justify-between gap-3
              bg-canvas px-6 pb-3"
       :class="activeTab === 'judge' ? 'pt-[calc(var(--pr-inset-top-safe)+0.75rem)]' : 'pt-3'"
@@ -455,7 +444,7 @@ onUnmounted(() => {
     </div>
 
     <!-- 블록 사이 여백은 mt-* 체인이 아니라 컨테이너 gap으로 준다 -->
-    <div class="flex flex-1 flex-col gap-6 pt-3">
+    <div class="flex flex-1 flex-col gap-6" :class="isJudgingCard ? 'min-h-0' : 'pt-3'">
       <template v-if="activeTab === 'ops'">
         <template v-if="phase === 'ready' && isPlaying">
           <RoundTimerCard
@@ -606,7 +595,7 @@ onUnmounted(() => {
             {{ submissionListenError }} 연결이 복구되기 전에는 남아 있던 판정 항목을 사용할 수 없어요.
           </p>
         </BaseCard>
-        <div v-else-if="phase === 'ready' && isPlaying" class="flex flex-col gap-3">
+        <div v-else-if="phase === 'ready' && isPlaying" class="flex min-h-0 flex-1 flex-col gap-3">
           <!-- 리스너는 살아 있어 오류 카드는 뜨지 않지만, 캐시에서만 나온 큐라 서버가 확인한
                값이 아니다 — 종료 확인의 stale 판단과 같은 근거를 판정 탭에서도 보여준다 -->
           <p
@@ -619,6 +608,7 @@ onUnmounted(() => {
           <JudgeQueueList
             ref="queueList"
             :submissions="pendingSubmissions"
+            :viewed-index="judging.viewedIndex.value"
             :participants="participants"
             :assignment-round="assignmentRound"
             :now-ms="nowMs"
@@ -628,8 +618,12 @@ onUnmounted(() => {
             :allow-triple-kill="room?.gameMode === 'normal'"
             :out-teams="outTeams"
             :x-teams="currentLedger?.xTeams ?? []"
+            :rosters="currentLedger?.teams ?? {}"
+            :hits="currentLedger?.hits ?? {}"
             :target-rule="targetRule"
+            :guide="judgeGuide"
             @update-draft="judging.updateDraft"
+            @view="judging.viewAt"
             @approve="approveKillshot"
             @reject="rejectKillshot"
           />

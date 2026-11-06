@@ -3,10 +3,8 @@ import { displayGroup, groupTextClass } from '@/features/team-assignment'
 import { isAssignedInRound, type Participant } from '@/features/waiting-room'
 
 /**
- * 판정 카드(JudgeCard)·스태프 아웃 시트(StaffOutSheet)가 공유하는 "이번 라운드 팀을 그룹 색
- * 순서로 섹션화한 목록" 계산 — 두 시트가 같은 그룹 섹션 구조를 문자 그대로 중복 구현하고
- * 있었다. 선택 가능 여부·배지 같은 시트별 규칙은 각 호출부가 이 결과를 감싸서 얹는다
- * (TeamPickList의 TeamPickOption/TeamPickSection, JudgeCard의 타일 참고).
+ * 판정 카드(JudgeCard)·스태프 아웃 시트(StaffOutSheet)가 공유하는 "이번 라운드 팀 목록" 계산.
+ * 고를 수 있는지와 줄에 붙는 표시는 각 호출부가 이 결과를 걸러서 얹는다.
  */
 
 export interface TeamSectionTeam {
@@ -27,7 +25,7 @@ export interface TeamSection {
   teams: TeamSectionTeam[]
 }
 
-/** 이번 라운드 배정 팀을 그룹 색 순서(파랑→주황→초록→빨강)로 섹션화한다 — 판정 카드·스태프 아웃 시트가 같은 목록을 쓴다 */
+/** 이번 라운드 배정 팀을 그룹 색 순서(파랑→주황→초록→빨강)로 섹션화한다 */
 export function groupTeamSections(
   participants: Participant[],
   assignmentRound: number,
@@ -65,16 +63,20 @@ export function groupTeamSections(
   }).filter((section) => section.teams.length > 0)
 }
 
-/** TeamPickList 옵션 배지 톤 — BaseBadge tone 중 이 목록이 실제로 쓰는 값만 좁힌다 */
-export interface TeamPickOption extends TeamSectionTeam {
-  /** 선택 불가(제출 팀·탈락·모드 제한 등) — 호출부가 이유를 정한다 */
-  disabled: boolean
-  /** 오른쪽 배지 — 없으면 생략 */
-  badge?: { text: string; tone: 'neutral' | 'danger'; appearance?: 'fill' | 'outline' }
-  /** 배지 앞 보조 캡션(예: '1인 팀 · 목숨 2') */
-  caption?: string
+/** 드럼 다이얼 한 줄 — 팀에 붙는 표시(왕, X, 1인 팀 목숨)까지 호출부가 얹어 넘긴다 */
+export interface DialTeam extends TeamSectionTeam {
+  mark: string | null
 }
 
-export interface TeamPickSection extends Omit<TeamSection, 'teams'> {
-  teams: TeamPickOption[]
+/**
+ * 이번 라운드 팀을 알파벳 순서로 편다 — 다이얼은 색이 아니라 완장 글자로 찾으므로 그룹 섹션 순서(파랑 A·E,
+ * 주황 B·F…)대로 깔면 글자가 뒤섞인다.
+ */
+export function alphabeticalTeams(
+  participants: Participant[],
+  assignmentRound: number,
+): TeamSectionTeam[] {
+  return groupTeamSections(participants, assignmentRound)
+    .flatMap((section) => section.teams)
+    .sort((a, b) => a.armband.localeCompare(b.armband))
 }
