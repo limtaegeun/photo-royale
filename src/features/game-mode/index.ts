@@ -27,6 +27,7 @@ export {
   ALLY_GROUP_TARGETING,
   TAIL_CHASE_TARGETING,
   X_ONLY_TARGETING,
+  chaserOf,
   nextPreyOf,
 } from './targeting'
 export {

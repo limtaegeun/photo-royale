@@ -4,6 +4,7 @@ import {
   ALLY_GROUP_TARGETING,
   TAIL_CHASE_TARGETING,
   X_ONLY_TARGETING,
+  chaserOf,
   nextPreyOf,
 } from '../targeting'
 import type { TargetContext } from '../types'
@@ -27,6 +28,31 @@ describe('nextPreyOf (꼬리잡기 P07 §4.2)', () => {
 
   it('공격 팀 혼자만 남으면 잡을 대상이 없다', () => {
     expect(nextPreyOf('A', context(['A']))).toBeNull()
+  })
+})
+
+describe('chaserOf (꼬리잡기 목표 카드 P17)', () => {
+  it('알파벳 순으로 바로 앞 살아 있는 완장이 나를 쫓는다', () => {
+    expect(chaserOf('B', context(['A', 'B', 'C']))).toBe('A')
+  })
+
+  it('첫 완장은 마지막 완장에게 쫓긴다', () => {
+    expect(chaserOf('A', context(['A', 'B', 'C']))).toBe('C')
+  })
+
+  it('탈락한 팀은 건너뛴다', () => {
+    expect(chaserOf('C', context(['A', 'B', 'C'], ['B']))).toBe('A')
+  })
+
+  it('혼자 남으면 쫓는 팀이 없다', () => {
+    expect(chaserOf('A', context(['A']))).toBeNull()
+  })
+
+  it('nextPreyOf의 정확한 반대다 — 나를 쫓는 팀의 사냥 대상은 언제나 나다', () => {
+    const ctx = context(['A', 'B', 'C', 'D', 'E'], ['C'])
+    for (const armband of ['A', 'B', 'D', 'E']) {
+      expect(nextPreyOf(chaserOf(armband, ctx)!, ctx)).toBe(armband)
+    }
   })
 })
 
