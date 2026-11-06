@@ -2,7 +2,7 @@
 
 - **작성일**: 2026-11-06 (사용자 구두 요구: 시안 캔버스의 C1 균형 사슬을 고르고 "이 시안으로 디자인 디벨롭해서 작업 진행해")
 - **기준 코드**: main `06c09ec`
-- **상태**: 구현 중 — 브랜치 `feat/tail-chase-objective-chain`
+- **상태**: 머지 — #120(`bac4875`). 배포 대기(hosting만, rules 변경 없음)
 - **시안**: https://claude.ai/artifact/35RrevYpLJ2bEHDGHfb2TD (C1 균형 사슬 · 상태별 카드의 C1 열 · C1 구현 기준 페이지)
 
 ## 0. 한 줄 요약
