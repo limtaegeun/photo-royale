@@ -81,6 +81,41 @@ export interface TargetRule {
   blockedBadge: string
 }
 
+/** 판정 화면의 안내 계산에 필요한 라운드 상황 — 대상 제한 상황에 원장의 편성과 피격을 더한다 */
+export interface JudgeContext extends TargetContext {
+  /** 원장의 편성(완장 → uid) — 원장이 없는 라운드면 빈 객체라 편입·왕 아웃 안내를 띄우지 않는다 */
+  rosters: Record<string, string[]>
+  /** 원장의 팀별 피격 집계 */
+  hits: Record<string, number>
+}
+
+/** 고른 팀에 따라 달라지는 판정 결과 안내 */
+export interface JudgeOutcome {
+  /** 확정 버튼 문구 — 없으면 기본 문구 */
+  approveLabel?: string
+  /** 제외 줄 자리에 대신 보이는 결과 안내 */
+  note?: string
+  /** 확정 뒤 토스트 — 없으면 기본 문구 */
+  toast?: string
+}
+
+/**
+ * 판정 화면의 모드별 안내 — 다이얼에서 빠지는 팀은 TargetRule이 정하고, 여기서는 진행자에게 보일 문구만 정한다.
+ * 없는 항목은 기본 문구를 쓴다.
+ */
+export interface JudgeGuide {
+  /** 다이얼 맨 위 줄 — 없으면 '돌려서 팀 고르기' */
+  dialHint?: string
+  /** 제외 줄 전체를 대신하는 설명(꼬리잡기의 "대상은 하나뿐", 스태프 추격전의 "전원 동맹") */
+  exclusionSummary?: (attacker: string, context: JudgeContext) => string
+  /** 제외 줄에서 대상 제한 이유를 부르는 말 — 없으면 TargetRule.blockedBadge */
+  exclusionLabel?: (attacker: string, context: JudgeContext) => string
+  /** 제출자 옆과 다이얼 줄에 붙는 역할 표시(왕, X) */
+  teamMark?: (armband: string, context: JudgeContext) => string | null
+  /** 이 팀을 고르면 일어나는 일 — 특별한 결과가 없으면 null */
+  outcome?: (attacker: string, target: string, context: JudgeContext) => JudgeOutcome | null
+}
+
 /**
  * 모드가 배정 보드의 특수 완장 X 모듈을 다루는 방식. 모드를 바꾸면 X는 새 모드의 기본값으로 돌아간다
  * — 왕잡기에서 켜진 X가 다음 라운드 모드로 넘어가던 결함의 수정(2026-10-09 행사 리허설 문제 2·3).
@@ -105,6 +140,8 @@ export interface GameModeDefinition {
   scoring: ModeScoring
   /** 판정 카드의 대상 제한 — 없으면 제출 팀·탈락 팀 외 모든 팀을 잡을 수 있다 */
   targeting?: TargetRule
+  /** 판정 화면의 모드별 안내 — 없으면 기본 문구만 쓴다 */
+  judgeGuide?: JudgeGuide
   /** 배정 보드의 특수 완장 X 모듈 정책 — 없으면 optional(미구현 모드는 열 때 정한다) */
   xModule?: XModulePolicy
   /** X 스위치를 잠근 이유 — xModule이 required·off인 모드가 배정 보드 스위치 아래에 보인다 */

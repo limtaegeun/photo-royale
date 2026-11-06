@@ -1,4 +1,5 @@
 import type { GameModeDefinition } from '../types'
+import { KING_HUNT_JUDGE_GUIDE } from '../judgeGuides'
 import { kingHuntScoring } from '../scoring'
 import { ALLY_GROUP_TARGETING } from '../targeting'
 
@@ -21,6 +22,7 @@ export const kingHuntMode: GameModeDefinition = {
   // 왕잡기 원점수(P07 §4.4) — 일반 킬 10 · 왕의 킬 20 · 왕 사냥 30 · 그룹 동료 킬 5 · 왕 아웃 그룹원 −20
   scoring: kingHuntScoring,
   targeting: ALLY_GROUP_TARGETING,
+  judgeGuide: KING_HUNT_JUDGE_GUIDE,
   // 왕이 없으면 성립하지 않는 모드 — 배정 보드가 X 모듈을 켜고 잠근다
   xModule: 'required',
   xModuleLockReason: '왕잡기는 그룹마다 왕(X)이 필요해 항상 켜집니다',
