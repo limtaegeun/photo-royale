@@ -23,6 +23,19 @@ export function nextPreyOf(attacker: string, context: TargetContext): string | n
   return alive.find((armband) => armband > attacker) ?? alive[0]!
 }
 
+/**
+ * nextPreyOf의 반대 방향 — 이 완장을 사냥 대상으로 삼는 살아 있는 완장 하나. 첫 완장은 마지막 완장에게
+ * 쫓긴다("A는 Z에게"). 살아 있는 팀이 이 완장뿐이면 null.
+ */
+export function chaserOf(target: string, context: TargetContext): string | null {
+  const alive = context.teams
+    .filter((armband) => armband !== target && !context.outTeams.includes(armband))
+    .sort()
+  if (alive.length === 0) return null
+  const ahead = alive.filter((armband) => armband < target)
+  return ahead[ahead.length - 1] ?? alive[alive.length - 1]!
+}
+
 /** 바로 다음 알파벳(살아 있는 팀 기준)만 잡을 수 있다 — 꼬리잡기의 대상 제한 */
 export const TAIL_CHASE_TARGETING: TargetRule = {
   canTarget: (attacker, target, context) => nextPreyOf(attacker, context) === target,
