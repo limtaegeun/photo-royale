@@ -869,6 +869,117 @@ describe('CameraPage 탈락 게이트 (P07 M3)', () => {
  * 스태프 추격전은 참가자가 킬샷을 제출하지 않는 모드다(P07 §4.5 후속) — 진행자가 스태프 태그를
  * 수동으로 기록하므로, 콕핏은 셔터를 잠그고 모드 정의가 소유한 문구로 이유를 보여준다.
  */
+describe('CameraPage 꼬리잡기 목표 카드 (P17)', () => {
+  /** 나(player1)는 A, player2가 팀원, player3은 B — C 팀을 더해 사슬이 셋이 되게 한다 */
+  const CHAIN_PLAYERS = [
+    ...PLAYERS,
+    { ...PLAYERS[2]!, id: 'player4', name: '서아', team: 'C' },
+  ]
+
+  function tailChaseLedger(overrides: Partial<RoundLedger> = {}): RoundLedger {
+    return {
+      ...ledgerWith({}),
+      mode: 'tail-chase',
+      teams: { A: ['player1', 'player2'], B: ['player3'], C: ['player4'] },
+      ...overrides,
+    }
+  }
+
+  async function mountTailChase(gameMode: RoomInfo['gameMode'] = 'tail-chase') {
+    subscribeParticipantsMock.mockImplementation((_code, onChange) => {
+      onChange(CHAIN_PLAYERS)
+      return unsubscribeParticipantsMock
+    })
+    const deliverRoom = captureRoomSnapshot()
+    const deliverLedger = captureLedgerSnapshot()
+    const wrapper = await mountWithActiveCamera()
+    deliverRoom(playingRoom({ gameMode }))
+    await flushPromises()
+    return { wrapper, deliverLedger }
+  }
+
+  it('사슬로 잡을 팀을 보여 주고 칩 줄의 팀원·생존을 카드로 옮긴다', async () => {
+    const { wrapper, deliverLedger } = await mountTailChase()
+    deliverLedger(tailChaseLedger())
+    await flushPromises()
+
+    const text = wrapper.text()
+    expect(text).toContain('꼬리잡기 · 생존 3 / 3팀')
+    expect(text).toContain('쫓는 팀초록')
+    expect(text).toContain('우리 팀팀원 하린')
+    expect(text).toContain('잡을 팀주황')
+    // 일반 목표 문구와 칩 줄은 사라진다
+    expect(text).not.toContain('바로 다음 알파벳만 사냥할 수 있습니다.')
+    expect(text).not.toContain('팀 A · 팀원 하린')
+  })
+
+  it('원장을 받기 전에는 틀릴 수 있는 사슬 대신 규칙 문구와 칩 줄을 보여 준다', async () => {
+    const { wrapper } = await mountTailChase()
+
+    const text = wrapper.text()
+    expect(text).toContain('바로 다음 알파벳만 사냥할 수 있습니다.')
+    expect(text).toContain('팀 A · 팀원 하린')
+    expect(text).not.toContain('쫓는 팀')
+  })
+
+  it('다른 모드는 기존 목표 문구와 칩 줄 그대로다', async () => {
+    const { wrapper, deliverLedger } = await mountTailChase('normal')
+    deliverLedger(ledgerWith({}))
+    await flushPromises()
+
+    const text = wrapper.text()
+    expect(text).toContain('상대 완장 알파벳을 찍어 제출하세요.')
+    expect(text).toContain('팀 A · 팀원 하린')
+    expect(text).not.toContain('쫓는 팀')
+  })
+
+  it('잡히면 꼬리 카드가 셔터 잠금 이유를 말하고 탈락 안내를 겹쳐 띄우지 않는다', async () => {
+    const { wrapper, deliverLedger } = await mountTailChase()
+    deliverLedger(tailChaseLedger({ hits: { A: 1 }, tails: { C: ['player1', 'player2'] } }))
+    await flushPromises()
+
+    const text = wrapper.text()
+    expect(findShutter(wrapper).attributes('disabled')).toBeDefined()
+    expect(text).toContain('꼬리')
+    expect(text).toContain('합류한 팀초록')
+    expect(text).toContain('C팀 목표주황')
+    expect(text).toContain('촬영 불가 · C팀이 잡으면 점수 공유')
+    expect(text).not.toContain('우리 팀이 잡혔어요')
+  })
+
+  it('잡혔는데 합류한 팀을 알 수 없으면 기존 탈락 안내로 돌아간다', async () => {
+    const { wrapper, deliverLedger } = await mountTailChase()
+    deliverLedger(tailChaseLedger({ hits: { A: 1 } }))
+    await flushPromises()
+
+    const text = wrapper.text()
+    expect(text).toContain('우리 팀이 잡혔어요. 이번 라운드는 촬영할 수 없어요.')
+    expect(text).toContain('바로 다음 알파벳만 사냥할 수 있습니다.')
+    expect(text).not.toContain('합류한 팀')
+  })
+
+  it('일시정지면 사슬을 두고 안내를 따로 띄우며 타이머를 경고색으로 바꾼다', async () => {
+    mockDisplayState.value = 'paused'
+    const { wrapper, deliverLedger } = await mountTailChase()
+    deliverLedger(tailChaseLedger())
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('진행자가 게임을 멈췄어요.')
+    expect(wrapper.text()).toContain('잡을 팀주황')
+    expect(wrapper.find('[aria-label="게임 남은 시간"]').classes()).toContain('text-warning')
+  })
+
+  it('라운드가 끝나면 사슬 대신 종료 안내를 보여 준다', async () => {
+    mockDisplayState.value = 'ended'
+    const { wrapper, deliverLedger } = await mountTailChase()
+    deliverLedger(tailChaseLedger())
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('라운드가 종료됐어요. 진행자 안내를 기다려 주세요.')
+    expect(wrapper.text()).not.toContain('잡을 팀주황')
+  })
+})
+
 describe('CameraPage 모드 킬샷 잠금 (스태프 추격전)', () => {
   it('라운드가 끝나면 잠긴 셔터와 잠금 문구가 모두 빠지고 기록 버튼만 남는다', async () => {
     mockDisplayState.value = 'ended'

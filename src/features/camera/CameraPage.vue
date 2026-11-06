@@ -33,6 +33,8 @@ import {
 } from '@/features/round-ledger'
 import CockpitMapSheet from './components/CockpitMapSheet.vue'
 import CockpitRecordSheet from './components/CockpitRecordSheet.vue'
+import TailChaseObjectiveCard from './components/TailChaseObjectiveCard.vue'
+import { deriveTailChaseObjective } from './tailChaseObjective'
 import { useCameraStream } from './composables/useCameraStream'
 import { useJudgmentFeedback } from './composables/useJudgmentFeedback'
 import { discardPendingKillshot, useKillshotSubmit } from './composables/useKillshotSubmit'
@@ -190,12 +192,24 @@ const teamCountLabel = computed(() =>
  * `팀 B · leo10`이 내 이름으로 읽혀, 창마다 계정을 다르게 띄운 시험에서 제출자를 거꾸로
  * 짚은 일이 있었기 때문이다(2026-11-04 사용자 결정, docs/plans/p11-cockpit-teammate-label.md).
  */
-const teamLabel = computed(() => {
-  if (me.value?.team === null || me.value === null) return '팀 확인 중'
+const teammateLabel = computed(() => {
   const partnerNames = teammates.value.map((participant) => participant.name).join(' · ')
-  return partnerNames
-    ? `팀 ${me.value.team} · 팀원 ${partnerNames}`
-    : `팀 ${me.value.team} · 1인 팀`
+  return partnerNames ? `팀원 ${partnerNames}` : '1인 팀'
+})
+const teamLabel = computed(() =>
+  me.value?.team === null || me.value === null
+    ? '팀 확인 중'
+    : `팀 ${me.value.team} · ${teammateLabel.value}`,
+)
+/**
+ * 꼬리잡기 목표 카드 내용(P17) — 다른 모드는 null이라 기존 목표 문구·칩 줄을 그대로 쓴다. 원장이 없으면(구독 전·
+ * 구독 오류) 누가 살아 있는지 몰라 틀린 팀을 가리킬 수 있으니, 사슬 대신 언제나 맞는 규칙 문구를 보여 준다.
+ */
+const tailChaseObjective = computed(() => {
+  const myParticipant = me.value
+  if (currentMode.value.id !== 'tail-chase' || ledger.value === null) return null
+  if (myParticipant === null || myParticipant.team === null) return null
+  return deriveTailChaseObjective(ledger.value, myParticipant.team, myParticipant.id)
 })
 
 /**
@@ -532,7 +546,17 @@ function subscribeToCurrentRoundLedger(roundNumber: number) {
       <header
         class="absolute inset-x-0 top-0 z-(--pr-z-hud) flex flex-col gap-2 px-4 pt-(--pr-inset-top-safe)"
       >
-        <div class="mt-3 flex items-start gap-3 rounded-lg bg-scrim-strong p-3">
+        <TailChaseObjectiveCard
+          v-if="tailChaseObjective !== null"
+          :objective="tailChaseObjective"
+          :mode-label="currentMode.label"
+          :team-count-label="teamCountLabel"
+          :teammate-label="teammateLabel"
+          :remaining-time="remainingTime"
+          :is-timer-warning="isPaused || isRoundEnded"
+          :is-round-ended="isRoundEnded"
+        />
+        <div v-else class="mt-3 flex items-start gap-3 rounded-lg bg-scrim-strong p-3">
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-2">
               <BaseBadge tone="accent">목표</BaseBadge>
@@ -570,9 +594,10 @@ function subscribeToCurrentRoundLedger(roundNumber: number) {
         </div>
 
         <!-- 탈락(P07 M3) — 일시정지처럼 목표·공지를 덮지 않고 자기 자리에서 알린다. 라운드가 끝날
-             때까지 되돌아오지 않는 상태라 셔터가 잠긴 이유를 여기서 읽는다 -->
+             때까지 되돌아오지 않는 상태라 셔터가 잠긴 이유를 여기서 읽는다. 꼬리잡기는 목표 카드가
+             '꼬리'와 촬영 불가를 이미 말하므로 겹쳐 띄우지 않는다(P17) -->
         <div
-          v-if="isMyTeamOut && !isRoundEnded"
+          v-if="isMyTeamOut && !isRoundEnded && tailChaseObjective === null"
           role="status"
           class="flex items-center gap-2 rounded-lg border border-danger bg-scrim-strong p-3"
         >
@@ -594,7 +619,7 @@ function subscribeToCurrentRoundLedger(roundNumber: number) {
           </p>
         </div>
 
-        <div class="flex gap-2 text-caption">
+        <div v-if="tailChaseObjective === null" class="flex gap-2 text-caption">
           <span
             class="min-w-0 flex-1 truncate rounded-full bg-scrim-strong px-3 py-2"
             :class="groupTextClass(me?.team)"
