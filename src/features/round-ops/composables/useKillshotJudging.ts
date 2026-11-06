@@ -23,7 +23,7 @@ const JUDGE_ERROR_MESSAGE = '판정을 처리하지 못했어요. 다시 시도�
 export const JUDGE_INPUT_LOCK_MS = 400
 
 /**
- * 판정 탭 카드의 고르기·확정·반려 — 카드를 탭 전환에도 유지되게 하려고 선택값을 페이지 쪽에서 들고 있고,
+ * 판정 탭의 고르기·확정·반려와 보고 있는 건 — 탭 전환에도 유지되게 하려고 페이지 쪽에서 들고 있고,
  * 쓰기는 한 번에 한 건만 나가게 전 카드를 잠근다.
  */
 export function useKillshotJudging() {
@@ -37,6 +37,32 @@ export function useKillshotJudging() {
   const activeJudgement = ref<{ submissionId: string; intent: JudgeIntent } | null>(null)
   const isCoolingDown = ref(false)
   const isLocked = computed(() => pendingAction.value === 'judge' || isCoolingDown.value)
+
+  /** 보고 있는 건 — 앞 건이 판정돼 순번이 밀려도 같은 사진을 계속 보도록 순번이 아니라 id로 든다 */
+  const viewedId = ref<string | null>(null)
+  /** 보던 건이 큐에서 빠지면 그 자리를 이어받은 건을 보여 주려고 마지막 순번을 남긴다 */
+  const lastViewedIndex = ref(0)
+  const viewedIndex = computed(() => {
+    const queue = pendingSubmissions.value
+    const found = queue.findIndex((submission) => submission.id === viewedId.value)
+    return found >= 0 ? found : Math.max(0, Math.min(lastViewedIndex.value, queue.length - 1))
+  })
+  watch(
+    [viewedIndex, pendingSubmissions],
+    ([index, queue]) => {
+      lastViewedIndex.value = index
+      viewedId.value = queue[index]?.id ?? null
+    },
+    { immediate: true, flush: 'sync' },
+  )
+
+  function viewAt(index: number) {
+    viewedId.value = pendingSubmissions.value[index]?.id ?? viewedId.value
+  }
+
+  function viewSubmission(submissionId: string) {
+    viewedId.value = submissionId
+  }
 
   let cooldownTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -105,16 +131,23 @@ export function useKillshotJudging() {
     return true
   }
 
-  async function approve(submissionId: string, target: SubmissionTarget, multiplier: KillMultiplier) {
+  /** @param successToast 모드가 정한 토스트(왕 사냥, 꼬리 편입) — 없으면 기본 문구 */
+  async function approve(
+    submissionId: string,
+    target: SubmissionTarget,
+    multiplier: KillMultiplier,
+    successToast: string | null = null,
+  ) {
     const approved = await runJudgement(submissionId, 'approve', () =>
       store.approveSubmission(submissionId, target, multiplier),
     )
     if (!approved) return false
     toast({
       title:
-        multiplier === 3
+        successToast ??
+        (multiplier === 3
           ? `팀 ${target.team} 낙오 포착 킬샷(3배)으로 판정했어요.`
-          : `팀 ${target.team} 킬샷으로 판정했어요.`,
+          : `팀 ${target.team} 킬샷으로 판정했어요.`),
       tone: 'success',
     })
     return true
@@ -139,5 +172,16 @@ export function useKillshotJudging() {
     toast({ title: '이미 판정된 킬샷이에요.', tone: 'neutral' })
   })
 
-  return { drafts, draftOf, updateDraft, activeJudgement, isLocked, approve, reject }
+  return {
+    drafts,
+    draftOf,
+    updateDraft,
+    activeJudgement,
+    isLocked,
+    approve,
+    reject,
+    viewedIndex,
+    viewAt,
+    viewSubmission,
+  }
 }
