@@ -53,6 +53,14 @@ describe('firestore.rules 동기화', () => {
     expect(cooldownRules).toContain(`resource.data.heat - ${KILLSHOT_HEAT_SERVER_GRACE_SEC}\n`)
   })
 
+  it('제출 갈래는 같은 배치에서 내 열 문서를 이번 서버 시각으로 썼는지 대조한다(rules 2차)', () => {
+    const start = rules.indexOf('match /submissions/{submissionId}')
+    const submissionCreate = rules.slice(rules.indexOf('allow create:', start), rules.indexOf('allow update:', start))
+    expect(submissionCreate).toMatch(
+      /getAfter\(\/databases\/\$\(database\)\/documents\/rooms\/\$\(roomCode\)\/killshotCooldowns\/\$\(request\.auth\.uid\)\)\.data\.lastAt\s+== request\.time;/,
+    )
+  })
+
   it('본인만 쓰고, 서버 시각을 찍고, 지금 라운드여야 한다', () => {
     expect(cooldownRules).toContain('request.auth.uid == uid')
     expect(cooldownRules).toContain('request.resource.data.lastAt == request.time')
