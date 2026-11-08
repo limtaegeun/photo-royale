@@ -12,6 +12,13 @@ export {
   type Submission,
   type SubmissionRecord,
 } from './api/submissions'
+// 킬샷 과열(P19) — 제출과 같은 배치로 쓰는 내 열 문서. 콕핏이 구독해 셔터를 잠근다
+export {
+  KILLSHOT_HEAT_CAP_SEC,
+  KILLSHOT_HEAT_PER_SUBMIT_SEC,
+  subscribeToKillshotCooldown,
+  type KillshotCooldown,
+} from './api/killshotCooldown'
 export { useRoundTimer } from './composables/useRoundTimer'
 // 상대 시각 표기 — 콕핏 기록 시트(camera)가 기록 탭과 같은 문구("N분 전")로 제출 시각을 보인다
 export { formatRelativeTime } from './relativeTime'
