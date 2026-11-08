@@ -21,7 +21,7 @@ import type { RoomStatus } from './rooms'
 
 /**
  * 방 아래 하위 컬렉션 — 삭제가 지우는 대상의 단일 목록. 확인 모달은 이 중 사람이 알아볼 다섯 가지만 보인다
- * (킬샷 과열의 열 문서(P19)는 참가자마다 하나씩 생기는 내부 기록이라 세기만 하고 보이지 않는다).
+ * (킬샷 과열의 열 문서(P20)는 참가자마다 하나씩 생기는 내부 기록이라 세기만 하고 보이지 않는다).
  */
 export const ROOM_CHILD_COLLECTIONS = [
   'participants',

@@ -119,7 +119,7 @@ function pendingDoc(
 }
 
 describe('submitKillshot', () => {
-  it('킬샷 문서와 내 열 문서를 한 배치로 쓴다 — 함께 성공하거나 함께 실패한다(P19 과열)', async () => {
+  it('킬샷 문서와 내 열 문서를 한 배치로 쓴다 — 함께 성공하거나 함께 실패한다(P20 과열)', async () => {
     await submitKillshot('AB2C', {
       uid: 'player1',
       team: 'B',

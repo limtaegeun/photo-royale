@@ -460,7 +460,7 @@ service cloud.firestore {
         allow delete: if isDeletingRoomHost(roomCode);
       }
 
-      // 킬샷 과열(P19, docs/plans/p19-killshot-overheat.md) — 참가자마다 문서 하나. 킬샷 제출과 같은 배치로
+      // 킬샷 과열(P20, docs/plans/p20-killshot-overheat.md) — 참가자마다 문서 하나. 킬샷 제출과 같은 배치로
       // 덮어쓴다. 열(heat)은 초 단위 숫자로 1칸 = 3, 꽉 참 = 12이고, 마지막 제출 뒤 흐른 초만큼 식는다.
       // 다음 1칸이 들어갈 자리가 없으면 쓰기가 거부되고, 같은 배치의 제출도 함께 거부된다.
       // 3과 12는 src/features/round-ops/api/killshotCooldown.ts의 KILLSHOT_HEAT_PER_SUBMIT_SEC ·

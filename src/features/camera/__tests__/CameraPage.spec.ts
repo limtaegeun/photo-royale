@@ -28,7 +28,7 @@ const subscribeNoticeMock =
     ) => () => void
   >()
 const submitKillshotMock = vi.fn<(code: string, input: Record<string, unknown>) => Promise<void>>()
-/** 내 열 문서(P19 과열) 구독 — 테스트가 onChange 로 열 상태를 밀어 넣는다 */
+/** 내 열 문서(P20 과열) 구독 — 테스트가 onChange 로 열 상태를 밀어 넣는다 */
 const unsubscribeCooldownMock = vi.fn<() => void>()
 const subscribeCooldownMock =
   vi.fn<
@@ -1542,7 +1542,7 @@ describe('CameraPage', () => {
       team: 'A',
       round: 1,
       photo: 'data:image/jpeg;base64,killshot',
-      // 열이 없던 첫 제출 — 1칸(3초)을 같은 배치로 적는다(P19 과열)
+      // 열이 없던 첫 제출 — 1칸(3초)을 같은 배치로 적는다(P20 과열)
       heat: 3,
     })
     expect(toastMock).toHaveBeenCalledWith({
@@ -1741,7 +1741,7 @@ describe('CameraPage', () => {
   })
 })
 
-/** P19 킬샷 과열 — 열 문서로 셔터를 잠그고, 셔터 테두리 하나로만 보인다 */
+/** P20 킬샷 과열 — 열 문서로 셔터를 잠그고, 셔터 테두리 하나로만 보인다 */
 describe('CameraPage 과열 잠금', () => {
   function deliverCooldown(cooldown: { round: number; heat: number; lastAtMs: number | null } | null) {
     subscribeCooldownMock.mockImplementation((_code, _uid, onChange) => {

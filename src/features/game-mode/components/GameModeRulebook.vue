@@ -54,7 +54,7 @@ const renderedRules = computed<RenderedRule[]>(() => {
     }
     return { text: entry.text, caption: entry.caption ?? null, captionColored: false }
   })
-  // 킬샷 과열(P19) — 킬샷을 쓰는 모드에만 덧붙인다. 스태프 추격전은 셔터가 원래 잠겨 있다
+  // 킬샷 과열(P20) — 킬샷을 쓰는 모드에만 덧붙인다. 스태프 추격전은 셔터가 원래 잠겨 있다
   if (modeDefinition.value.killshotLock === undefined) {
     items.push({
       text: '킬샷을 몰아서 내면 카메라가 과열돼요.',
