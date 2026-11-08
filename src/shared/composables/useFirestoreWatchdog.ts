@@ -6,13 +6,18 @@ import { useFirestoreConnectionStatus } from './useFirestoreConnectionStatus'
 export const PROBE_INTERVAL_MS = 15_000
 /** 응답 대기(ms) — 킬샷 사진처럼 큰 문서가 내려오는 중이면 이 시간을 넘길 수 있다 */
 export const PROBE_TIMEOUT_MS = 6_000
-/** 새로 연 뒤 다시 확인할 때까지의 첫 간격(ms) — 새 연결도 죽어 있으면 빨리 알아채야 한다 */
+/** 새로 연 뒤 다시 새로 열 때까지의 첫 간격(ms) — 새 연결도 죽어 있으면 빨리 알아채야 한다 */
 export const PROBE_RETRY_BASE_MS = 5_000
 /**
- * 실패가 이어질 때의 최대 간격(ms) — 실패마다 간격을 두 배로 늘린다. 큰 문서가 내려오는 중인 느린 폰은 점검이
- * 실패해 연결을 새로 열면 그 문서를 처음부터 다시 받으므로, 끝까지 받을 시간을 줘야 한다.
+ * 새로 열기가 이어질 때의 최대 간격(ms) — 새로 열 때마다 간격을 두 배로 늘린다. 큰 문서가 내려오는 중인 느린 폰은
+ * 연결을 새로 열면 그 문서를 처음부터 다시 받으므로, 끝까지 받을 시간을 줘야 한다.
  */
 export const PROBE_MAX_INTERVAL_MS = 30_000
+/**
+ * 응답이 없는 동안의 점검 간격(ms) — 새로 열기는 위 간격으로 늘리되 점검은 짧게 이어 간다. 점검만 늘리면 연결이
+ * 살아난 뒤에도 '연결 중'이 최대 30초 남았다(2026-11-08 실측). 점검 실패는 연결을 건드리지 않아 느린 폰도 괜찮다.
+ */
+export const UNHEALTHY_PROBE_INTERVAL_MS = 3_000
 /** 이만큼 넘게 가려져 있다 돌아오면 연결부터 새로 연다(ms) — 화면 잠금·앱 전환 뒤의 연결은 죽어 있기 쉽다 */
 export const RESUME_RESTART_MIN_HIDDEN_MS = 3_000
 /**
@@ -32,9 +37,10 @@ export const RECONNECTING_NOTICE_DELAY_MS = 1_500
 /** 한 번의 복귀에 화면 복귀·포커스·온라인 신호가 겹쳐 와도 연결은 한 번만 새로 연다(ms) */
 export const RESUME_DEDUPE_MS = 2_000
 
-function nextProbeDelay(failures: number): number {
-  if (failures === 0) return PROBE_INTERVAL_MS
-  return Math.min(PROBE_RETRY_BASE_MS * 2 ** (failures - 1), PROBE_MAX_INTERVAL_MS)
+/** 연달아 새로 연 횟수에 따른 다음 새로 열기까지의 최소 간격(ms) — 5·10·20·30초 */
+function restartBackoff(restarts: number): number {
+  if (restarts === 0) return 0
+  return Math.min(PROBE_RETRY_BASE_MS * 2 ** (restarts - 1), PROBE_MAX_INTERVAL_MS)
 }
 
 /**
@@ -50,7 +56,9 @@ export function useFirestoreWatchdog(): void {
   let hiddenAtMs: number | null = null
   let blurredAtMs: number | null = null
   let lastResumeAtMs: number | null = null
-  let failures = 0
+  /** 응답이 확인된 뒤로 연달아 새로 연 횟수와 마지막으로 새로 연 시각 */
+  let restarts = 0
+  let lastRestartAtMs = 0
   let fastProbesLeft = 0
   let stopped = false
 
@@ -79,20 +87,29 @@ export function useFirestoreWatchdog(): void {
     const reachable = await isFirestoreReachable(fast ? RESUME_PROBE_TIMEOUT_MS : PROBE_TIMEOUT_MS)
     if (stopped) return
     if (reachable) {
-      failures = 0
+      restarts = 0
       fastProbesLeft = 0
       clearNoticeTimer()
       setReconnecting(false)
-    } else {
-      // 빠른 확인을 다 쓰고도 응답이 없으면 평소 재시도의 첫 간격(5초)부터 잇는다
-      if (!fast) failures += 1
-      else if (fastProbesLeft === 0) failures = 1
-      clearNoticeTimer()
-      setReconnecting(true)
-      await restartFirestoreNetwork().catch(() => {})
+      schedule(PROBE_INTERVAL_MS)
+      return
+    }
+    clearNoticeTimer()
+    setReconnecting(true)
+    // 돌아온 직후 빠른 확인은 실패마다 새로 연다. 그 밖에는 연달아 새로 연 횟수만큼 간격을 두고 연다
+    if (fast || Date.now() - lastRestartAtMs >= restartBackoff(restarts)) {
+      await restart()
       if (stopped) return
     }
-    schedule(fastProbesLeft > 0 ? RESUME_PROBE_DELAY_MS : nextProbeDelay(failures))
+    // 빠른 확인을 다 썼으면 새로 열기 간격을 첫 칸(5초)부터 다시 늘린다
+    if (fast && fastProbesLeft === 0) restarts = 1
+    schedule(fastProbesLeft > 0 ? RESUME_PROBE_DELAY_MS : UNHEALTHY_PROBE_INTERVAL_MS)
+  }
+
+  async function restart() {
+    restarts += 1
+    lastRestartAtMs = Date.now()
+    await restartFirestoreNetwork().catch(() => {})
   }
 
   /** 브라우저로 돌아왔다 — 연결부터 새로 열고 짧은 간격으로 응답을 확인한다 */
@@ -100,8 +117,8 @@ export function useFirestoreWatchdog(): void {
     const now = Date.now()
     if (lastResumeAtMs !== null && now - lastResumeAtMs < RESUME_DEDUPE_MS) return
     lastResumeAtMs = now
-    void restartFirestoreNetwork().catch(() => {})
-    failures = 0
+    restarts = 0
+    void restart()
     fastProbesLeft = RESUME_FAST_PROBES
     showReconnectingLater()
     schedule(RESUME_PROBE_DELAY_MS)
@@ -121,14 +138,13 @@ export function useFirestoreWatchdog(): void {
       reconnectNow()
       return
     }
-    // 빠른 확인 중에 잠깐 가려졌다면 빠른 확인을 잇는다
+    // 빠른 확인 중이거나 응답이 없던 중에 잠깐 가려졌다면 하던 확인을 잇는다
     if (fastProbesLeft > 0) {
       showReconnectingLater()
       schedule(RESUME_PROBE_DELAY_MS)
       return
     }
-    failures = 0
-    schedule(PROBE_INTERVAL_MS)
+    schedule(restarts > 0 ? UNHEALTHY_PROBE_INTERVAL_MS : PROBE_INTERVAL_MS)
   }
 
   /** 뒤로 가기 캐시에서 되살아난 페이지 — visibilitychange 없이 돌아오는 경로가 있다 */
