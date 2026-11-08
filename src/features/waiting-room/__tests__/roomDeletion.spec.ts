@@ -123,12 +123,13 @@ describe('deleteRoom', () => {
     vi.unstubAllGlobals()
   })
 
-  it('방을 닫고 → 킬샷·원장·공지·지도 → 참가자와 방 문서를 한 배치로 지운다', async () => {
+  it('방을 닫고 → 킬샷·원장·공지·지도·과열 기록 → 참가자와 방 문서를 한 배치로 지운다', async () => {
     serveChildren('AB2C', {
       submissions: ['s1', 's2'],
       rounds: ['1', '2'],
       notices: ['n1'],
       assets: ['venueMap'],
+      killshotCooldowns: ['u1'],
       participants: ['u1', 'u2'],
     })
 
@@ -144,6 +145,8 @@ describe('deleteRoom', () => {
       'commit rooms/AB2C/notices/n1',
       'list assets',
       'commit rooms/AB2C/assets/venueMap',
+      'list killshotCooldowns',
+      'commit rooms/AB2C/killshotCooldowns/u1',
       'list participants',
       'commit rooms/AB2C/participants/u1,rooms/AB2C/participants/u2,rooms/AB2C',
     ])
@@ -208,7 +211,7 @@ describe('deleteRoom', () => {
 describe('firestore.rules 동기화', () => {
   const rules = readFileSync(resolve(__dirname, '../../../../firestore.rules'), 'utf8')
 
-  it('하위 컬렉션 다섯 곳 모두에 방 삭제 갈래가 있다 — 빠지면 그 컬렉션에서 삭제가 멈춘다', () => {
+  it('하위 컬렉션 모두에 방 삭제 갈래가 있다 — 빠지면 그 컬렉션에서 삭제가 멈춘다', () => {
     for (const name of ROOM_CHILD_COLLECTIONS) {
       const block = rules.slice(rules.indexOf(`match /${name}/`))
       const end = block.indexOf('\n      }')
