@@ -24,6 +24,16 @@ describe('ConnectionStatusBadge', () => {
     expect(wrapper.find('[data-testid="connection-status-badge"]').exists()).toBe(false)
   })
 
+  it('헤더가 떠 있으면 제목을 가리지 않게 오른쪽에, 없으면 가운데에 둔다', () => {
+    const center = mount(ConnectionStatusBadge)
+    expect(center.get('[role="status"]').attributes('data-placement')).toBe('center')
+    expect(center.get('[role="status"]').classes()).toContain('justify-center')
+
+    const beside = mount(ConnectionStatusBadge, { props: { besideHeader: true } })
+    expect(beside.get('[role="status"]').attributes('data-placement')).toBe('beside-header')
+    expect(beside.get('[role="status"]').classes()).toContain('justify-end')
+  })
+
   it('라이브 영역은 늘 있고 클릭을 통과시킨다', () => {
     const wrapper = mount(ConnectionStatusBadge)
     const region = wrapper.get('[role="status"]')

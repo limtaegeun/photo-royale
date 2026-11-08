@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import AppHeader from '@/shared/components/AppHeader.vue'
 import BaseToastProvider from '@/shared/components/BaseToastProvider.vue'
@@ -17,6 +18,8 @@ const {
   backAction: headerBackAction,
   hidden: headerHidden,
 } = useAppHeader()
+
+const appHeaderVisible = computed(() => !route.meta.hideAppHeader && !headerHidden.value)
 </script>
 
 <template>
@@ -26,7 +29,7 @@ const {
       <!-- 공용 헤더 — 카메라 콕핏 등 풀스크린 라우트는 meta.hideAppHeader로, 한 라우트 안의 특정 탭은
            setHeaderHidden으로 제외 -->
       <AppHeader
-        v-if="!route.meta.hideAppHeader && !headerHidden"
+        v-if="appHeaderVisible"
         :show-profile-link="authStore.isLoggedIn"
         :title="headerTitle ?? route.meta.appHeaderTitle"
         :description="headerDescription ?? route.meta.appHeaderDescription"
@@ -42,5 +45,5 @@ const {
   <!-- 전역 토스트 — 어느 기능에서든 useToast().toast(...)로 발행 -->
   <BaseToastProvider />
   <!-- '연결 중' — 실시간 화면의 연결 감시가 서버와 다시 연결하는 동안만 뜬다 -->
-  <ConnectionStatusBadge />
+  <ConnectionStatusBadge :beside-header="appHeaderVisible" />
 </template>
