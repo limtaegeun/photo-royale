@@ -22,6 +22,8 @@ import {
 import { useFirestoreWatchdog } from '@/shared/composables/useFirestoreWatchdog'
 import { useToast } from '@/shared/composables/useToast'
 import { useAppHeader } from '@/shared/composables/useAppHeader'
+import GuestCheckInCard from './components/GuestCheckInCard.vue'
+import GuestReadyBar from './components/GuestReadyBar.vue'
 import KickableRosterChip from './components/KickableRosterChip.vue'
 import StandingsCard from './components/StandingsCard.vue'
 import VenueMapUploadSheet from './components/VenueMapUploadSheet.vue'
@@ -142,14 +144,19 @@ const isRoundOverAwaitingHost = computed(
 )
 
 /**
- * 게스트 CTA 문구 — 확정된 상태는 어느 뷰에서나 '준비 완료' 하나로 통일하고, 누를 수 있는
- * 상태는 뷰별 행동 문구를 쓴다(배정 카드 뷰는 안전 수칙 동의가 이미 끝났으므로 라운드 준비만).
- * 두 상태가 같은 문구였을 때는 눌린 뒤에도 문구가 그대로여서 반영 여부를 알 수 없었다.
+ * 게스트 준비 CTA를 띄우는 상태 — 호스트가 아니고, 이번 라운드 미배정 안내 중이 아닐 때(D-5: 그때는
+ * 준비할 대상이 없다). 이 상태에서 하단 플로팅 준비 바와, 기본 뷰의 체크인 카드를 함께 보인다(P19).
+ * 체크인 카드가 "아래 버튼을 눌러 주세요"라고 안내하므로 버튼이 없는 상태에서는 띄우지 않는다.
  */
-const guestCtaLabel = computed(() => {
-  if (isReadyConfirmed.value) return '준비 완료'
-  return showGuestAssignment.value ? '라운드 준비 완료' : '확인하고 준비 완료'
-})
+const showGuestReadyCta = computed(() => !isHost.value && !showUnassignedNotice.value)
+
+/**
+ * 게스트 CTA 문구 — 누를 수 있는 상태의 뷰별 행동 문구다(배정 카드 뷰는 안전 수칙 동의가 이미
+ * 끝났으므로 라운드 준비만). 누른 뒤의 '준비 완료'는 준비 바가 완료 상태 줄로 따로 보인다(P19).
+ */
+const guestCtaLabel = computed(() =>
+  showGuestAssignment.value ? '라운드 준비 완료' : '확인하고 준비 완료',
+)
 
 /** 명단 묶음 제목 색 — 상태를 색과 글자로 함께 표기한다. 동적 클래스라 리터럴 맵으로 둔다 */
 const ROSTER_GROUP_TITLE_CLASS = {
@@ -161,23 +168,35 @@ const ROSTER_GROUP_TITLE_CLASS = {
  * 입장 명단을 준비 상태로 나눈다. 대기 묶음을 위에 둬서 진행자가 아직 준비하지 않은 사람을
  * 바로 찾아 이름으로 부를 수 있게 한다. 칩마다 붙던 상태 점·글자는 3열 칩의 이름 칸을 먹어
  * 닉네임이 첫 글자만 보였으므로(10/9 리허설 40명), 상태는 묶음 제목이 맡고 칩에는 이름만 둔다.
- * 빈 묶음은 그리지 않고, 묶음 안 순서는 명단 순서를 그대로 따른다.
+ * 빈 묶음은 그리지 않고, 묶음 안 순서는 명단 순서를 따르되 내 칩만 묶음 맨 앞에 둔다(P19) —
+ * 40명 명단에서 내 칩을 찾지 않아도 되고, 준비하면 내 칩이 준비 묶음 맨 앞으로 옮겨 간다.
+ * 호스트는 명단에 없으므로 순서가 그대로다.
  * roster는 이번 라운드 배정이 아닌 완장을 숨긴 명단이다(유령 완장 방지).
  */
-const rosterGroups = computed(() =>
-  [
+const rosterGroups = computed(() => {
+  const meFirst = (members: typeof roster.value) => [
+    ...members.filter((participant) => participant.id === myId.value),
+    ...members.filter((participant) => participant.id !== myId.value),
+  ]
+  return [
     {
       key: 'waiting' as const,
       label: '대기',
-      members: roster.value.filter((participant) => !participant.isReady),
+      members: meFirst(roster.value.filter((participant) => !participant.isReady)),
     },
     {
       key: 'ready' as const,
       label: '준비',
-      members: roster.value.filter((participant) => participant.isReady),
+      members: meFirst(roster.value.filter((participant) => participant.isReady)),
     },
-  ].filter((group) => group.members.length > 0),
-)
+  ].filter((group) => group.members.length > 0)
+})
+
+/** 명단 칩의 `나` 표시 상태 — 내 칩만 준비 상태를 넘기고 나머지는 생략한다 */
+function selfStatusOf(participant: Participant): 'waiting' | 'ready' | undefined {
+  if (participant.id !== myId.value) return undefined
+  return participant.isReady ? 'ready' : 'waiting'
+}
 
 /**
  * 팀 배정 시작(호스트) — 참가자·레디 상태를 검증한 뒤 드래프트를 채우고 보드를 연다.
@@ -466,7 +485,12 @@ async function copyInviteLink() {
        높이는 앱 셸(헤더 아래 남는 공간)을 flex-1로 채운다 — min-h-dvh를 쓰면 헤더 높이만큼
        항상 세로 스크롤이 생긴다. 스크롤은 명단이 실제로 넘칠 때만 생기는 게 정상이다 -->
   <!-- 타이틀·설명 헤더는 앱 셸 공용 헤더(AppHeader)가 route meta로 담당한다 -->
-  <section class="flex flex-1 flex-col bg-canvas px-6 pt-3 pb-(--pr-inset-bottom-safe)">
+  <!-- 하단 safe-area 여백은 게스트 준비 바가 있으면 바가 안쪽에 품는다 — 섹션에도 주면 끝까지
+       내렸을 때 바 아래에 인셋만큼 빈 띠가 한 번 더 생긴다 -->
+  <section
+    class="flex flex-1 flex-col bg-canvas px-6 pt-3"
+    :class="phase === 'joined' && showGuestReadyCta ? '' : 'pb-(--pr-inset-bottom-safe)'"
+  >
     <!-- 콘텐츠 영역은 flex 컨테이너여야 한다 — 블록이면 자식(배정 보드)의 flex-1·mt-auto가 죽어
          보드의 액션 영역이 화면 하단에 붙지 않는다. 세 뷰의 상단 여백은 여기서 한 번만 준다 -->
     <div class="flex flex-1 flex-col gap-4 pt-3">
@@ -523,10 +547,20 @@ async function copyInviteLink() {
         <!-- 기본 대기실 뷰 — 블록 사이 여백은 mt-* 체인이 아니라 컨테이너 gap으로 준다
              (조건부 렌더에서 첫 블록의 마진이 남는 문제를 없앤다) -->
         <div v-else class="flex flex-col gap-6">
+          <!-- 게스트 체크인 카드(P19 시안 C) — 룸 카드 자리를 대신해 지금 할 일을 단계로 보인다.
+               준비 버튼이 없는 상태(이번 라운드 미배정 안내)는 "아래 버튼을 눌러 주세요"가 거짓이 되므로
+               룸 카드를 그대로 쓴다 -->
+          <GuestCheckInCard
+            v-if="showGuestReadyCta"
+            :room-code="roomCode!"
+            :is-ready="isReadyConfirmed"
+            :round-summary="confirmedRoundSummary"
+            @copy-invite="copyInviteLink"
+          />
           <!-- 룸 정보 카드 — 초대 수단(링크 복사)을 상시 노출한다. 인원 수는 아래 명단 헤더가
                담당하므로 이 카드는 코드·상태·초대에만 집중한다(같은 숫자를 두 번 보여주지 않는다).
                코드는 카드 내 주요 정보(text-heading)로, display(카운트다운용)는 과하다 -->
-          <BaseCard>
+          <BaseCard v-else>
             <!-- 카드 안 블록 간격도 mt-* 대신 gap으로 준다 — 모드 줄이 조건부라 마진 체인이면
                  배정 전/후로 초대 버튼 위 여백이 달라진다 -->
             <div class="flex flex-col gap-4">
@@ -605,6 +639,7 @@ async function copyInviteLink() {
                       :name="participant.name"
                       :team="participant.team"
                       :gender="participant.gender"
+                      :self-status="selfStatusOf(participant)"
                     />
                   </li>
                 </ul>
@@ -686,66 +721,67 @@ async function copyInviteLink() {
       <p v-else class="text-body text-content-secondary" role="status">대기실에 입장하는 중…</p>
     </div>
 
-    <!-- 하단 고정 CTA — 게스트: 안전 수칙 동의/라운드 준비 / 호스트(진행자): 팀 배정 시작.
-         배정 보드가 열려 있는 동안엔 보드가 자체 액션을 가지므로 이 CTA를 숨긴다. -->
-    <!-- 하단 여백은 pb-4 + section의 safe-area 인셋으로 만든다(둘을 합쳐 24px 이상 확보).
-         버튼 사이 간격도 마진 대신 gap으로 준다 — 에러 문구가 끼어도 리듬이 유지된다 -->
-    <div v-if="phase === 'joined' && !showAssignmentBoard" class="flex flex-col gap-3 pt-6 pb-4">
-      <!-- 호스트(진행자): 배정 확정 전에는 배정 시작만, 확정 후에는 게임 시작을 주 액션으로
-           올려 라운드 루프(배정 → 게임)를 끝까지 진행할 수 있게 한다.
+    <!-- 하단 CTA — 호스트(진행자): 팀 배정 시작·게임 시작. 배정 보드가 열려 있는 동안엔 보드가
+         자체 액션을 가지므로 이 CTA를 숨긴다(보드는 호스트 전용).
+         하단 여백은 pb-4 + section의 safe-area 인셋으로 만든다(둘을 합쳐 24px 이상 확보).
+         버튼 사이 간격도 마진 대신 gap으로 준다 — 에러 문구가 끼어도 리듬이 유지된다.
+         호스트 CTA는 흐름 끝에 둔다 — 버튼이 최대 3개라 화면에 띄우면 명단을 너무 가린다 -->
+    <div
+      v-if="phase === 'joined' && isHost && !showAssignmentBoard"
+      class="flex flex-col gap-3 pt-6 pb-4"
+    >
+      <!-- 배정 확정 전에는 배정 시작만, 확정 후에는 게임 시작을 주 액션으로 올려 라운드 루프
+           (배정 → 게임)를 끝까지 진행할 수 있게 한다.
            주 CTA는 lg(56px), 보조로 내려간 재배정은 md(48px)로 높이 차이로 위계를 만든다 -->
-      <template v-if="isHost">
-        <p v-if="startGameError" class="text-caption text-danger" role="alert">
-          {{ startGameError }}
-        </p>
-        <BaseButton
-          v-if="assignmentRound > 0"
-          variant="accent"
-          size="lg"
-          class="w-full"
-          :loading="isStartingGame"
-          :disabled="!canStartGame"
-          @click="requestStartGame"
-        >
-          게임 시작
-        </BaseButton>
-        <BaseButton
-          :variant="assignmentRound > 0 ? 'ghost' : 'accent'"
-          :size="assignmentRound > 0 ? 'md' : 'lg'"
-          class="w-full"
-          @click="startAssignment"
-        >
-          {{ assignmentCtaLabel }}
-        </BaseButton>
-        <!-- 라운드 종료 후 기록을 확인할 유일한 경로 — 최소 한 번 배정된 방에서만 의미가 있다 -->
-        <BaseButton
-          v-if="assignmentRound > 0"
-          variant="ghost"
-          size="md"
-          class="w-full"
-          @click="viewPastRecords"
-        >
-          지난 라운드 기록 보기
-        </BaseButton>
-      </template>
-
-      <!-- 이번 라운드 미배정 게스트는 레디 CTA가 없다 — 배정 카드가 있을 때의 행동이라 대상이 없다 -->
-      <template v-else-if="!showUnassignedNotice">
-        <p v-if="readyError" class="text-caption text-danger" role="alert">
-          {{ readyError }}
-        </p>
-        <BaseButton
-          variant="accent"
-          size="lg"
-          class="w-full"
-          :loading="isConfirmingReady"
-          :disabled="isReadyConfirmed"
-          @click="store.confirmReady()"
-        >
-          {{ guestCtaLabel }}
-        </BaseButton>
-      </template>
+      <p v-if="startGameError" class="text-caption text-danger" role="alert">
+        {{ startGameError }}
+      </p>
+      <BaseButton
+        v-if="assignmentRound > 0"
+        variant="accent"
+        size="lg"
+        class="w-full"
+        :loading="isStartingGame"
+        :disabled="!canStartGame"
+        @click="requestStartGame"
+      >
+        게임 시작
+      </BaseButton>
+      <BaseButton
+        :variant="assignmentRound > 0 ? 'ghost' : 'accent'"
+        :size="assignmentRound > 0 ? 'md' : 'lg'"
+        class="w-full"
+        @click="startAssignment"
+      >
+        {{ assignmentCtaLabel }}
+      </BaseButton>
+      <!-- 라운드 종료 후 기록을 확인할 유일한 경로 — 최소 한 번 배정된 방에서만 의미가 있다 -->
+      <BaseButton
+        v-if="assignmentRound > 0"
+        variant="ghost"
+        size="md"
+        class="w-full"
+        @click="viewPastRecords"
+      >
+        지난 라운드 기록 보기
+      </BaseButton>
     </div>
+
+    <!-- 게스트 플로팅 준비 바(P19 시안 A) — 명단이 길어도 버튼이 화면 하단에 떠 있다. 준비 인원 진행률로
+         진행자가 전원 준비를 기다린다는 것을 알리고, 누르면 비활성 버튼 대신 완료 상태로 바뀐다.
+         이번 라운드 미배정 게스트는 준비 CTA가 없다 — 배정 카드가 있을 때의 행동이라 대상이 없다(D-5) -->
+    <GuestReadyBar
+      v-if="phase === 'joined' && showGuestReadyCta"
+      :label="guestCtaLabel"
+      :is-ready="isReadyConfirmed"
+      :is-confirming="isConfirmingReady"
+      :error="readyError"
+      :ready-count="readyCount"
+      :participant-count="participantCount"
+      :is-assigned="showGuestAssignment"
+      :show-progress="gameStatus !== 'playing'"
+      @confirm="store.confirmReady()"
+    />
 
     <!-- 같은 차수 재실행 확인 — 안전한 경로(다음 배정)를 위에 채운 배경으로, 위험을 감수하는
          경로(그대로 재실행)는 아래에 ghost로 둔다(기존 종료 확인 다이얼로그들과 같은 위계).
