@@ -779,6 +779,7 @@ async function copyInviteLink() {
       :ready-count="readyCount"
       :participant-count="participantCount"
       :is-assigned="showGuestAssignment"
+      :show-progress="gameStatus !== 'playing'"
       @confirm="store.confirmReady()"
     />
 

@@ -12,6 +12,11 @@ interface Props {
   participantCount: number
   /** 라운드 배정 카드 뷰인지 — 준비한 뒤 기다리는 대상이 팀 배정이 아니라 게임 시작이다 */
   isAssigned: boolean
+  /**
+   * 안내와 진행률을 보일지 — 게임 중(라운드가 끝나 대기실로 돌아온 구간)에는 진행자가 준비를 기다리는
+   * 게 아니라 게임을 마치는 중이라 "전원 준비를 기다리고 있어요"가 거짓이 된다. 그때는 완료 상태만 남긴다.
+   */
+  showProgress: boolean
 }
 
 const props = defineProps<Props>()
@@ -56,7 +61,7 @@ const progressWidth = computed(() => {
     <div class="pointer-events-auto flex flex-col gap-3">
       <p v-if="error" class="text-caption text-danger" role="alert">{{ error }}</p>
 
-      <div class="flex flex-col gap-2">
+      <div v-if="showProgress" class="flex flex-col gap-2">
         <div class="flex items-baseline justify-between gap-3">
           <p
             class="min-w-0 text-caption font-semibold break-keep"

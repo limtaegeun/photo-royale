@@ -895,6 +895,12 @@ describe('WaitingRoomPage', () => {
     expect(replaceMock).not.toHaveBeenCalledWith({ name: 'camera', params: { roomCode: 'AB2C' } })
     expect(wrapper.text()).toContain('라운드 종료')
     expect(wrapper.text()).toContain('다음 라운드가 시작되면 촬영 화면이 자동으로 열려요')
+    // 진행자는 준비가 아니라 게임 종료를 기다리게 하는 중이다 — 준비 바는 완료 상태만 남기고
+    // "전원 준비를 기다리고 있어요"와 진행률은 보이지 않는다(P19)
+    const bar = wrapper.find('[data-testid="guest-ready-bar"]')
+    expect(bar.find('[role="status"]').text()).toBe('준비 완료')
+    expect(bar.text()).not.toContain('진행자가 전원 준비를 기다리고 있어요')
+    expect(bar.text()).not.toContain('1/1')
   })
 
   it('게스트: 진행자가 시간을 더하면 콕핏으로 자동 재진입한다', async () => {
