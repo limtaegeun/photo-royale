@@ -14,7 +14,7 @@ import {
   type RoomInfo,
 } from '@/features/waiting-room'
 import { useAuthStore } from '@/features/auth'
-import { GAME_MODES } from '@/features/game-mode'
+import { GAME_MODES, livesOf } from '@/features/game-mode'
 import { groupTextClass } from '@/features/team-assignment'
 import { useFirestoreWatchdog } from '@/shared/composables/useFirestoreWatchdog'
 import { useToast } from '@/shared/composables/useToast'
@@ -33,9 +33,11 @@ import {
 } from '@/features/round-ledger'
 import CockpitMapSheet from './components/CockpitMapSheet.vue'
 import CockpitRecordSheet from './components/CockpitRecordSheet.vue'
+import EliminationNoticeDialog from './components/EliminationNoticeDialog.vue'
 import TailChaseObjectiveCard from './components/TailChaseObjectiveCard.vue'
 import { deriveTailChaseObjective } from './tailChaseObjective'
 import { useCameraStream } from './composables/useCameraStream'
+import { useEliminationNotice } from './composables/useEliminationNotice'
 import { useJudgmentFeedback } from './composables/useJudgmentFeedback'
 import { discardPendingKillshot, useKillshotSubmit } from './composables/useKillshotSubmit'
 import { useKillshotCooldown } from './composables/useKillshotCooldown'
@@ -254,6 +256,29 @@ const { mySubmissions } = useJudgmentFeedback({
   round: computed(() => room.value?.assignmentRound ?? null),
   isMyTeamOut,
   toast,
+})
+
+/** 우리 팀 목숨 — 원장 편성에서 센다(2인 팀 1, 1인 팀 2). 원장이 없으면 탈락 모델도 없어 null */
+const myLives = computed(() => {
+  const armband = me.value?.team
+  if (armband == null || ledger.value === null) return null
+  return livesOf(ledger.value.teams, armband)
+})
+
+/**
+ * 탈락 알림(P21) — 우리 팀이 잡히면 팀원 전원에게 잡은 팀·판정 사진·시각을 담은 창을 띄운다. 꼬리잡기는 잡힌
+ * 팀이 상대 꼬리로 편입되고 목표 카드가 그걸 이미 알리므로 띄우지 않는다. 라운드가 끝나면 대기실로 나가니 닫는다.
+ */
+const {
+  notice: eliminationNotice,
+  eliminatedBy,
+  acknowledge: acknowledgeElimination,
+} = useEliminationNotice({
+  roomCode: computed(() => roomCode),
+  team: computed(() => me.value?.team ?? null),
+  round: computed(() => room.value?.assignmentRound ?? null),
+  lives: myLives,
+  enabled: computed(() => currentMode.value.absorbsCaughtTeam !== true && !isRoundEnded.value),
 })
 
 /**
@@ -643,7 +668,8 @@ function subscribeToCurrentRoundLedger(roundNumber: number) {
         >
           <BaseBadge tone="danger">탈락</BaseBadge>
           <p class="min-w-0 flex-1 text-caption text-pretty break-keep text-danger">
-            우리 팀이 잡혔어요. 이번 라운드는 촬영할 수 없어요. 라운드가 끝나면 대기실로 이동해요.
+            {{ eliminatedBy === null ? '우리 팀이 잡혔어요.' : `팀 ${eliminatedBy}에게 잡혔어요.` }}
+            이번 라운드는 촬영할 수 없어요. 라운드가 끝나면 대기실로 이동해요.
           </p>
         </div>
 
@@ -926,6 +952,9 @@ function subscribeToCurrentRoundLedger(roundNumber: number) {
 
     <!-- 기록 시트(P08 슬롯 4) — 뷰파인더 블록 밖에 두어 확인 화면·라운드 종료로 컨트롤이 바뀌어도
          열려 있던 시트가 끊기지 않는다. 포털로 body에 렌더된다 -->
+    <!-- 탈락 알림(P21) — 카메라 상태와 무관하게 뜬다(권한 확인 중이어도 탈락은 알린다) -->
+    <EliminationNoticeDialog :notice="eliminationNotice" @acknowledge="acknowledgeElimination" />
+
     <CockpitRecordSheet
       v-model:open="isRecordSheetOpen"
       :my-submissions="mySubmissions"
