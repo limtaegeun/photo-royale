@@ -154,6 +154,13 @@ function findButton(wrapper: ReturnType<typeof mountPage>, text: string) {
   return wrapper.findAll('button').find((b) => b.text() === text)
 }
 
+/** 명단 묶음의 칩 이름 — 내 칩의 `나` 표시는 빼고 이름만 읽는다 */
+function chipNames(wrapper: ReturnType<typeof mountPage>, key: 'waiting' | 'ready') {
+  return wrapper
+    .findAll(`ul[aria-labelledby="roster-group-${key}"] li`)
+    .map((item) => item.find('span').text())
+}
+
 /** 다이얼로그 버튼은 Teleport 대상(document.body)에서 찾는다 — 못 찾으면 명시적으로 실패시킨다 */
 function findBodyButton(text: string) {
   const button = [...document.body.querySelectorAll<HTMLElement>('button')].find(
@@ -282,7 +289,9 @@ describe('WaitingRoomPage', () => {
       gender: 'male',
     })
     expect(wrapper.text()).toContain('ROOM AB2C')
-    expect(wrapper.text()).toContain('대기 중')
+    // 게스트는 룸 카드 대신 체크인 카드를 본다(P19) — 방 상태 배지 대신 남은 단계를 알린다
+    expect(wrapper.text()).toContain('내 체크인')
+    expect(wrapper.text()).toContain('1단계 남음')
 
     deliver.participants(ROSTER)
     await flushPromises()
@@ -306,10 +315,8 @@ describe('WaitingRoomPage', () => {
 
     const groupTitles = wrapper.findAll('[id^="roster-group-"]').map((title) => title.text())
     expect(groupTitles).toEqual(['대기 1명', '준비 2명'])
-    const chipTexts = (key: string) =>
-      wrapper.findAll(`ul[aria-labelledby="roster-group-${key}"] li`).map((item) => item.text())
-    expect(chipTexts('waiting')).toEqual(['오리'])
-    expect(chipTexts('ready')).toEqual(['하린', '도윤'])
+    expect(chipNames(wrapper, 'waiting')).toEqual(['오리'])
+    expect(chipNames(wrapper, 'ready')).toEqual(['하린', '도윤'])
   })
 
   it('대기하던 참가자가 준비하면 준비 묶음으로 옮겨 가고, 빈 대기 묶음은 그리지 않는다', async () => {
@@ -324,10 +331,81 @@ describe('WaitingRoomPage', () => {
 
     const groupTitles = wrapper.findAll('[id^="roster-group-"]').map((title) => title.text())
     expect(groupTitles).toEqual(['준비 3명'])
-    const readyTexts = wrapper
-      .findAll('ul[aria-labelledby="roster-group-ready"] li')
-      .map((item) => item.text())
-    expect(readyTexts).toEqual(['오리', '하린', '도윤'])
+    expect(chipNames(wrapper, 'ready')).toEqual(['오리', '하린', '도윤'])
+  })
+
+  /**
+   * 40명 명단에서는 내 칩을 찾기 어렵고, 아직 준비하지 않았다는 것을 이름 옆에서 알 수 없었다(P19 시안 B).
+   * 내 칩은 묶음 맨 앞에 `나` 표시와 함께 두고, 준비하면 준비 묶음 맨 앞으로 옮겨 간다.
+   */
+  it('게스트: 내 칩은 묶음 맨 앞에 나 표시와 함께 놓이고, 준비하면 준비 묶음 맨 앞으로 옮겨 간다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    const wrapper = mountPage()
+    await flushPromises()
+    const lateMe = { ...ROSTER[0]! }
+    const waitingOther = { ...ROSTER[2]!, isReady: false }
+    // 명단 순서상 나는 맨 뒤다
+    deliver.participants([ROSTER[1]!, waitingOther, lateMe])
+    await flushPromises()
+
+    expect(chipNames(wrapper, 'waiting')).toEqual(['오리', '도윤'])
+    const myChip = wrapper.find('[data-self]:not([data-self="none"])')
+    expect(myChip.attributes('data-self')).toBe('waiting')
+    expect(myChip.text()).toBe('오리나')
+    expect(myChip.attributes('aria-label')).toContain('오리 · 나')
+    expect(wrapper.findAll('[data-self="none"]')).toHaveLength(2)
+
+    deliver.participants([ROSTER[1]!, waitingOther, { ...lateMe, isReady: true }])
+    await flushPromises()
+
+    expect(chipNames(wrapper, 'waiting')).toEqual(['도윤'])
+    expect(chipNames(wrapper, 'ready')).toEqual(['오리', '하린'])
+    expect(wrapper.find('[data-self="ready"]').exists()).toBe(true)
+  })
+
+  /** P19 시안 C — 첫 화면에서 지금 할 일을 단계로 보인다. 준비하면 진행자 팀 배정 대기로 넘어간다 */
+  it('게스트: 체크인 카드가 준비 전엔 2단계를, 준비 후엔 3단계를 지금 단계로 보인다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    const wrapper = mountPage()
+    await flushPromises()
+    deliver.participants(ROSTER)
+    await flushPromises()
+
+    const currentStep = () => wrapper.find('li[aria-current="step"]')
+    expect(currentStep().attributes('data-step')).toBe('ready')
+    expect(currentStep().text()).toContain('지금 할 일 · 아래 버튼을 눌러 주세요')
+    expect(wrapper.find('li[data-step="enter"]').attributes('data-state')).toBe('done')
+    expect(wrapper.find('li[data-step="assign"]').attributes('data-state')).toBe('pending')
+
+    deliver.participants([{ ...ROSTER[0]!, isReady: true }, ...ROSTER.slice(1)])
+    await flushPromises()
+
+    expect(currentStep().attributes('data-step')).toBe('assign')
+    expect(currentStep().text()).toContain('팀이 정해지면 화면이 자동으로 넘어가요')
+    expect(wrapper.find('li[data-step="ready"]').attributes('data-state')).toBe('done')
+    expect(wrapper.text()).toContain('준비 완료')
+    expect(wrapper.text()).not.toContain('1단계 남음')
+  })
+
+  /** P19 시안 A — 플로팅 준비 바가 진행자가 기다린다는 사실과 준비 인원을 함께 보인다 */
+  it('게스트: 준비 바는 준비 인원과 진행자가 기다린다는 안내를 보이고, 준비 후엔 팀 배정 대기로 바뀐다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    const wrapper = mountPage()
+    await flushPromises()
+    deliver.participants(ROSTER)
+    await flushPromises()
+
+    const bar = () => wrapper.find('[data-testid="guest-ready-bar"]')
+    expect(bar().exists()).toBe(true)
+    expect(bar().classes()).toContain('sticky')
+    expect(bar().text()).toContain('진행자가 전원 준비를 기다리고 있어요')
+    expect(bar().text()).toContain('2/3')
+
+    deliver.participants([{ ...ROSTER[0]!, isReady: true }, ...ROSTER.slice(1)])
+    await flushPromises()
+
+    expect(bar().text()).toContain('팀 배정을 기다리는 중이에요')
+    expect(bar().text()).toContain('3/3')
   })
 
   /**
@@ -521,8 +599,10 @@ describe('WaitingRoomPage', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('3명 입장 · 3명 준비')
-    expect(cta.text()).toBe('준비 완료')
-    expect(cta.attributes('disabled')).toBeDefined()
+    // 비활성 회색 버튼 대신 완료 상태 줄로 바뀐다(P19) — 다시 누를 버튼이 남지 않는다
+    expect(findButton(wrapper, '확인하고 준비 완료')).toBeUndefined()
+    const done = wrapper.find('[data-testid="guest-ready-bar"] [role="status"]')
+    expect(done.text()).toBe('준비 완료')
   })
 
   it('호스트(진행자)는 팀 배정 시작 버튼만 보고, 준비 CTA·동의 안내문·명단의 자신이 없다', async () => {
@@ -539,6 +619,10 @@ describe('WaitingRoomPage', () => {
     expect(findButton(wrapper, '확인하고 준비 완료')).toBeUndefined()
     expect(findButton(wrapper, '게임 시작')).toBeUndefined()
     expect(wrapper.text()).not.toContain('아래 확인 버튼을 누르면')
+    // 준비 바·체크인 카드는 게스트 전용이다 — 호스트는 룸 카드와 흐름 끝의 CTA를 그대로 본다
+    expect(wrapper.find('[data-testid="guest-ready-bar"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('내 체크인')
+    expect(wrapper.text()).toContain('대기 중')
     expect(wrapper.findAllComponents(PlayerChip)).toHaveLength(2)
     expect(wrapper.text()).toContain('2명 입장 · 2명 준비')
     expect(wrapper.text()).not.toContain('오리')
@@ -778,6 +862,10 @@ describe('WaitingRoomPage', () => {
     expect(replaceMock).not.toHaveBeenCalledWith({ name: 'camera', params: { roomCode: 'AB2C' } })
     expect(wrapper.text()).toContain('이번 라운드에는 배정되지 않았어요')
     expect(findButton(wrapper, '확인하고 준비 완료')).toBeUndefined()
+    // 누를 버튼이 없으니 "아래 버튼을 눌러 주세요"라는 체크인 카드도 띄우지 않고 룸 카드를 쓴다(P19)
+    expect(wrapper.find('[data-testid="guest-ready-bar"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('내 체크인')
+    expect(wrapper.text()).toContain('ROOM AB2C')
   })
 
   it('게스트: 타이머가 0에 닿은 라운드로는 콕핏으로 되밀어 내지 않는다(A-4)', async () => {
@@ -1206,6 +1294,38 @@ describe('WaitingRoomPage', () => {
     expect(useAppHeader().title.value).toBe('라운드 1 배정')
     // 배정 카드 뷰의 준비 CTA — 아직 확정 전이라 행동 문구다(확정되면 '준비 완료'로 바뀐다)
     expect(findButton(wrapper, '라운드 준비 완료')).toBeDefined()
+    // 배정 카드 뷰에도 같은 플로팅 바가 뜬다. 체크인 카드는 기본 뷰 전용이다
+    expect(wrapper.find('[data-testid="guest-ready-bar"]').text()).toContain('2/3')
+    expect(wrapper.text()).not.toContain('내 체크인')
+  })
+
+  /** 배정 카드 뷰에서 준비한 뒤 기다리는 건 팀 배정이 아니라 게임 시작이다 — 팀 배정 대기라고 알리지 않는다 */
+  it('게스트: 배정 카드 뷰에서 준비하면 완료 상태로 바뀌고 진행자가 전원 준비를 기다린다는 안내를 유지한다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    getRoomMock.mockResolvedValue({
+      hostUid: 'host9',
+      status: 'waiting',
+      assignmentRound: 1,
+      playedRound: 0,
+      gameMode: 'normal',
+      roundModes: {},
+      round: null,
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+    deliver.participants([
+      { ...ROSTER[0]!, team: 'A', assignedRound: 1, isReady: true },
+      { ...ROSTER[1]!, team: 'A', assignedRound: 1, isReady: false },
+      { ...ROSTER[2]!, team: 'B', assignedRound: 1, isReady: false },
+    ])
+    await flushPromises()
+
+    const bar = wrapper.find('[data-testid="guest-ready-bar"]')
+    expect(findButton(wrapper, '라운드 준비 완료')).toBeUndefined()
+    expect(bar.find('[role="status"]').text()).toBe('준비 완료')
+    expect(bar.text()).toContain('진행자가 전원 준비를 기다리고 있어요')
+    expect(bar.text()).not.toContain('팀 배정을 기다리는 중이에요')
+    expect(bar.text()).toContain('1/3')
   })
 
   it('호스트: 보드 진입 후 room 스냅샷 라운드가 올라가도 드래프트 차수는 고정된다(QA N-02)', async () => {
