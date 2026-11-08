@@ -96,14 +96,16 @@ describe('isFirestoreReachable', () => {
 })
 
 describe('watchFirestoreSynced', () => {
-  it('점검 문서를 메타데이터 변경까지 구독하고, 서버가 확인한(캐시가 아닌) 스냅샷에서만 알린다', () => {
+  it('예약 ID 가 아닌 없는 문서를 메타데이터 변경까지 구독하고, 서버가 확인한(캐시가 아닌) 스냅샷에서만 알린다', () => {
     const onSynced = vi.fn<() => void>()
     const stop = vi.fn<() => void>()
     onSnapshotMock.mockReturnValue(stop)
 
     const unsubscribe = watchFirestoreSynced(onSynced)
     const [ref, options, next] = onSnapshotMock.mock.calls[0]!
-    expect(ref.path).toBe('nicknames/__connection_probe__')
+    // `__…__` 꼴은 Firestore 예약 ID 라 구독이 invalid-argument 로 끝난다(2026-11-08 실측)
+    expect(ref.path).toBe('nicknames/_connection_sync')
+    expect(ref.path.split('/').pop()).not.toMatch(/^__.*__$/)
     expect(options).toEqual({ includeMetadataChanges: true })
 
     next({ metadata: { fromCache: true } })
