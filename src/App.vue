@@ -2,6 +2,7 @@
 import { useRoute } from 'vue-router'
 import AppHeader from '@/shared/components/AppHeader.vue'
 import BaseToastProvider from '@/shared/components/BaseToastProvider.vue'
+import ConnectionStatusBadge from '@/shared/components/ConnectionStatusBadge.vue'
 import { useAppHeader } from '@/shared/composables/useAppHeader'
 import { useAuthStore } from '@/features/auth'
 
@@ -40,4 +41,6 @@ const {
 
   <!-- 전역 토스트 — 어느 기능에서든 useToast().toast(...)로 발행 -->
   <BaseToastProvider />
+  <!-- '연결 중' — 실시간 화면의 연결 감시가 서버와 다시 연결하는 동안만 뜬다 -->
+  <ConnectionStatusBadge />
 </template>
