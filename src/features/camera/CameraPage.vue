@@ -38,6 +38,7 @@ import { deriveTailChaseObjective } from './tailChaseObjective'
 import { useCameraStream } from './composables/useCameraStream'
 import { useJudgmentFeedback } from './composables/useJudgmentFeedback'
 import { discardPendingKillshot, useKillshotSubmit } from './composables/useKillshotSubmit'
+import { useKillshotCooldown } from './composables/useKillshotCooldown'
 import { usePhotoCapture } from './composables/usePhotoCapture'
 
 useFirestoreWatchdog()
@@ -102,6 +103,18 @@ const pastLedgers = ref<RoundLedger[]>([])
 const roomCode = normalizeRoomCode(String(route.params.roomCode))
 
 /**
+ * 킬샷 과열(P19) — 내 열 문서로 셔터를 잠근다. 다음 1칸이 들어갈 자리가 날 때까지(길어야 3초)만 잠기고
+ * 단계는 없다. 표시는 셔터 테두리 하나뿐이다(docs/plans/p19-killshot-overheat.md).
+ */
+const heatCooldown = useKillshotCooldown(
+  roomCode,
+  computed(() => authStore.user?.uid ?? null),
+  computed(() => room.value?.assignmentRound ?? null),
+)
+/** 확인 화면에서 열이 식기를 기다리는 중 — 제출 버튼을 로딩으로 두고 다시 누르기를 막는다 */
+const isWaitingHeat = ref(false)
+
+/**
  * 방 문서 구독 — 콕핏이 스스로 나갈 시점을 알기 위한 최소한의 연결이다.
  * 호스트가 게임을 종료하면(status가 waiting으로 돌아가거나 round가 사라지면) 플레이어는
  * 뛰는 것을 멈추고 대기실로 돌아가야 하는데, 구독이 없으면 카메라 화면에 갇힌다.
@@ -146,7 +159,26 @@ const currentMode = computed(() => GAME_MODES[room.value?.gameMode ?? 'normal'])
 /** 모드가 킬샷을 쓰지 않으면(스태프 추격전) 콕핏이 셔터를 잠그고 이 문구로 이유를 보인다 */
 const modeKillshotLock = computed(() => currentMode.value.killshotLock ?? null)
 /** 셔터가 잠긴 모든 이유의 합 — 버튼 disabled와 손잡이 색이 같은 근거를 본다 */
-const isShutterLocked = computed(() => isPaused.value || isMyTeamOut.value || modeKillshotLock.value !== null)
+const isShutterLocked = computed(
+  () =>
+    isPaused.value ||
+    isMyTeamOut.value ||
+    modeKillshotLock.value !== null ||
+    heatCooldown.isOverheated.value,
+)
+/** 과열 테두리 — 다른 잠금(일시정지·탈락·모드 잠금)이 없을 때만 그린다. 그 잠금의 안내가 우선이다 */
+const showHeatRing = computed(
+  () =>
+    heatCooldown.isOverheated.value &&
+    !isPaused.value &&
+    !isMyTeamOut.value &&
+    modeKillshotLock.value === null,
+)
+/** 과열 테두리 둘레 — viewBox 88 안의 반지름 42 원. 잠긴 순간 가득 찼다가 풀릴 때 0이 된다 */
+const HEAT_RING_CIRCUMFERENCE = 2 * Math.PI * 42
+const heatRingDash = computed(
+  () => `${HEAT_RING_CIRCUMFERENCE * heatCooldown.lockFraction.value} ${HEAT_RING_CIRCUMFERENCE}`,
+)
 /** 셔터 손잡이 색 — 잠기면 링(BaseButton disabled)과 함께 손잡이도 꺼진다. 동적 클래스는 리터럴 맵(스캐너 대응) */
 const SHUTTER_KNOB_CLASS = { ready: 'bg-brand', locked: 'bg-disabled' } as const
 const shutterKnobClass = computed(() => (isShutterLocked.value ? SHUTTER_KNOB_CLASS.locked : SHUTTER_KNOB_CLASS.ready))
@@ -391,7 +423,7 @@ function warnBeforeUnload(event: BeforeUnloadEvent) {
 }
 
 async function shoot() {
-  if (!videoRef.value) return
+  if (!videoRef.value || isShutterLocked.value) return
   await capture(videoRef.value)
 }
 
@@ -400,6 +432,7 @@ async function shoot() {
  * 성공하면 미리보기를 비우고 콕핏으로 돌아가 다음 킬샷을 이어서 찍을 수 있게 한다.
  */
 async function submitPhoto() {
+  if (isWaitingHeat.value) return
   // 확인 화면이 열린 채 00:00을 넘기는 경우를 막는다 — 셔터 비활성만으로는
   // 이미 찍어둔 사진의 제출을 잠그지 못한다.
   if (isRoundEnded.value) {
@@ -423,6 +456,12 @@ async function submitPhoto() {
     toast({ title: modeKillshotLock.value, tone: 'danger' })
     return
   }
+  // 과열(P19) — 되살린 킬샷처럼 열이 찬 채 확인 화면에 왔으면 1칸이 식을 때까지(길어야 3초) 기다렸다 보낸다
+  if (heatCooldown.isOverheated.value) {
+    isWaitingHeat.value = true
+    await heatCooldown.waitUntilReady()
+    isWaitingHeat.value = false
+  }
   const killshot = photo.value
   const submitter = me.value
   const currentRoom = room.value
@@ -434,6 +473,7 @@ async function submitPhoto() {
     team: submitter.team,
     round: currentRoom.assignmentRound,
     photo: killshot,
+    heat: heatCooldown.heatForSubmit(),
     submissionId: restoredSubmissionId ?? undefined,
   })
   restoredSubmissionId = null
@@ -751,12 +791,30 @@ function subscribeToCurrentRoundLedger(roundNumber: number) {
             size="lg"
             shape="circle"
             padding="none"
-            aria-label="킬샷 촬영"
+            :aria-label="showHeatRing ? '과열, 잠시 뒤 찍을 수 있어요' : '킬샷 촬영'"
             class="shutter col-start-2 row-start-1 mb-7 min-h-20 w-20"
             :disabled="isShutterLocked"
             @click="shoot"
           >
             <span class="size-14 rounded-full" :class="shutterKnobClass" data-testid="shutter-knob"></span>
+            <!-- 과열(P19) — 셔터 둘레 테두리가 가득 찼다가 1칸이 식을 때까지 줄어든다. 열 칸·배너는 두지 않는다 -->
+            <svg
+              v-if="showHeatRing"
+              aria-hidden="true"
+              data-testid="heat-ring"
+              class="pointer-events-none absolute -top-2 -left-2 size-22 -rotate-90"
+              viewBox="0 0 88 88"
+            >
+              <circle
+                cx="44"
+                cy="44"
+                r="42"
+                class="fill-none stroke-warning-solid"
+                stroke-width="4"
+                stroke-linecap="round"
+                :stroke-dasharray="heatRingDash"
+              />
+            </svg>
           </BaseButton>
         </div>
       </div>
@@ -826,7 +884,7 @@ function subscribeToCurrentRoundLedger(roundNumber: number) {
             size="lg"
             class="w-full"
             :disabled="me === null || isRoundEnded || isPaused || isMyTeamOut"
-            :loading="isSubmitting"
+            :loading="isSubmitting || isWaitingHeat"
             @click="submitPhoto"
           >
             킬샷 제출

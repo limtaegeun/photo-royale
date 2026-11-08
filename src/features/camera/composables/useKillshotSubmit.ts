@@ -38,6 +38,8 @@ export interface KillshotSubmitInput {
   team: string
   round: number
   photo: CapturedPhoto
+  /** 이 제출로 오른 뒤의 카메라 열(초, P19 과열) — 제출과 같은 배치로 내 열 문서에 적는다 */
+  heat: number
   /** 되살린 킬샷을 다시 보낼 때 — 처음 보낼 때 정한 문서 id를 그대로 쓴다(두 장 방지) */
   submissionId?: string
 }
@@ -159,7 +161,7 @@ export function useKillshotSubmit() {
       })
       await submitKillshot(
         input.roomCode,
-        { uid: input.uid, team: input.team, round: input.round, photo: dataUrl },
+        { uid: input.uid, team: input.team, round: input.round, photo: dataUrl, heat: input.heat },
         submissionId,
       )
       discardPendingKillshot()
