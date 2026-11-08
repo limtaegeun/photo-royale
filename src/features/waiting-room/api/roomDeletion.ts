@@ -19,13 +19,17 @@ import type { RoomStatus } from './rooms'
  * 만든 새 방이 옛 참가자·킬샷·원장을 물려받는다.
  */
 
-/** 방 아래 하위 컬렉션 — 확인 모달이 개수를 보이고 삭제가 지우는 대상의 단일 목록 */
+/**
+ * 방 아래 하위 컬렉션 — 삭제가 지우는 대상의 단일 목록. 확인 모달은 이 중 사람이 알아볼 다섯 가지만 보인다
+ * (킬샷 과열의 열 문서(P20)는 참가자마다 하나씩 생기는 내부 기록이라 세기만 하고 보이지 않는다).
+ */
 export const ROOM_CHILD_COLLECTIONS = [
   'participants',
   'submissions',
   'rounds',
   'notices',
   'assets',
+  'killshotCooldowns',
 ] as const
 export type RoomChildCollection = (typeof ROOM_CHILD_COLLECTIONS)[number]
 
@@ -110,7 +114,7 @@ async function deleteInBatches(
  * 1. 방을 닫는다 — 대기로 되돌리고 진행 중인 라운드를 지우며 삭제 표식(deleting)을 단다. 진행 중인
  *    방이면 게임 종료와 같은 전이라 참가자 화면이 대기실로 돌아온다. 표식이 달린 방에는 새 참가자가
  *    들어올 수 없고, 하위 문서 삭제 rules가 이 표식을 요구한다.
- * 2. 킬샷·라운드 원장·공지·지도를 지운다.
+ * 2. 킬샷·라운드 원장·공지·지도·과열 기록을 지운다.
  * 3. 참가자와 방 문서를 한 배치로 지운다 — 방 문서가 마지막이어야 중간에 실패해도 진행자 목록에
  *    남아 다시 이어 지울 수 있다. 참가자만 먼저 사라지면 대기실 참가자가 "내보냈어요" 화면을 거치므로
  *    방 문서와 함께 지워 곧바로 "방을 찾을 수 없어요"로 보낸다.
@@ -121,7 +125,7 @@ export async function deleteRoom(code: string): Promise<void> {
   const roomRef = doc(db, 'rooms', code)
   await updateDoc(roomRef, { status: 'waiting', round: deleteField(), deleting: true })
 
-  for (const name of ['submissions', 'rounds', 'notices', 'assets'] as const) {
+  for (const name of ['submissions', 'rounds', 'notices', 'assets', 'killshotCooldowns'] as const) {
     await deleteInBatches(code, name, await listChildDocumentIds(code, name))
   }
 

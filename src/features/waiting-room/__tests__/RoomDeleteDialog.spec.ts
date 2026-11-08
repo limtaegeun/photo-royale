@@ -13,7 +13,7 @@ import RoomDeleteDialog from '../components/RoomDeleteDialog.vue'
 
 const SUMMARY: RoomDeletionSummary = {
   status: 'waiting',
-  counts: { participants: 12, submissions: 34, rounds: 3, notices: 2, assets: 1 },
+  counts: { participants: 12, submissions: 34, rounds: 3, notices: 2, assets: 1, killshotCooldowns: 9 },
 }
 
 function bodyButton(label: string) {

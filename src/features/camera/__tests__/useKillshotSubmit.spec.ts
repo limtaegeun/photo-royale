@@ -70,7 +70,7 @@ function capturedPhoto(): CapturedPhoto {
 }
 
 function input() {
-  return { roomCode: 'AB2C', uid: 'player1', team: 'A', round: 1, photo: capturedPhoto() }
+  return { roomCode: 'AB2C', uid: 'player1', team: 'A', round: 1, photo: capturedPhoto(), heat: 6 }
 }
 
 beforeEach(() => {
@@ -100,6 +100,8 @@ describe('useKillshotSubmit', () => {
       team: 'A',
       round: 1,
       photo: 'data:image/jpeg;base64,small',
+      // 과열(P20) — 콕핏이 넘긴 열을 그대로 제출 배치에 싣는다
+      heat: 6,
     })
     expect(bitmapCloseMock).toHaveBeenCalledTimes(1)
   })

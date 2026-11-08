@@ -28,6 +28,17 @@ const subscribeNoticeMock =
     ) => () => void
   >()
 const submitKillshotMock = vi.fn<(code: string, input: Record<string, unknown>) => Promise<void>>()
+/** 내 열 문서(P20 과열) 구독 — 테스트가 onChange 로 열 상태를 밀어 넣는다 */
+const unsubscribeCooldownMock = vi.fn<() => void>()
+const subscribeCooldownMock =
+  vi.fn<
+    (
+      code: string,
+      uid: string,
+      onChange: (cooldown: { round: number; heat: number; lastAtMs: number | null } | null) => void,
+      onError?: (error: Error) => void,
+    ) => () => void
+  >()
 const submissionExistsMock = vi.fn<(code: string, id: string) => Promise<boolean>>()
 /** 판정 결과 토스트(useJudgmentFeedback)가 구독하는 대상 — 이 파일의 테스트는 그 동작 자체를
  * 검증하지 않으므로(별도 useJudgmentFeedback.spec.ts) 크래시만 나지 않게 최소한으로 스텁한다 */
@@ -55,6 +66,14 @@ vi.mock('@/features/round-ops', async () => {
     // 공지·기록 시트의 시각 표기 — 기록 시트 내용은 이 파일이 검증하지 않는다(별도 CockpitRecordSheet.spec)
     formatRelativeTime: (createdAtMs: number | null, nowMs: number) =>
       formatRelativeTimeMock(createdAtMs, nowMs),
+    KILLSHOT_HEAT_PER_SUBMIT_SEC: 3,
+    KILLSHOT_HEAT_CAP_SEC: 12,
+    subscribeToKillshotCooldown: (
+      code: string,
+      uid: string,
+      onChange: (cooldown: { round: number; heat: number; lastAtMs: number | null } | null) => void,
+      onError?: (error: Error) => void,
+    ) => subscribeCooldownMock(code, uid, onChange, onError),
     newSubmissionId: () => 'sub-new',
     submissionExists: (code: string, id: string) => submissionExistsMock(code, id),
     submitKillshot: (code: string, input: Record<string, unknown>) =>
@@ -124,6 +143,7 @@ vi.mock('@/features/waiting-room', async () => {
     VenueMapPreview,
     useVenueMapStore: () => venueMapMock,
     normalizeRoomCode: (code: string) => code.trim().toUpperCase(),
+    serverNow: () => Date.now(),
     isAssignedInRound: (
       participant: { team: string | null; assignedRound: number },
       assignmentRound: number,
@@ -363,6 +383,11 @@ beforeEach(() => {
   unsubscribeMySubmissionsMock.mockReset()
   subscribeMySubmissionsMock.mockReset().mockReturnValue(unsubscribeMySubmissionsMock)
   submitKillshotMock.mockReset().mockResolvedValue(undefined)
+  unsubscribeCooldownMock.mockReset()
+  subscribeCooldownMock.mockReset().mockImplementation((_code, _uid, onChange) => {
+    onChange(null)
+    return unsubscribeCooldownMock
+  })
   submissionExistsMock.mockReset().mockResolvedValue(false)
   localStorage.clear()
   mockDisplayState.value = 'running'
@@ -1517,6 +1542,8 @@ describe('CameraPage', () => {
       team: 'A',
       round: 1,
       photo: 'data:image/jpeg;base64,killshot',
+      // 열이 없던 첫 제출 — 1칸(3초)을 같은 배치로 적는다(P20 과열)
+      heat: 3,
     })
     expect(toastMock).toHaveBeenCalledWith({
       title: '킬샷을 제출했어요.',
@@ -1711,5 +1738,94 @@ describe('CameraPage', () => {
     wrapper.unmount()
 
     stream.getTracks().forEach((track) => expect(track.stop).toHaveBeenCalledOnce())
+  })
+})
+
+/** P20 킬샷 과열 — 열 문서로 셔터를 잠그고, 셔터 테두리 하나로만 보인다 */
+describe('CameraPage 과열 잠금', () => {
+  function deliverCooldown(cooldown: { round: number; heat: number; lastAtMs: number | null } | null) {
+    subscribeCooldownMock.mockImplementation((_code, _uid, onChange) => {
+      onChange(cooldown)
+      return unsubscribeCooldownMock
+    })
+  }
+
+  function findOverheatedShutter(wrapper: VueWrapper) {
+    return wrapper.find('button[aria-label="과열, 잠시 뒤 찍을 수 있어요"]')
+  }
+
+  it('내 열 문서를 구독한다 — 경로의 방과 내 uid', async () => {
+    deliverAssignedParticipants()
+    const deliverRoom = captureRoomSnapshot()
+    await mountWithActiveCamera()
+    deliverRoom(playingRoom())
+    await flushPromises()
+
+    expect(subscribeCooldownMock).toHaveBeenCalledWith('AB2C', 'player1', expect.any(Function), expect.any(Function))
+  })
+
+  it('열이 꽉 찬 직후에는 셔터가 잠기고 테두리가 가득 찬 채로 보인다', async () => {
+    deliverCooldown({ round: 1, heat: 12, lastAtMs: Date.now() })
+    deliverAssignedParticipants()
+    const deliverRoom = captureRoomSnapshot()
+    const wrapper = await mountWithActiveCamera()
+    deliverRoom(playingRoom())
+    await flushPromises()
+
+    const shutter = findOverheatedShutter(wrapper)
+    expect(shutter.exists()).toBe(true)
+    expect(shutter.attributes('disabled')).toBeDefined()
+    expect(findShutterKnob(wrapper).classes()).toContain('bg-disabled')
+    const ring = wrapper.find('[data-testid="heat-ring"] circle')
+    expect(ring.exists()).toBe(true)
+    const [shown, circumference] = ring.attributes('stroke-dasharray')!.split(' ').map(Number)
+    expect(shown! / circumference!).toBeGreaterThan(0.9)
+    // 열 칸·배너는 두지 않는다
+    expect(wrapper.text()).not.toContain('과열')
+  })
+
+  it('1칸이 들어갈 자리가 있으면 잠그지 않고, 다음 제출에 식은 열 + 1칸을 싣는다', async () => {
+    stubCanvas()
+    stubKillshotEncoding()
+    deliverCooldown({ round: 1, heat: 6, lastAtMs: Date.now() })
+    deliverAssignedParticipants()
+    const deliverRoom = captureRoomSnapshot()
+    const wrapper = await mountWithActiveCamera()
+    deliverRoom(playingRoom())
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="heat-ring"]').exists()).toBe(false)
+    await findShutter(wrapper).trigger('click')
+    await flushPromises()
+    await findButtonByText(wrapper, '킬샷 제출')!.trigger('click')
+    await flushPromises()
+
+    const heat = submitKillshotMock.mock.calls[0]![1].heat as number
+    expect(heat).toBeGreaterThan(8.5)
+    expect(heat).toBeLessThanOrEqual(9)
+  })
+
+  it('지난 라운드의 열은 보지 않는다', async () => {
+    deliverCooldown({ round: 0, heat: 12, lastAtMs: Date.now() })
+    deliverAssignedParticipants()
+    const deliverRoom = captureRoomSnapshot()
+    const wrapper = await mountWithActiveCamera()
+    deliverRoom(playingRoom())
+    await flushPromises()
+
+    expect(findShutter(wrapper).attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('[data-testid="heat-ring"]').exists()).toBe(false)
+  })
+
+  it('일시정지가 겹치면 테두리를 그리지 않는다 — 일시정지 안내가 우선이다', async () => {
+    deliverCooldown({ round: 1, heat: 12, lastAtMs: Date.now() })
+    mockDisplayState.value = 'paused'
+    deliverAssignedParticipants()
+    const deliverRoom = captureRoomSnapshot()
+    const wrapper = await mountWithActiveCamera()
+    deliverRoom(playingRoom())
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="heat-ring"]').exists()).toBe(false)
   })
 })

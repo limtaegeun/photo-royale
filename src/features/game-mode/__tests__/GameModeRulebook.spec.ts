@@ -78,15 +78,29 @@ describe('GameModeRulebook', () => {
     expect(items).toHaveLength(2)
   })
 
-  it('X 모듈 규칙은 모드 규칙 뒤에 이어지는 번호로 붙는다', () => {
-    // normal은 규칙 3개 → X가 켜지면 4번째로 붙는다
+  it('X 모듈 규칙은 모드 규칙과 과열 안내 뒤에 이어지는 번호로 붙는다', () => {
+    // normal은 규칙 3개 + 과열 안내 1개 → X가 켜지면 5번째로 붙는다
     const wrapper = mountRulebook({ gameMode: 'normal', isXTeam: true })
 
     const items = wrapper.findAll('ol > li')
-    expect(items).toHaveLength(4)
-    const xItem = items[3]!
-    expect(xItem.find('span').text()).toBe('4')
+    expect(items).toHaveLength(5)
+    const xItem = items[4]!
+    expect(xItem.find('span').text()).toBe('5')
     expect(xItem.text()).toContain('특수 완장 X — X끼리만 서로 사냥할 수 있습니다.')
+  })
+
+  it('킬샷을 쓰는 모드는 과열 안내를 모드 규칙 뒤에 덧붙인다(P20)', () => {
+    const wrapper = mountRulebook({ gameMode: 'normal' })
+
+    const items = wrapper.findAll('ol > li')
+    const overheat = items[items.length - 1]!
+    expect(overheat.text()).toContain('킬샷을 몰아서 내면 카메라가 과열돼요.')
+    expect(overheat.text()).toContain('과열되면 3초에 1장씩만 찍혀요.')
+  })
+
+  it('스태프 추격전은 셔터가 원래 잠겨 있어 과열 안내가 없다', () => {
+    const wrapper = mountRulebook({ gameMode: 'staff-chase' })
+    expect(wrapper.text()).not.toContain('과열')
   })
 
   it('X 팀이 아니면 X 규칙을 노출하지 않는다', () => {

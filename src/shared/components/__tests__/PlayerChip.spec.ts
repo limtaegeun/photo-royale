@@ -75,4 +75,30 @@ describe('PlayerChip', () => {
 
     expect(wrapper.attributes('aria-label')).toBe('지후 · 남성 · 완장 A · 파랑')
   })
+
+  /** P19 — 명단에서 내 칩을 찾고, 아직 준비하지 않았다는 것을 이름 옆에서 알게 한다 */
+  it('내 칩이면 나 표시를 붙이고 준비 상태를 보더로 알린다 — 대기는 점선 경고색, 준비는 성공색', () => {
+    const waiting = mount(PlayerChip, {
+      props: { name: '오리', team: null, gender: 'male', selfStatus: 'waiting' },
+    })
+    expect(waiting.text()).toBe('오리나')
+    expect(waiting.classes()).toEqual(expect.arrayContaining(['border-dashed', 'border-warning']))
+    expect(waiting.classes()).not.toContain('border-stroke')
+    expect(waiting.find('.bg-warning-solid').text()).toBe('나')
+    expect(waiting.attributes('aria-label')).toBe('오리 · 나 · 남성 · 팀 미배정')
+
+    const ready = mount(PlayerChip, {
+      props: { name: '오리', team: null, gender: 'male', selfStatus: 'ready' },
+    })
+    expect(ready.classes()).toContain('border-success')
+    expect(ready.classes()).not.toContain('border-dashed')
+    expect(ready.find('.bg-success-solid').text()).toBe('나')
+    expect(ready.attributes('data-self')).toBe('ready')
+  })
+
+  it('내 칩이 아니면 나 표시가 없다', () => {
+    const other = mount(PlayerChip, { props: { name: '하린', team: null, gender: 'female' } })
+    expect(other.text()).toBe('하린')
+    expect(other.attributes('data-self')).toBe('none')
+  })
 })
