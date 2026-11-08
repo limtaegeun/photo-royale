@@ -7,7 +7,6 @@ import {
   orderBy,
   query,
   serverTimestamp,
-  setDoc,
   updateDoc,
   where,
   writeBatch,
@@ -17,6 +16,7 @@ import { db } from '@/shared/api/firebase'
 import { JPEG_DATA_URL_PREFIX } from '@/shared/utils/encodeJpegDataUrl'
 import type { AbsorbKillEffect } from '@/features/game-mode'
 import { addTallyToBatch } from '@/features/round-ledger'
+import { killshotCooldownRef } from './killshotCooldown'
 
 /** 킬샷 데이터 URL 접두 — JPEG만 허용한다(firestore.rules의 matches 정규식과 같은 규칙) */
 export const SUBMISSION_PHOTO_PREFIX = JPEG_DATA_URL_PREFIX
@@ -73,6 +73,8 @@ export interface KillshotInput {
   team: string
   round: number
   photo: string
+  /** 이 제출로 오른 뒤의 카메라 열(초, P19) — 같은 배치로 내 열 문서에 적는다 */
+  heat: number
 }
 
 /** 판정 대상 팀과 그 팀이 현재 배정에 실제 존재함을 Rules에서 확인할 참가자 */
@@ -178,13 +180,17 @@ export function newSubmissionId(code: string): string {
  * 킬샷 제출 — rooms/{code}/submissions/{submissionId}를 만든다. 판정 결과까지 한 문서에 남는
  * 이력이라 문서를 덮어쓰지 않고 매번 새 문서를 만든다(기록 탭이 이 컬렉션을 재료로 쓴다).
  * 이미 있는 id면 rules의 create 갈래가 아니어서 거부된다(참가자는 update 권한이 없다).
+ *
+ * 내 열 문서(P19 과열)를 같은 배치로 쓴다 — 함께 성공하거나 함께 실패하므로, 제출이 거부되면 열도 오르지
+ * 않고 열이 차 있으면 제출도 거부된다. 덮어쓰기라 첫 제출은 rules의 create, 그 뒤는 update 갈래다.
  */
 export async function submitKillshot(
   code: string,
   input: KillshotInput,
   submissionId: string = newSubmissionId(code),
 ): Promise<void> {
-  await setDoc(doc(db, 'rooms', code, 'submissions', submissionId), {
+  const batch = writeBatch(db)
+  batch.set(doc(db, 'rooms', code, 'submissions', submissionId), {
     uid: input.uid,
     team: input.team,
     round: input.round,
@@ -192,6 +198,12 @@ export async function submitKillshot(
     status: 'pending',
     createdAt: serverTimestamp(),
   })
+  batch.set(killshotCooldownRef(code, input.uid), {
+    round: input.round,
+    heat: input.heat,
+    lastAt: serverTimestamp(),
+  })
+  await batch.commit()
 }
 
 /** 그 킬샷이 서버에 도착해 있는가 — 캐시가 아니라 서버에 묻는다(오프라인이면 throw) */

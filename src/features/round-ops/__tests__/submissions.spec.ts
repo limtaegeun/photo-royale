@@ -12,6 +12,7 @@ interface FakeRef {
 const setDocMock = vi.fn<(ref: FakeRef, data: Record<string, unknown>) => Promise<void>>()
 const updateDocMock = vi.fn<(ref: FakeRef, data: Record<string, unknown>) => Promise<void>>()
 const batchUpdateMock = vi.fn<(ref: FakeRef, data: Record<string, unknown>) => void>()
+const batchSetMock = vi.fn<(ref: FakeRef, data: Record<string, unknown>) => void>()
 const batchCommitMock = vi.fn<() => Promise<void>>()
 const getDocFromServerMock = vi.fn<(ref: FakeRef) => Promise<unknown>>()
 /**
@@ -67,7 +68,7 @@ vi.mock('firebase/firestore', () => ({
   setDoc: (ref: FakeRef, data: Record<string, unknown>) => setDocMock(ref, data),
   updateDoc: (ref: FakeRef, data: Record<string, unknown>) => updateDocMock(ref, data),
   getDocFromServer: (ref: FakeRef) => getDocFromServerMock(ref),
-  writeBatch: () => ({ update: batchUpdateMock, commit: batchCommitMock }),
+  writeBatch: () => ({ update: batchUpdateMock, set: batchSetMock, commit: batchCommitMock }),
   increment: (n: number) => ({ increment: n }),
   arrayUnion: (...items: string[]) => ({ arrayUnion: items }),
 }))
@@ -92,6 +93,7 @@ beforeEach(() => {
   setDocMock.mockReset().mockResolvedValue(undefined)
   updateDocMock.mockReset().mockResolvedValue(undefined)
   batchUpdateMock.mockReset()
+  batchSetMock.mockReset()
   batchCommitMock.mockReset().mockResolvedValue(undefined)
   onSnapshotMock.mockReset()
   getDocFromServerMock.mockReset()
@@ -117,36 +119,45 @@ function pendingDoc(
 }
 
 describe('submitKillshot', () => {
-  it('submissions 서브컬렉션에 pending 상태와 서버 시각으로 새 문서를 만든다', async () => {
+  it('킬샷 문서와 내 열 문서를 한 배치로 쓴다 — 함께 성공하거나 함께 실패한다(P19 과열)', async () => {
     await submitKillshot('AB2C', {
       uid: 'player1',
       team: 'B',
       round: 2,
       photo: 'data:image/jpeg;base64,killshot',
+      heat: 7.5,
     })
 
-    expect(setDocMock).toHaveBeenCalledExactlyOnceWith(
-      { path: 'rooms/AB2C/submissions/auto-id' },
-      {
-        uid: 'player1',
-        team: 'B',
-        round: 2,
-        photo: 'data:image/jpeg;base64,killshot',
-        status: 'pending',
-        createdAt: 'server-timestamp',
-      },
-    )
+    expect(batchSetMock.mock.calls).toEqual([
+      [
+        { path: 'rooms/AB2C/submissions/auto-id' },
+        {
+          uid: 'player1',
+          team: 'B',
+          round: 2,
+          photo: 'data:image/jpeg;base64,killshot',
+          status: 'pending',
+          createdAt: 'server-timestamp',
+        },
+      ],
+      [
+        { path: 'rooms/AB2C/killshotCooldowns/player1' },
+        { round: 2, heat: 7.5, lastAt: 'server-timestamp' },
+      ],
+    ])
+    expect(batchCommitMock).toHaveBeenCalledTimes(1)
+    expect(setDocMock).not.toHaveBeenCalled()
   })
 
   /** 10/28 최종 QA D4 — 되살린 킬샷은 처음 정한 id 로 다시 보내 두 장이 되지 않게 한다 */
   it('문서 id 를 주면 그 id 로 만든다', async () => {
     await submitKillshot(
       'AB2C',
-      { uid: 'player1', team: 'B', round: 2, photo: 'data:image/jpeg;base64,killshot' },
+      { uid: 'player1', team: 'B', round: 2, photo: 'data:image/jpeg;base64,killshot', heat: 3 },
       'sub-old',
     )
 
-    expect(setDocMock.mock.calls[0]![0]).toEqual({ path: 'rooms/AB2C/submissions/sub-old' })
+    expect(batchSetMock.mock.calls[0]![0]).toEqual({ path: 'rooms/AB2C/submissions/sub-old' })
   })
 
   it('newSubmissionId 는 보내기 전에 자동 id 를 정한다', () => {
