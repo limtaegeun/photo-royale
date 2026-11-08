@@ -89,7 +89,7 @@ describe('GameModeRulebook', () => {
     expect(xItem.text()).toContain('특수 완장 X — X끼리만 서로 사냥할 수 있습니다.')
   })
 
-  it('킬샷을 쓰는 모드는 과열 안내를 모드 규칙 뒤에 덧붙인다(P19)', () => {
+  it('킬샷을 쓰는 모드는 과열 안내를 모드 규칙 뒤에 덧붙인다(P20)', () => {
     const wrapper = mountRulebook({ gameMode: 'normal' })
 
     const items = wrapper.findAll('ol > li')

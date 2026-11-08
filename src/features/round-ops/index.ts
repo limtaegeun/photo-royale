@@ -12,7 +12,7 @@ export {
   type Submission,
   type SubmissionRecord,
 } from './api/submissions'
-// 킬샷 과열(P19) — 제출과 같은 배치로 쓰는 내 열 문서. 콕핏이 구독해 셔터를 잠근다
+// 킬샷 과열(P20) — 제출과 같은 배치로 쓰는 내 열 문서. 콕핏이 구독해 셔터를 잠근다
 export {
   KILLSHOT_HEAT_CAP_SEC,
   KILLSHOT_HEAT_PER_SUBMIT_SEC,

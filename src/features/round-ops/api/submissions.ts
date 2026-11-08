@@ -73,7 +73,7 @@ export interface KillshotInput {
   team: string
   round: number
   photo: string
-  /** 이 제출로 오른 뒤의 카메라 열(초, P19) — 같은 배치로 내 열 문서에 적는다 */
+  /** 이 제출로 오른 뒤의 카메라 열(초, P20) — 같은 배치로 내 열 문서에 적는다 */
   heat: number
 }
 
@@ -181,7 +181,7 @@ export function newSubmissionId(code: string): string {
  * 이력이라 문서를 덮어쓰지 않고 매번 새 문서를 만든다(기록 탭이 이 컬렉션을 재료로 쓴다).
  * 이미 있는 id면 rules의 create 갈래가 아니어서 거부된다(참가자는 update 권한이 없다).
  *
- * 내 열 문서(P19 과열)를 같은 배치로 쓴다 — 함께 성공하거나 함께 실패하므로, 제출이 거부되면 열도 오르지
+ * 내 열 문서(P20 과열)를 같은 배치로 쓴다 — 함께 성공하거나 함께 실패하므로, 제출이 거부되면 열도 오르지
  * 않고 열이 차 있으면 제출도 거부된다. 덮어쓰기라 첫 제출은 rules의 create, 그 뒤는 update 갈래다.
  */
 export async function submitKillshot(

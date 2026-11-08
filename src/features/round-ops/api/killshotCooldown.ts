@@ -2,7 +2,7 @@ import { doc, onSnapshot, type Unsubscribe } from 'firebase/firestore'
 import { db } from '@/shared/api/firebase'
 
 /**
- * 킬샷 과열(P19, docs/plans/p19-killshot-overheat.md) — 제출 한 번에 카메라 열이 1칸 오르고 3초에 1칸 식는다.
+ * 킬샷 과열(P20, docs/plans/p20-killshot-overheat.md) — 제출 한 번에 카메라 열이 1칸 오르고 3초에 1칸 식는다.
  * 열은 4칸까지 차고, 다음 1칸이 들어갈 자리가 없으면 셔터가 잠긴다. 단계는 없어서 잠금은 길어야 3초다.
  *
  * 열은 초 단위 숫자로 적는다 — 1칸 = 3, 꽉 참 = 12. 시간이 흐른 만큼(초) 그대로 빼면 식은 열이다.

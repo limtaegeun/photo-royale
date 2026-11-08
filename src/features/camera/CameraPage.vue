@@ -103,8 +103,8 @@ const pastLedgers = ref<RoundLedger[]>([])
 const roomCode = normalizeRoomCode(String(route.params.roomCode))
 
 /**
- * 킬샷 과열(P19) — 내 열 문서로 셔터를 잠근다. 다음 1칸이 들어갈 자리가 날 때까지(길어야 3초)만 잠기고
- * 단계는 없다. 표시는 셔터 테두리 하나뿐이다(docs/plans/p19-killshot-overheat.md).
+ * 킬샷 과열(P20) — 내 열 문서로 셔터를 잠근다. 다음 1칸이 들어갈 자리가 날 때까지(길어야 3초)만 잠기고
+ * 단계는 없다. 표시는 셔터 테두리 하나뿐이다(docs/plans/p20-killshot-overheat.md).
  */
 const heatCooldown = useKillshotCooldown(
   roomCode,
@@ -456,7 +456,7 @@ async function submitPhoto() {
     toast({ title: modeKillshotLock.value, tone: 'danger' })
     return
   }
-  // 과열(P19) — 되살린 킬샷처럼 열이 찬 채 확인 화면에 왔으면 1칸이 식을 때까지(길어야 3초) 기다렸다 보낸다
+  // 과열(P20) — 되살린 킬샷처럼 열이 찬 채 확인 화면에 왔으면 1칸이 식을 때까지(길어야 3초) 기다렸다 보낸다
   if (heatCooldown.isOverheated.value) {
     isWaitingHeat.value = true
     await heatCooldown.waitUntilReady()
@@ -797,7 +797,7 @@ function subscribeToCurrentRoundLedger(roundNumber: number) {
             @click="shoot"
           >
             <span class="size-14 rounded-full" :class="shutterKnobClass" data-testid="shutter-knob"></span>
-            <!-- 과열(P19) — 셔터 둘레 테두리가 가득 찼다가 1칸이 식을 때까지 줄어든다. 열 칸·배너는 두지 않는다 -->
+            <!-- 과열(P20) — 셔터 둘레 테두리가 가득 찼다가 1칸이 식을 때까지 줄어든다. 열 칸·배너는 두지 않는다 -->
             <svg
               v-if="showHeatRing"
               aria-hidden="true"

@@ -100,7 +100,7 @@ describe('useKillshotSubmit', () => {
       team: 'A',
       round: 1,
       photo: 'data:image/jpeg;base64,small',
-      // 과열(P19) — 콕핏이 넘긴 열을 그대로 제출 배치에 싣는다
+      // 과열(P20) — 콕핏이 넘긴 열을 그대로 제출 배치에 싣는다
       heat: 6,
     })
     expect(bitmapCloseMock).toHaveBeenCalledTimes(1)
