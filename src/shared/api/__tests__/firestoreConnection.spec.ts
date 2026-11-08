@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const disableNetworkMock = vi.fn<() => Promise<void>>()
 const enableNetworkMock = vi.fn<() => Promise<void>>()
 const getDocFromServerMock = vi.fn<(ref: { path: string }) => Promise<unknown>>()
+type SnapshotListener = (snapshot: { metadata: { fromCache: boolean } }) => void
+const onSnapshotMock = vi.fn<(ref: { path: string }, options: unknown, next: SnapshotListener, error: () => void) => () => void>()
 
 vi.mock('../firebase', () => ({ db: {} }))
 vi.mock('firebase/firestore', () => ({
@@ -10,14 +12,17 @@ vi.mock('firebase/firestore', () => ({
   disableNetwork: () => disableNetworkMock(),
   enableNetwork: () => enableNetworkMock(),
   getDocFromServer: (ref: { path: string }) => getDocFromServerMock(ref),
+  onSnapshot: (ref: { path: string }, options: unknown, next: SnapshotListener, error: () => void) =>
+    onSnapshotMock(ref, options, next, error),
 }))
 
-const { isFirestoreReachable, restartFirestoreNetwork } = await import('../firestoreConnection')
+const { isFirestoreReachable, restartFirestoreNetwork, watchFirestoreSynced } = await import('../firestoreConnection')
 
 beforeEach(() => {
   disableNetworkMock.mockReset().mockResolvedValue()
   enableNetworkMock.mockReset().mockResolvedValue()
   getDocFromServerMock.mockReset()
+  onSnapshotMock.mockReset().mockReturnValue(() => {})
 })
 
 afterEach(() => {
@@ -87,5 +92,26 @@ describe('isFirestoreReachable', () => {
     await vi.advanceTimersByTimeAsync(1000)
 
     await expect(result).resolves.toBe(false)
+  })
+})
+
+describe('watchFirestoreSynced', () => {
+  it('점검 문서를 메타데이터 변경까지 구독하고, 서버가 확인한(캐시가 아닌) 스냅샷에서만 알린다', () => {
+    const onSynced = vi.fn<() => void>()
+    const stop = vi.fn<() => void>()
+    onSnapshotMock.mockReturnValue(stop)
+
+    const unsubscribe = watchFirestoreSynced(onSynced)
+    const [ref, options, next] = onSnapshotMock.mock.calls[0]!
+    expect(ref.path).toBe('nicknames/__connection_probe__')
+    expect(options).toEqual({ includeMetadataChanges: true })
+
+    next({ metadata: { fromCache: true } })
+    expect(onSynced).not.toHaveBeenCalled()
+    next({ metadata: { fromCache: false } })
+    expect(onSynced).toHaveBeenCalledTimes(1)
+
+    unsubscribe()
+    expect(stop).toHaveBeenCalledTimes(1)
   })
 })

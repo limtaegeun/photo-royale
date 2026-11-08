@@ -1,23 +1,18 @@
 import { onMounted, onUnmounted } from 'vue'
-import { isFirestoreReachable, restartFirestoreNetwork } from '@/shared/api/firestoreConnection'
+import { isFirestoreReachable, restartFirestoreNetwork, watchFirestoreSynced } from '@/shared/api/firestoreConnection'
 import { useFirestoreConnectionStatus } from './useFirestoreConnectionStatus'
 
 /** 점검 간격(ms) — 서버 응답이 멎은 뒤 알아채기까지의 최대 시간은 이 값 + 응답 대기다. 점검마다 문서 읽기 1회가 든다 */
 export const PROBE_INTERVAL_MS = 15_000
 /** 응답 대기(ms) — 킬샷 사진처럼 큰 문서가 내려오는 중이면 이 시간을 넘길 수 있다 */
 export const PROBE_TIMEOUT_MS = 6_000
-/** 새로 연 뒤 다시 새로 열 때까지의 첫 간격(ms) — 새 연결도 죽어 있으면 빨리 알아채야 한다 */
+/** 새로 연 뒤 다시 확인할 때까지의 첫 간격(ms) — 새 연결도 죽어 있으면 빨리 알아채야 한다 */
 export const PROBE_RETRY_BASE_MS = 5_000
 /**
- * 새로 열기가 이어질 때의 최대 간격(ms) — 새로 열 때마다 간격을 두 배로 늘린다. 큰 문서가 내려오는 중인 느린 폰은
- * 연결을 새로 열면 그 문서를 처음부터 다시 받으므로, 끝까지 받을 시간을 줘야 한다.
+ * 실패가 이어질 때의 최대 간격(ms) — 실패마다 간격을 두 배로 늘린다. 큰 문서가 내려오는 중인 느린 폰은 점검이
+ * 실패해 연결을 새로 열면 그 문서를 처음부터 다시 받으므로, 끝까지 받을 시간을 줘야 한다.
  */
 export const PROBE_MAX_INTERVAL_MS = 30_000
-/**
- * 응답이 없는 동안의 점검 간격(ms) — 새로 열기는 위 간격으로 늘리되 점검은 짧게 이어 간다. 점검만 늘리면 연결이
- * 살아난 뒤에도 '연결 중'이 최대 30초 남았다(2026-11-08 실측). 점검 실패는 연결을 건드리지 않아 느린 폰도 괜찮다.
- */
-export const UNHEALTHY_PROBE_INTERVAL_MS = 3_000
 /** 이만큼 넘게 가려져 있다 돌아오면 연결부터 새로 연다(ms) — 화면 잠금·앱 전환 뒤의 연결은 죽어 있기 쉽다 */
 export const RESUME_RESTART_MIN_HIDDEN_MS = 3_000
 /**
@@ -37,9 +32,9 @@ export const RECONNECTING_NOTICE_DELAY_MS = 1_500
 /** 한 번의 복귀에 화면 복귀·포커스·온라인 신호가 겹쳐 와도 연결은 한 번만 새로 연다(ms) */
 export const RESUME_DEDUPE_MS = 2_000
 
-/** 연달아 새로 연 횟수에 따른 다음 새로 열기까지의 최소 간격(ms) — 5·10·20·30초 */
-function restartBackoff(restarts: number): number {
-  if (restarts === 0) return 0
+/** 다음 점검까지(ms) — 응답이 확인된 뒤로 연달아 새로 연 횟수에 따라 15초, 실패 뒤엔 5·10·20·30초 */
+function nextProbeDelay(restarts: number): number {
+  if (restarts === 0) return PROBE_INTERVAL_MS
   return Math.min(PROBE_RETRY_BASE_MS * 2 ** (restarts - 1), PROBE_MAX_INTERVAL_MS)
 }
 
@@ -56,11 +51,11 @@ export function useFirestoreWatchdog(): void {
   let hiddenAtMs: number | null = null
   let blurredAtMs: number | null = null
   let lastResumeAtMs: number | null = null
-  /** 응답이 확인된 뒤로 연달아 새로 연 횟수와 마지막으로 새로 연 시각 */
+  /** 응답이 확인된 뒤로 연달아 새로 연 횟수 */
   let restarts = 0
-  let lastRestartAtMs = 0
   let fastProbesLeft = 0
   let stopped = false
+  let stopWatchingSynced: (() => void) | null = null
 
   function schedule(delayMs: number) {
     if (timer !== null) clearTimeout(timer)
@@ -87,29 +82,40 @@ export function useFirestoreWatchdog(): void {
     const reachable = await isFirestoreReachable(fast ? RESUME_PROBE_TIMEOUT_MS : PROBE_TIMEOUT_MS)
     if (stopped) return
     if (reachable) {
-      restarts = 0
-      fastProbesLeft = 0
-      clearNoticeTimer()
-      setReconnecting(false)
-      schedule(PROBE_INTERVAL_MS)
+      markSynced()
       return
     }
     clearNoticeTimer()
     setReconnecting(true)
-    // 돌아온 직후 빠른 확인은 실패마다 새로 연다. 그 밖에는 연달아 새로 연 횟수만큼 간격을 두고 연다
-    if (fast || Date.now() - lastRestartAtMs >= restartBackoff(restarts)) {
-      await restart()
-      if (stopped) return
-    }
-    // 빠른 확인을 다 썼으면 새로 열기 간격을 첫 칸(5초)부터 다시 늘린다
+    await restart()
+    if (stopped) return
+    // 빠른 확인을 다 썼으면 평소 재시도 간격의 첫 칸(5초)부터 다시 늘린다
     if (fast && fastProbesLeft === 0) restarts = 1
-    schedule(fastProbesLeft > 0 ? RESUME_PROBE_DELAY_MS : UNHEALTHY_PROBE_INTERVAL_MS)
+    schedule(fastProbesLeft > 0 ? RESUME_PROBE_DELAY_MS : nextProbeDelay(restarts))
   }
 
   async function restart() {
     restarts += 1
-    lastRestartAtMs = Date.now()
     await restartFirestoreNetwork().catch(() => {})
+  }
+
+  /**
+   * 서버가 응답했다 — '연결 중'을 내리고 평소 간격으로 돌아간다. 점검 응답과 구독 스냅샷 둘 다 이리 온다.
+   * 응답이 없는 동안의 점검을 3초마다 보내 '연결 중'을 빨리 내려 봤더니, 죽은 연결에 요청이 쌓여 WebKit 이
+   * 그 연결을 늦게 버리는 경우가 있었다(게임 종료 반영 175초, 2026-11-08 실측). 그래서 점검은 늘리지 않고 구독으로 안다.
+   */
+  function markSynced() {
+    restarts = 0
+    fastProbesLeft = 0
+    clearNoticeTimer()
+    setReconnecting(false)
+    schedule(PROBE_INTERVAL_MS)
+  }
+
+  function handleSynced() {
+    if (stopped || document.visibilityState !== 'visible') return
+    // 평소(응답이 확인된 상태)의 스냅샷은 점검 주기를 건드리지 않는다
+    if (restarts > 0 || fastProbesLeft > 0) markSynced()
   }
 
   /** 브라우저로 돌아왔다 — 연결부터 새로 열고 짧은 간격으로 응답을 확인한다 */
@@ -144,7 +150,7 @@ export function useFirestoreWatchdog(): void {
       schedule(RESUME_PROBE_DELAY_MS)
       return
     }
-    schedule(restarts > 0 ? UNHEALTHY_PROBE_INTERVAL_MS : PROBE_INTERVAL_MS)
+    schedule(nextProbeDelay(restarts))
   }
 
   /** 뒤로 가기 캐시에서 되살아난 페이지 — visibilitychange 없이 돌아오는 경로가 있다 */
@@ -177,6 +183,7 @@ export function useFirestoreWatchdog(): void {
     window.addEventListener('blur', handleBlur)
     window.addEventListener('focus', handleFocus)
     window.addEventListener('online', handleOnline)
+    stopWatchingSynced = watchFirestoreSynced(handleSynced)
     schedule(PROBE_INTERVAL_MS)
   })
 
@@ -187,6 +194,8 @@ export function useFirestoreWatchdog(): void {
     window.removeEventListener('blur', handleBlur)
     window.removeEventListener('focus', handleFocus)
     window.removeEventListener('online', handleOnline)
+    stopWatchingSynced?.()
+    stopWatchingSynced = null
     if (timer !== null) clearTimeout(timer)
     timer = null
     clearNoticeTimer()

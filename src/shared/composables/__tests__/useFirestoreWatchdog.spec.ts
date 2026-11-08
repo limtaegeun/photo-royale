@@ -12,17 +12,22 @@ import {
   RESUME_PROBE_DELAY_MS,
   RESUME_PROBE_TIMEOUT_MS,
   RESUME_RESTART_MIN_HIDDEN_MS,
-  UNHEALTHY_PROBE_INTERVAL_MS,
   useFirestoreWatchdog,
 } from '../useFirestoreWatchdog'
 import { useFirestoreConnectionStatus } from '../useFirestoreConnectionStatus'
 
 const isFirestoreReachableMock = vi.fn<(timeoutMs: number) => Promise<boolean>>()
 const restartFirestoreNetworkMock = vi.fn<() => Promise<void>>()
+const stopWatchingSyncedMock = vi.fn<() => void>()
+let onSynced: (() => void) | null = null
 
 vi.mock('@/shared/api/firestoreConnection', () => ({
   isFirestoreReachable: (timeoutMs: number) => isFirestoreReachableMock(timeoutMs),
   restartFirestoreNetwork: () => restartFirestoreNetworkMock(),
+  watchFirestoreSynced: (callback: () => void) => {
+    onSynced = callback
+    return stopWatchingSyncedMock
+  },
 }))
 
 let visibility: DocumentVisibilityState = 'visible'
@@ -59,6 +64,8 @@ beforeEach(() => {
   isFirestoreReachableMock.mockReset().mockResolvedValue(true)
   restartFirestoreNetworkMock.mockReset().mockResolvedValue()
   useFirestoreConnectionStatus().setReconnecting(false)
+  stopWatchingSyncedMock.mockReset()
+  onSynced = null
 })
 
 afterEach(() => {
@@ -88,36 +95,45 @@ describe('useFirestoreWatchdog', () => {
     expect(restartFirestoreNetworkMock).toHaveBeenCalledTimes(1)
   })
 
-  it('응답이 없는 동안 점검은 3초마다 이어 가고, 새로 열기는 5·10·20·30초 간격으로 늘리되 상한을 넘기지 않는다', async () => {
+  it('실패 뒤에는 빨리 다시 확인하고, 이어지면 간격을 늘리되 상한을 넘기지 않으며, 살아나면 원래 간격으로 돌아간다', async () => {
     isFirestoreReachableMock.mockResolvedValue(false)
-    const restartAt: number[] = []
-    restartFirestoreNetworkMock.mockImplementation(async () => {
-      restartAt.push(Date.now())
-    })
     mountWatchdog()
 
     await vi.advanceTimersByTimeAsync(PROBE_INTERVAL_MS)
-    expect(restartAt).toHaveLength(1)
-    const probesBefore = isFirestoreReachableMock.mock.calls.length
-    await vi.advanceTimersByTimeAsync(UNHEALTHY_PROBE_INTERVAL_MS)
-    expect(isFirestoreReachableMock).toHaveBeenCalledTimes(probesBefore + 1)
+    expect(isFirestoreReachableMock).toHaveBeenCalledTimes(1)
 
-    await vi.advanceTimersByTimeAsync(150_000)
-    const gaps = restartAt.slice(1).map((t, k) => t - restartAt[k]!)
-    // 점검 간격(3초) 단위로 맞춰져 5→6초, 10→12초, 20→21초, 30→30초가 된다
-    expect(gaps.slice(0, 5)).toEqual([6_000, 12_000, 21_000, PROBE_MAX_INTERVAL_MS, PROBE_MAX_INTERVAL_MS])
-    expect(Math.max(...gaps)).toBeLessThanOrEqual(PROBE_MAX_INTERVAL_MS)
-    expect(PROBE_RETRY_BASE_MS).toBe(5_000)
-  })
-
-  it('응답이 없던 중에 연결이 살아나면 다음 점검(3초) 안에 연결 중을 내리고 평소 간격으로 돌아간다', async () => {
-    isFirestoreReachableMock.mockResolvedValue(false)
-    mountWatchdog()
-    await vi.advanceTimersByTimeAsync(PROBE_INTERVAL_MS + UNHEALTHY_PROBE_INTERVAL_MS * 5)
-    expect(reconnecting()).toBe(true)
+    // 5초 · 10초 · 20초 · 30초(상한) · 30초 — 점검이 실패할 때마다 연결을 새로 연다
+    let calls = 1
+    for (const delay of [
+      PROBE_RETRY_BASE_MS,
+      PROBE_RETRY_BASE_MS * 2,
+      PROBE_RETRY_BASE_MS * 4,
+      PROBE_MAX_INTERVAL_MS,
+      PROBE_MAX_INTERVAL_MS,
+    ]) {
+      await vi.advanceTimersByTimeAsync(delay - 1)
+      expect(isFirestoreReachableMock).toHaveBeenCalledTimes(calls)
+      await vi.advanceTimersByTimeAsync(1)
+      calls += 1
+      expect(isFirestoreReachableMock).toHaveBeenCalledTimes(calls)
+    }
+    expect(restartFirestoreNetworkMock).toHaveBeenCalledTimes(calls)
 
     isFirestoreReachableMock.mockResolvedValue(true)
-    await vi.advanceTimersByTimeAsync(UNHEALTHY_PROBE_INTERVAL_MS)
+    await vi.advanceTimersByTimeAsync(PROBE_MAX_INTERVAL_MS)
+    expect(isFirestoreReachableMock).toHaveBeenCalledTimes(calls + 1)
+    await vi.advanceTimersByTimeAsync(PROBE_INTERVAL_MS)
+    expect(isFirestoreReachableMock).toHaveBeenCalledTimes(calls + 2)
+  })
+
+  /** 2026-11-08 실측 — 점검 간격대로만 확인하면 연결이 살아난 뒤에도 '연결 중'이 최대 30초 남았다 */
+  it('응답이 없던 중에 서버와 다시 맞춰지면(구독 스냅샷) 바로 연결 중을 내리고 평소 간격으로 돌아간다', async () => {
+    isFirestoreReachableMock.mockResolvedValue(false)
+    mountWatchdog()
+    await vi.advanceTimersByTimeAsync(PROBE_INTERVAL_MS + PROBE_RETRY_BASE_MS)
+    expect(reconnecting()).toBe(true)
+
+    onSynced?.()
     expect(reconnecting()).toBe(false)
 
     const calls = isFirestoreReachableMock.mock.calls.length
@@ -125,6 +141,28 @@ describe('useFirestoreWatchdog', () => {
     expect(isFirestoreReachableMock).toHaveBeenCalledTimes(calls)
     await vi.advanceTimersByTimeAsync(1)
     expect(isFirestoreReachableMock).toHaveBeenCalledTimes(calls + 1)
+  })
+
+  it('평소의 구독 스냅샷은 점검 주기를 건드리지 않는다', async () => {
+    mountWatchdog()
+    await vi.advanceTimersByTimeAsync(PROBE_INTERVAL_MS - 1000)
+    onSynced?.()
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(isFirestoreReachableMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('돌아와서 새로 연 뒤 서버와 맞춰지면 남은 빠른 확인을 하지 않고 연결 중도 띄우지 않는다', async () => {
+    isFirestoreReachableMock.mockImplementation(() => new Promise<boolean>(() => {}))
+    mountWatchdog()
+    await hideFor(RESUME_RESTART_MIN_HIDDEN_MS)
+
+    await vi.advanceTimersByTimeAsync(500)
+    onSynced?.()
+    await vi.advanceTimersByTimeAsync(RECONNECTING_NOTICE_DELAY_MS * 2)
+
+    expect(reconnecting()).toBe(false)
+    expect(isFirestoreReachableMock).not.toHaveBeenCalled()
   })
 
   it('화면이 가려져 있으면 점검하지 않는다', async () => {
@@ -154,7 +192,7 @@ describe('useFirestoreWatchdog', () => {
   })
 
   /** 2026-11-06 실측 — Safari 엔진은 새로 연 연결도 죽은 소켓 위에 있어서, 평소 간격을 기다리면 13~22초 늦었다 */
-  it('돌아온 직후 응답이 없으면 1초 간격으로 다시 열고, 빠른 확인을 다 쓰면 3초마다 점검하며 새로 열기는 5초 간격부터 잇는다', async () => {
+  it('돌아온 직후 응답이 없으면 1초 간격으로 다시 열고, 빠른 확인을 다 쓰면 평소 재시도 첫 간격(5초)으로 잇는다', async () => {
     mountWatchdog()
     await hideFor(RESUME_RESTART_MIN_HIDDEN_MS)
     isFirestoreReachableMock.mockResolvedValue(false)
@@ -166,14 +204,11 @@ describe('useFirestoreWatchdog', () => {
       expect(restartFirestoreNetworkMock).toHaveBeenCalledTimes(1 + i)
     }
 
-    await vi.advanceTimersByTimeAsync(UNHEALTHY_PROBE_INTERVAL_MS - 1)
+    await vi.advanceTimersByTimeAsync(PROBE_RETRY_BASE_MS - 1)
     expect(isFirestoreReachableMock).toHaveBeenCalledTimes(RESUME_FAST_PROBES)
     await vi.advanceTimersByTimeAsync(1)
     expect(isFirestoreReachableMock).toHaveBeenCalledTimes(RESUME_FAST_PROBES + 1)
     expect(isFirestoreReachableMock).toHaveBeenLastCalledWith(PROBE_TIMEOUT_MS)
-    // 마지막 빠른 새로 열기에서 3초 — 5초가 안 돼 새로 열지 않는다
-    expect(restartFirestoreNetworkMock).toHaveBeenCalledTimes(1 + RESUME_FAST_PROBES)
-    await vi.advanceTimersByTimeAsync(UNHEALTHY_PROBE_INTERVAL_MS)
     expect(restartFirestoreNetworkMock).toHaveBeenCalledTimes(2 + RESUME_FAST_PROBES)
   })
 
@@ -301,5 +336,6 @@ describe('useFirestoreWatchdog', () => {
 
     expect(isFirestoreReachableMock).not.toHaveBeenCalled()
     expect(restartFirestoreNetworkMock).not.toHaveBeenCalled()
+    expect(stopWatchingSyncedMock).toHaveBeenCalledTimes(1)
   })
 })
