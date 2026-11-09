@@ -53,7 +53,7 @@ const subscribeMySubmissionsMock =
       onError?: (error: Error) => void,
     ) => () => void
   >()
-/** 탈락 알림(P21) — 우리 팀을 잡은 확정 킬샷 구독. 테스트가 onChange로 피격을 밀어 넣는다 */
+/** 탈락 알림(P22) — 우리 팀을 잡은 확정 킬샷 구독. 테스트가 onChange로 피격을 밀어 넣는다 */
 const unsubscribeHitsMock = vi.fn<() => void>()
 const subscribeHitsMock =
   vi.fn<
@@ -231,7 +231,7 @@ function captureLedgerSnapshot() {
   })
   return (ledger: RoundLedger | null) => deliver(ledger)
 }
-/** 우리 팀(A)을 잡은 확정 킬샷 구독을 붙잡는다 (P21) */
+/** 우리 팀(A)을 잡은 확정 킬샷 구독을 붙잡는다 (P22) */
 function captureHitsSnapshot() {
   let deliver: (records: unknown[]) => void = () => {}
   subscribeHitsMock.mockImplementation((_code, _round, _team, onChange) => {
@@ -906,7 +906,7 @@ describe('CameraPage 탈락 게이트 (P07 M3)', () => {
     expect(wrapper.text()).toContain('우리 팀은 탈락해서 제출할 수 없어요.')
   })
 
-  it('우리 팀을 잡은 확정 킬샷이 오면 탈락 안내 창을 띄우고, 확인하면 상태 카드에 잡은 팀을 남긴다 (P21)', async () => {
+  it('우리 팀을 잡은 확정 킬샷이 오면 탈락 안내 창을 띄우고, 확인하면 상태 카드에 잡은 팀을 남긴다 (P22)', async () => {
     const deliverHits = captureHitsSnapshot()
     const { deliverRoom, deliverLedger } = mountAssignedA()
     const wrapper = await mountWithActiveCamera()
@@ -1062,7 +1062,7 @@ describe('CameraPage 꼬리잡기 목표 카드 (P17)', () => {
     expect(text).not.toContain('우리 팀이 잡혔어요')
   })
 
-  it('꼬리잡기는 잡혀도 탈락 안내 창을 띄우지 않는다 — 편입은 꼬리 카드가 알린다 (P21)', async () => {
+  it('꼬리잡기는 잡혀도 탈락 안내 창을 띄우지 않는다 — 편입은 꼬리 카드가 알린다 (P22)', async () => {
     const deliverHits = captureHitsSnapshot()
     const { wrapper, deliverLedger } = await mountTailChase()
     deliverLedger(tailChaseLedger({ hits: { A: 1 }, tails: { C: ['player1', 'player2'] } }))

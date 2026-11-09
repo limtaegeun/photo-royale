@@ -20,7 +20,7 @@ function hit(overrides: Partial<SubmissionRecord> = {}): SubmissionRecord {
   }
 }
 
-describe('deriveEliminationNotice (P21)', () => {
+describe('deriveEliminationNotice (P22)', () => {
   it('맞은 적이 없으면 안내가 없다', () => {
     expect(deriveEliminationNotice([], 1, new Set())).toBeNull()
   })
@@ -65,7 +65,7 @@ describe('deriveEliminationNotice (P21)', () => {
   })
 })
 
-describe('eliminatedByTeam (P21)', () => {
+describe('eliminatedByTeam (P22)', () => {
   it('목숨 수만큼째 피격의 제출 팀이 우리 팀을 탈락시킨 팀이다', () => {
     expect(eliminatedByTeam([hit()], 1)).toBe('E')
     expect(eliminatedByTeam([hit(), hit({ id: 'h2', team: 'C' })], 2)).toBe('C')

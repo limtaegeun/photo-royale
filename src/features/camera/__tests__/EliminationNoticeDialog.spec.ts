@@ -34,7 +34,7 @@ function dialogText() {
   return document.querySelector('[role="dialog"]')?.textContent ?? ''
 }
 
-describe('EliminationNoticeDialog (P21)', () => {
+describe('EliminationNoticeDialog (P22)', () => {
   it('안내가 없으면 열리지 않는다', async () => {
     await mountDialog(null)
     expect(document.querySelector('[role="dialog"]')).toBeNull()

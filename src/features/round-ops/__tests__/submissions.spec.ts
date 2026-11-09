@@ -484,7 +484,7 @@ describe('subscribeToMySubmissions', () => {
   })
 })
 
-describe('subscribeToHitsOnTeam (P21 탈락 알림)', () => {
+describe('subscribeToHitsOnTeam (P22 탈락 알림)', () => {
   it('round·targetTeam·status 세 등호로 우리 팀을 잡은 확정 킬샷만 구독한다', () => {
     const unsubscribe = vi.fn<() => void>()
     onSnapshotMock.mockReturnValue(unsubscribe)

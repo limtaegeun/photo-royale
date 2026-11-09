@@ -8,7 +8,7 @@ export {
   submissionExists,
   submitKillshot,
   subscribeToMySubmissions,
-  // 탈락 알림(P21) — 콕핏이 우리 팀을 잡은 확정 킬샷을 구독한다
+  // 탈락 알림(P22) — 콕핏이 우리 팀을 잡은 확정 킬샷을 구독한다
   subscribeToHitsOnTeam,
   type KillshotInput,
   type Submission,

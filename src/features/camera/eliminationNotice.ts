@@ -1,7 +1,7 @@
 import type { SubmissionRecord } from '@/features/round-ops'
 
 /**
- * 탈락 알림(P21, docs/plans/p21-elimination-notice.md) — 우리 팀을 잡은 확정 킬샷으로 콕핏 안내 창의 내용을 정한다.
+ * 탈락 알림(P22, docs/plans/p22-elimination-notice.md) — 우리 팀을 잡은 확정 킬샷으로 콕핏 안내 창의 내용을 정한다.
  * 진행자는 판정할 때 팀만 고르므로 팀원 중 누가 찍혔는지는 모른다. 그래서 안내는 팀 단위이고 사진으로 보여 준다.
  */
 export interface EliminationNotice {

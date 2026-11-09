@@ -266,7 +266,7 @@ const myLives = computed(() => {
 })
 
 /**
- * 탈락 알림(P21) — 우리 팀이 잡히면 팀원 전원에게 잡은 팀·판정 사진·시각을 담은 창을 띄운다. 꼬리잡기는 잡힌
+ * 탈락 알림(P22) — 우리 팀이 잡히면 팀원 전원에게 잡은 팀·판정 사진·시각을 담은 창을 띄운다. 꼬리잡기는 잡힌
  * 팀이 상대 꼬리로 편입되고 목표 카드가 그걸 이미 알리므로 띄우지 않는다. 라운드가 끝나면 대기실로 나가니 닫는다.
  */
 const {
@@ -952,7 +952,7 @@ function subscribeToCurrentRoundLedger(roundNumber: number) {
 
     <!-- 기록 시트(P08 슬롯 4) — 뷰파인더 블록 밖에 두어 확인 화면·라운드 종료로 컨트롤이 바뀌어도
          열려 있던 시트가 끊기지 않는다. 포털로 body에 렌더된다 -->
-    <!-- 탈락 알림(P21) — 카메라 상태와 무관하게 뜬다(권한 확인 중이어도 탈락은 알린다) -->
+    <!-- 탈락 알림(P22) — 카메라 상태와 무관하게 뜬다(권한 확인 중이어도 탈락은 알린다) -->
     <EliminationNoticeDialog :notice="eliminationNotice" @acknowledge="acknowledgeElimination" />
 
     <CockpitRecordSheet

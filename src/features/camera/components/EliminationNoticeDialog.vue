@@ -6,7 +6,7 @@ import BaseDialog from '@/shared/components/BaseDialog.vue'
 import { formatJudgedClock, type EliminationNotice } from '../eliminationNotice'
 
 /**
- * 탈락 안내 창(P21) — 우리 팀이 잡힌 순간 팀원 전원의 콕핏에 뜬다. 잡은 팀·판정 시각·판정 사진·할 일을 보이고,
+ * 탈락 안내 창(P22) — 우리 팀이 잡힌 순간 팀원 전원의 콕핏에 뜬다. 잡은 팀·판정 시각·판정 사진·할 일을 보이고,
  * 확인(또는 닫기·바깥 누르기)을 받을 때까지 남는다. 1인 팀의 첫 피격은 탈락이 아니라 남은 목숨을 알린다.
  *
  * 사진은 우리 팀이 찍힌 판정 사진이다. 기록 시트처럼 확대·저장 경로를 두지 않는다(P08 결정 6의 노출 범위).

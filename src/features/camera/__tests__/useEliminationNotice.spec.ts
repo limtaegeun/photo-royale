@@ -70,7 +70,7 @@ afterEach(() => {
   localStorage.clear()
 })
 
-describe('useEliminationNotice (P21)', () => {
+describe('useEliminationNotice (P22)', () => {
   it('방·차수·우리 팀으로 구독하고, 배정 전(팀 없음)이면 구독하지 않는다', async () => {
     const { team, scope } = setupInScope()
     expect(subscribeToHitsOnTeamMock).toHaveBeenCalledWith('AB2C', 1, 'B', expect.any(Function), expect.any(Function))
