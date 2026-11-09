@@ -84,6 +84,7 @@ import {
   rejectSubmission,
   submissionExists,
   submitKillshot,
+  subscribeToHitsOnTeam,
   subscribeToMySubmissions,
   subscribeToPendingSubmissions,
   subscribeToSubmissionLog,
@@ -480,6 +481,54 @@ describe('subscribeToMySubmissions', () => {
     subscribeToMySubmissions('AB2C', 'player1', 2, vi.fn(), onError)
 
     expect(onSnapshotMock.mock.calls[0]![2]).toBe(onError)
+  })
+})
+
+describe('subscribeToHitsOnTeam (P22 탈락 알림)', () => {
+  it('round·targetTeam·status 세 등호로 우리 팀을 잡은 확정 킬샷만 구독한다', () => {
+    const unsubscribe = vi.fn<() => void>()
+    onSnapshotMock.mockReturnValue(unsubscribe)
+    const onError = vi.fn<(error: Error) => void>()
+
+    const result = subscribeToHitsOnTeam('AB2C', 2, 'B', vi.fn(), onError)
+
+    expect(onSnapshotMock.mock.calls[0]![0]).toEqual({
+      source: { path: 'rooms/AB2C/submissions' },
+      constraints: [
+        { where: 'round', op: '==', value: 2 },
+        { where: 'targetTeam', op: '==', value: 'B' },
+        { where: 'status', op: '==', value: 'approved' },
+      ],
+    })
+    expect(onSnapshotMock.mock.calls[0]![2]).toBe(onError)
+    expect(result).toBe(unsubscribe)
+  })
+
+  it('판정 순으로 넘기고, 서버 시각 반영 전(null)은 맨 뒤에 둔다 — 몇 번째 피격인지가 탈락을 정한다', () => {
+    onSnapshotMock.mockReturnValue(vi.fn<() => void>())
+    const onChange = vi.fn<(records: Array<{ id: string; team: string; judgedAtMs: number | null }>) => void>()
+
+    subscribeToHitsOnTeam('AB2C', 2, 'B', onChange)
+    const onNext = onSnapshotMock.mock.calls[0]![1]
+    const approved = (judgedAt: { toMillis: () => number } | null, team: string) => ({
+      status: 'approved',
+      team,
+      targetTeam: 'B',
+      judgedAt,
+    })
+    onNext({
+      docs: [
+        pendingDoc('late', { toMillis: () => 1_000 }, approved({ toMillis: () => 9_000 }, 'E')),
+        pendingDoc('unsynced', { toMillis: () => 1_000 }, approved(null, 'F')),
+        pendingDoc('early', { toMillis: () => 1_000 }, approved({ toMillis: () => 3_000 }, 'C')),
+      ],
+    })
+
+    expect(onChange.mock.calls[0]![0].map((record) => [record.id, record.team, record.judgedAtMs])).toEqual([
+      ['early', 'C', 3_000],
+      ['late', 'E', 9_000],
+      ['unsynced', 'F', null],
+    ])
   })
 })
 

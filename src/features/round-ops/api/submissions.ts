@@ -337,6 +337,42 @@ export function subscribeToMySubmissions(
   )
 }
 
+/**
+ * 우리 팀이 맞은 킬샷 구독(게스트, P22 탈락 알림) — 이번 차수에 우리 팀을 잡은 것으로 확정된 킬샷만.
+ * round·targetTeam·status 세 등호 필터라 내 킬샷 구독처럼 복합 인덱스 없이 실행된다. 사진이 실리지만 팀당
+ * 라운드에 1건(1인 팀 2건)이고 맞기 전에는 0건이다. rules read는 그 방 참가자에게 열려 있다.
+ * 판정 순(오래된 것 먼저, 서버 시각 반영 전은 맨 뒤)으로 넘긴다 — 몇 번째 피격인지가 탈락 여부를 정한다.
+ */
+export function subscribeToHitsOnTeam(
+  code: string,
+  round: number,
+  team: string,
+  onChange: (records: SubmissionRecord[]) => void,
+  onError?: (error: Error) => void,
+): Unsubscribe {
+  const hitsQuery = query(
+    collection(db, 'rooms', code, 'submissions'),
+    where('round', '==', round),
+    where('targetTeam', '==', team),
+    where('status', '==', 'approved'),
+  )
+  return onSnapshot(
+    hitsQuery,
+    (snapshot) => {
+      const records = snapshot.docs.flatMap((submissionDoc) => {
+        const record = toSubmissionRecord(submissionDoc.id, submissionDoc.data())
+        return record === null ? [] : [record]
+      })
+      records.sort(
+        (a, b) =>
+          (a.judgedAtMs ?? Number.MAX_SAFE_INTEGER) - (b.judgedAtMs ?? Number.MAX_SAFE_INTEGER),
+      )
+      onChange(records)
+    },
+    onError,
+  )
+}
+
 /** 판정 확정과 함께 올릴 라운드 원장 집계 — 원장 문서가 있는 라운드에서만 넘긴다 */
 export interface ApprovalTally {
   /** 원장 문서 ID = 킬샷의 round */

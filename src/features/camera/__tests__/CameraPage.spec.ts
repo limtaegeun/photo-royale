@@ -53,6 +53,18 @@ const subscribeMySubmissionsMock =
       onError?: (error: Error) => void,
     ) => () => void
   >()
+/** 탈락 알림(P22) — 우리 팀을 잡은 확정 킬샷 구독. 테스트가 onChange로 피격을 밀어 넣는다 */
+const unsubscribeHitsMock = vi.fn<() => void>()
+const subscribeHitsMock =
+  vi.fn<
+    (
+      code: string,
+      round: number,
+      team: string,
+      onChange: (records: unknown[]) => void,
+      onError?: (error: Error) => void,
+    ) => () => void
+  >()
 /** 라운드 종료 게이트 테스트가 마운트 중간에 바꿔 끼울 수 있도록 실제 ref로 둔다 */
 const mockDisplayState = ref<'idle' | 'running' | 'paused' | 'ended'>('running')
 /** 상대 시각 표기 — 기본은 고정 문구, 공지 시각 테스트만 문구를 바꾸고 넘긴 인자를 검증한다 */
@@ -85,6 +97,13 @@ vi.mock('@/features/round-ops', async () => {
       onChange: (records: unknown[]) => void,
       onError?: (error: Error) => void,
     ) => subscribeMySubmissionsMock(code, uid, round, onChange, onError),
+    subscribeToHitsOnTeam: (
+      code: string,
+      round: number,
+      team: string,
+      onChange: (records: unknown[]) => void,
+      onError?: (error: Error) => void,
+    ) => subscribeHitsMock(code, round, team, onChange, onError),
     subscribeToLatestNotice: (
       code: string,
       onChange: (notice: { id: string; text: string; createdAtMs: number | null } | null) => void,
@@ -211,6 +230,32 @@ function captureLedgerSnapshot() {
     return unsubscribeLedgerMock
   })
   return (ledger: RoundLedger | null) => deliver(ledger)
+}
+/** 우리 팀(A)을 잡은 확정 킬샷 구독을 붙잡는다 (P22) */
+function captureHitsSnapshot() {
+  let deliver: (records: unknown[]) => void = () => {}
+  subscribeHitsMock.mockImplementation((_code, _round, _team, onChange) => {
+    deliver = onChange
+    return unsubscribeHitsMock
+  })
+  return (records: unknown[]) => deliver(records)
+}
+/** 팀 A를 잡은 확정 킬샷 한 건 */
+function hitOnA(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'hit1',
+    uid: 'attacker1',
+    team: 'B',
+    round: 1,
+    photo: 'data:image/jpeg;base64,hit',
+    status: 'approved',
+    createdAtMs: 1_000,
+    targetTeam: 'A',
+    multiplier: 1,
+    judgedAtMs: null,
+    rejectReason: null,
+    ...overrides,
+  }
 }
 /** 팀 A(player1·player2)·B(player3) 원장 — hits로 아웃을 만든다 */
 function ledgerWith(hits: Record<string, number>): RoundLedger {
@@ -382,6 +427,9 @@ beforeEach(() => {
   })
   unsubscribeMySubmissionsMock.mockReset()
   subscribeMySubmissionsMock.mockReset().mockReturnValue(unsubscribeMySubmissionsMock)
+  unsubscribeHitsMock.mockReset()
+  subscribeHitsMock.mockReset().mockReturnValue(unsubscribeHitsMock)
+  localStorage.clear()
   submitKillshotMock.mockReset().mockResolvedValue(undefined)
   unsubscribeCooldownMock.mockReset()
   subscribeCooldownMock.mockReset().mockImplementation((_code, _uid, onChange) => {
@@ -858,6 +906,48 @@ describe('CameraPage 탈락 게이트 (P07 M3)', () => {
     expect(wrapper.text()).toContain('우리 팀은 탈락해서 제출할 수 없어요.')
   })
 
+  it('우리 팀을 잡은 확정 킬샷이 오면 탈락 안내 창을 띄우고, 확인하면 상태 카드에 잡은 팀을 남긴다 (P22)', async () => {
+    const deliverHits = captureHitsSnapshot()
+    const { deliverRoom, deliverLedger } = mountAssignedA()
+    const wrapper = await mountWithActiveCamera()
+    deliverRoom(playingRoom())
+    deliverLedger(ledgerWith({}))
+    await flushPromises()
+    expect(subscribeHitsMock).toHaveBeenCalledWith('AB2C', 1, 'A', expect.any(Function), expect.any(Function))
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+
+    deliverLedger(ledgerWith({ A: 1 }))
+    deliverHits([hitOnA({ team: 'B' })])
+    await flushPromises()
+
+    const dialog = document.querySelector('[role="dialog"]')
+    expect(dialog?.textContent).toContain('우리 팀이 탈락했어요')
+    expect(dialog?.textContent).toContain('팀 B의 킬샷으로 판정됐어요.')
+    expect(dialog?.querySelector('img')?.getAttribute('src')).toBe('data:image/jpeg;base64,hit')
+    expect(wrapper.text()).toContain('팀 B에게 잡혔어요. 이번 라운드는 촬영할 수 없어요.')
+
+    const confirm = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(
+      (button) => button.textContent?.trim() === '확인',
+    )!
+    confirm.click()
+    await flushPromises()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(wrapper.text()).toContain('팀 B에게 잡혔어요.')
+    wrapper.unmount()
+  })
+
+  it('원장이 없는 라운드는 확정 킬샷이 와도 안내 창을 띄우지 않는다 — 탈락 모델이 없다', async () => {
+    const deliverHits = captureHitsSnapshot()
+    const { deliverRoom } = mountAssignedA()
+    const wrapper = await mountWithActiveCamera()
+    deliverRoom(playingRoom())
+    deliverHits([hitOnA({ team: 'B' })])
+    await flushPromises()
+
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    wrapper.unmount()
+  })
+
   it('원장 구독 오류는 탈락 없음과 같다 — 촬영을 막지 않는다', async () => {
     subscribeParticipantsMock.mockImplementation((_code, onChange) => {
       onChange(PLAYERS)
@@ -970,6 +1060,18 @@ describe('CameraPage 꼬리잡기 목표 카드 (P17)', () => {
     expect(text).toContain('C팀 목표주황')
     expect(text).toContain('촬영 불가 · C팀이 잡으면 점수 공유')
     expect(text).not.toContain('우리 팀이 잡혔어요')
+  })
+
+  it('꼬리잡기는 잡혀도 탈락 안내 창을 띄우지 않는다 — 편입은 꼬리 카드가 알린다 (P22)', async () => {
+    const deliverHits = captureHitsSnapshot()
+    const { wrapper, deliverLedger } = await mountTailChase()
+    deliverLedger(tailChaseLedger({ hits: { A: 1 }, tails: { C: ['player1', 'player2'] } }))
+    deliverHits([hitOnA({ team: 'C' })])
+    await flushPromises()
+
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(wrapper.text()).not.toContain('팀 C에게 잡혔어요')
+    wrapper.unmount()
   })
 
   it('잡혔는데 합류한 팀을 알 수 없으면 기존 탈락 안내로 돌아간다', async () => {
