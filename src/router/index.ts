@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteLocationRaw } from 'vue-router'
 import { CameraPage, releaseCameraOutsideRoom } from '@/features/camera'
+import { ClosingPage } from '@/features/closing'
 import { EntryPage } from '@/features/entry'
 import { RoundOpsPage } from '@/features/round-ops'
 import { WaitingRoomPage } from '@/features/waiting-room'
@@ -69,6 +70,15 @@ const router = createRouter({
       component: CameraPage,
       // 콕핏이 방 문서를 구독하므로(게임 종료 시 스스로 나가기 위해) 인증이 전제다
       meta: { hideAppHeader: true, requiresAuth: true },
+    },
+    {
+      // 마무리 페이지 — 진행자가 게임을 마무리하면 대기실이 참가자마다 한 번 띄운다. 인사 화면이라
+      // 앱 셸 헤더 없이 꽉 채운다. 방 코드는 '대기실로 돌아가기'가 같은 방으로 돌아가는 데 쓴다.
+      // 내용이 정적이라 인증을 요구하지 않는다 — '내 방 열어보기'의 로그인 유도는 입장 화면이 맡는다
+      path: '/closing/:roomCode',
+      name: 'closing',
+      component: ClosingPage,
+      meta: { hideAppHeader: true },
     },
     {
       // 방 코드 없는 구 경로 — 매칭되는 라우트가 없어 빈 화면이 되는 대신 입장 화면으로 돌려보낸다
