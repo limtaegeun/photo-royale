@@ -123,7 +123,7 @@ src/shared/components/
 |---|---|---|
 | `BaseButton` | 버튼 | `variant` primary·accent·neutral·danger·ghost·hud·shutter / `size` sm(36)·md(48)·lg(56)·content(최소 48) / `shape` default·circle / `padding` default·compact·none. **하단 고정 주 CTA는 lg, 리스트 행 안의 인라인 액션은 sm**. 나란히 놓인 버튼끼리는 같은 size(§6.4). 비동기 진행 표기는 `loading`(§6.3) |
 | `BaseBadge` | 상태·팀 표식 | `tone` brand·accent·success·warning·danger·info·neutral. `flex` 컨테이너 안에 둘 때는 `self-start` 필수(stretch로 폭이 늘어난다) |
-| `BaseInput` / `BaseSegmented` / `BaseSwitch` | 입력·선택·토글 | |
+| `BaseInput` / `BaseSegmented` / `BaseSwitch` / `BaseCheckbox` | 입력·선택·토글·확인 | `BaseCheckbox`는 라벨 글자를 슬롯으로 받고 행 전체(최소 48px)가 터치 영역이다 |
 | `BaseDialog` / `BaseBottomSheet` / `BaseToast`(+`useToast`) | 오버레이 | |
 | `BaseCard` | 카드 서피스(`bg-elevated` + 보더 + radius + 패딩) | `padding` md(16)·lg(20)·none. `none`은 `BaseListRow`를 담는 리스트 카드용 |
 | `BaseSectionHeader` | 화면 섹션 제목 행(제목 + 요약 + `#aside` 슬롯) | 섹션 헤딩 위계를 `text-subheading`으로 고정 |
@@ -141,6 +141,7 @@ src/shared/components/
   - `BaseSegmented` — `RadioGroup`(화살표키 네비·roving tabindex). 2개 이상 값 택1용. 옵션의 `badge`에 count·tone·ariaLabel을 주면 `BaseCountBadge`를 붙인다.
   - `BaseCountBadge` — 도메인과 무관한 숫자 알림 배지. 0이면 숨기고 증가 시 토큰 기반 펄스를 1회 재생한다(reduced-motion 시 정적). 의미를 설명하는 `ariaLabel`은 사용처가 제공한다.
   - `BaseSwitch` — `Switch`(단일 boolean on/off 토글; 트랙 색+thumb 위치로 상태 표기, role=switch·aria-checked는 Reka가 담당).
+  - `BaseCheckbox` — `Checkbox`(단일 boolean 확인·동의; 체크 시 accent 채움 + 체크 표시. 행 전체를 `<label>`로 감싸 글자를 눌러도 체크된다. 설정 on/off는 `BaseSwitch`).
   - `BaseDialog` — `Dialog` 중앙 모달(focus trap·scroll lock·Escape/backdrop dismiss·포털).
   - `BaseBottomSheet` — `Dialog` 하단 시트(모바일 코어, safe-area·슬라이드업).
   - `BaseToast` + `useToast`(`shared/composables`) + `BaseToastProvider` — `Toast`(ARIA live region·스와이프 dismiss). Provider는 `App.vue`에 1회 마운트하고, 발행은 어느 기능에서든 `useToast().toast({ title, tone })`. 자동 닫힘 타이머는 Reka 것을 끄고 `BaseToast`가 토스트마다 직접 센다 — Reka는 일시정지 플래그 하나를 뷰포트 전체가 공유해, 한 번 안 풀리면 다음 토스트부터 전부 안 닫혔다. 그 토스트 위에 마우스가 있거나 키보드 포커스가 들어와 있을 때만 멈추고, 탭 포커스·창 blur로는 멈추지 않는다.

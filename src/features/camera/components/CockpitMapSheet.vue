@@ -23,7 +23,7 @@ const open = defineModel<boolean>('open', { default: false })
     <div class="flex flex-col gap-3">
       <!-- 누르면 화면 전체로 크게 본다. 시트 자체(85dvh)보다 낮게 잡아 제목·안전 문구가 항상 보인다 -->
       <VenueMapPreview :image="mapImage" alt="행사장 지도" image-class="max-h-[70dvh]" />
-      <!-- 대기실 안전 수칙 카드와 같은 문장 — 지도를 보는 순간이 규칙을 떠올릴 순간이다 -->
+      <!-- 지도를 보는 순간이 규칙을 떠올릴 순간이다 — 뛰는 중에 읽을 한 줄짜리 안전 문구 -->
       <p class="text-caption text-pretty break-keep text-content-secondary">
         무리한 추격, 도로 진입, 촬영 중 충돌을 피하고 진행자 안내를 우선합니다.
       </p>

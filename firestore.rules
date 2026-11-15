@@ -244,10 +244,15 @@ service cloud.firestore {
         // 세 갈래로 나뉜다.
         allow update: if
           // 1) 본인의 레디 확정만 허용한다(레디 해제 플로우는 아직 없다).
+          //    안전 수칙 동의 시트에서 준비하면 동의 시각(safetyConsentAt)을 함께 쓴다 — 서버 시각만 받는다.
+          //    같은 날 이미 동의한 사람의 다음 라운드 준비와, 필드를 모르는 옛 앱의 준비는 isReady만 쓰므로
+          //    동의 시각을 필수로 걸지 않는다(걸면 rules를 먼저 배포하는 동안 옛 앱의 준비가 전부 막힌다).
           (request.auth != null
             && request.auth.uid == uid
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isReady'])
-            && request.resource.data.isReady == true)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isReady', 'safetyConsentAt'])
+            && request.resource.data.isReady == true
+            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['safetyConsentAt'])
+              || request.resource.data.safetyConsentAt == request.time))
           // 2) 호스트 배정 확정 배치 쓰기 — 드래프트는 로컬이라 확정 시에만 서버에 닿는다.
           //    team(완장)·확정 차수·X 겸직·이월값을 쓰고, 라운드마다 재레디를 위해 isReady를 false로 리셋한다.
           //    assignedRound는 getAfter로 방 문서의 커밋 후 assignmentRound와 일치해야 한다 —

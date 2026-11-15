@@ -3,7 +3,8 @@ import { computed, shallowRef, watch } from 'vue'
 import BaseBadge from '@/shared/components/BaseBadge.vue'
 import BaseButton from '@/shared/components/BaseButton.vue'
 import BaseDialog from '@/shared/components/BaseDialog.vue'
-import { formatJudgedClock, type EliminationNotice } from '../eliminationNotice'
+import { formatClock } from '@/shared/utils/formatClock'
+import type { EliminationNotice } from '../eliminationNotice'
 
 /**
  * 탈락 안내 창(P22) — 우리 팀이 잡힌 순간 팀원 전원의 콕핏에 뜬다. 잡은 팀·판정 시각·판정 사진·할 일을 보이고,
@@ -41,7 +42,7 @@ const description = computed(() => {
   const notice = shown.value
   if (notice === null) return undefined
   const by = `팀 ${notice.attackerTeam}의 킬샷으로 판정됐어요.`
-  return notice.judgedAtMs === null ? by : `${formatJudgedClock(notice.judgedAtMs)}에 ${by}`
+  return notice.judgedAtMs === null ? by : `${formatClock(notice.judgedAtMs)}에 ${by}`
 })
 </script>
 
