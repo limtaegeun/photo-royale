@@ -52,9 +52,3 @@ export function deriveEliminationNotice(
 export function eliminatedByTeam(hits: SubmissionRecord[], lives: number): string | null {
   return hits[lives - 1]?.team ?? null
 }
-
-/** 판정 시각 표기(HH:MM, 기기 시간대) — 안내 창 머리의 "14:32 판정" */
-export function formatJudgedClock(judgedAtMs: number): string {
-  const judgedAt = new Date(judgedAtMs)
-  return `${String(judgedAt.getHours()).padStart(2, '0')}:${String(judgedAt.getMinutes()).padStart(2, '0')}`
-}

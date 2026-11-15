@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { SubmissionRecord } from '@/features/round-ops'
-import { deriveEliminationNotice, eliminatedByTeam, formatJudgedClock } from '../eliminationNotice'
+import { deriveEliminationNotice, eliminatedByTeam } from '../eliminationNotice'
 
 /** 우리 팀(B)을 잡은 확정 킬샷 한 건 — 바뀌는 필드만 override한다 */
 function hit(overrides: Partial<SubmissionRecord> = {}): SubmissionRecord {
@@ -74,12 +74,5 @@ describe('eliminatedByTeam (P22)', () => {
   it('아직 탈락 전이면 null', () => {
     expect(eliminatedByTeam([], 1)).toBeNull()
     expect(eliminatedByTeam([hit()], 2)).toBeNull()
-  })
-})
-
-describe('formatJudgedClock', () => {
-  it('기기 시간대의 시:분을 두 자리로 맞춘다', () => {
-    expect(formatJudgedClock(new Date(2026, 10, 8, 9, 5).getTime())).toBe('09:05')
-    expect(formatJudgedClock(new Date(2026, 10, 8, 14, 32).getTime())).toBe('14:32')
   })
 })
