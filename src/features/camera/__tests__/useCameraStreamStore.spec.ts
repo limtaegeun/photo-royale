@@ -38,7 +38,7 @@ function stubGetUserMedia(
   return getUserMedia
 }
 
-const COCKPIT = { width: { ideal: 1920 }, height: { ideal: 1080 } }
+const COCKPIT_RESTORE = { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }
 const PARKED = { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 5 } }
 
 beforeEach(() => {
@@ -136,7 +136,7 @@ describe('useCameraStreamStore 방 단위 유지', () => {
     expect(store.stream).toBe(stream)
   })
 
-  it('같은 방에서 다시 acquire하면 권한을 다시 묻지 않고 콕핏 화질로 되돌려 쓴다', async () => {
+  it('같은 방에서 다시 acquire하면 권한을 다시 묻지 않고 콕핏 화질·프레임률로 되돌려 쓴다', async () => {
     const { stream, tracks } = createFakeStream()
     const getUserMedia = stubGetUserMedia(() => Promise.resolve(stream))
     const store = useCameraStreamStore()
@@ -146,7 +146,7 @@ describe('useCameraStreamStore 방 단위 유지', () => {
     await store.acquire('ABCD')
 
     expect(getUserMedia).toHaveBeenCalledOnce()
-    expect(tracks[0]!.applyConstraints).toHaveBeenLastCalledWith(COCKPIT)
+    expect(tracks[0]!.applyConstraints).toHaveBeenLastCalledWith(COCKPIT_RESTORE)
     expect(store.stream).toBe(stream)
     expect(store.status).toBe('active')
   })

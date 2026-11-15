@@ -14,6 +14,11 @@ export type CameraStreamStatus =
  * ideal이라 미지원 기기에서도 실패 없이 가장 가까운 해상도로 폴백된다.
  */
 const COCKPIT_VIDEO: MediaTrackConstraints = { width: { ideal: 1920 }, height: { ideal: 1080 } }
+/**
+ * 쥐고 있던 트랙을 콕핏 화질로 되돌릴 때 — 프레임률을 적지 않으면 iOS 사파리가 낮춰 둔 5fps 를 그대로 둬서
+ * 뷰파인더가 끊긴다(11/15 iOS 27.2 시뮬레이터 실측). 처음 요청은 기기 기본값을 받으므로 되돌릴 때만 적는다.
+ */
+const COCKPIT_RESTORE_VIDEO: MediaTrackConstraints = { ...COCKPIT_VIDEO, frameRate: { ideal: 30 } }
 /** 콕핏 밖(대기실)에서 쥐고만 있을 때 — 화면에 그리지 않으니 발열·배터리만 줄인다 */
 const PARKED_VIDEO: MediaTrackConstraints = {
   width: { ideal: 640 },
@@ -78,7 +83,7 @@ export const useCameraStreamStore = defineStore('cameraStream', () => {
     const current = stream.value
     if (current !== null && roomCode.value === room && isLive(current)) {
       status.value = 'active'
-      await applyVideo(current, COCKPIT_VIDEO)
+      await applyVideo(current, COCKPIT_RESTORE_VIDEO)
       return
     }
     if (status.value === 'requesting' && roomCode.value === room) return
