@@ -48,7 +48,6 @@ const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const { toast } = useToast()
-const { status, stream, start } = useCameraStream()
 const { photo, failed, capture, clear, adopt } = usePhotoCapture()
 const { isSubmitting, isSlow: isSubmitSlow, submit, resumePending } = useKillshotSubmit()
 const videoRef = ref<HTMLVideoElement | null>(null)
@@ -103,6 +102,8 @@ const pastLedgers = ref<RoundLedger[]>([])
 
 /** 콕핏은 방에 매여 있다 — 경로의 코드가 어느 방의 라운드를 뛰는 중인지 가리킨다 */
 const roomCode = normalizeRoomCode(String(route.params.roomCode))
+/** 카메라는 방 단위로 쥔다 — 콕핏을 나가도 같은 방에 있는 동안은 끄지 않는다(다음 라운드 권한 재요청 방지) */
+const { status, stream, start } = useCameraStream(roomCode)
 
 /**
  * 킬샷 과열(P20) — 내 열 문서로 셔터를 잠근다. 다음 1칸이 들어갈 자리가 날 때까지(길어야 3초)만 잠기고

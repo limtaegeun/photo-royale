@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteLocationRaw } from 'vue-router'
-import { CameraPage } from '@/features/camera'
+import { CameraPage, releaseCameraOutsideRoom } from '@/features/camera'
 import { EntryPage } from '@/features/entry'
 import { RoundOpsPage } from '@/features/round-ops'
 import { WaitingRoomPage } from '@/features/waiting-room'
@@ -113,5 +113,6 @@ const router = createRouter({
 })
 
 router.beforeEach(authGuard)
+router.afterEach(releaseCameraOutsideRoom)
 
 export default router

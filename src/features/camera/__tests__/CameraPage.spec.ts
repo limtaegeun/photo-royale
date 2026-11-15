@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { reactive, ref } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
 import type { RoomInfo, RoundState } from '@/features/waiting-room'
 
 const replaceMock = vi.fn<(to: unknown) => void>()
@@ -318,6 +319,9 @@ function createFakeStream() {
   const tracks = [
     {
       stop: vi.fn<() => void>(),
+      applyConstraints: vi.fn<(constraints: MediaTrackConstraints) => Promise<void>>(() =>
+        Promise.resolve(),
+      ),
       addEventListener: vi.fn<(event: string, handler: () => void) => void>(),
     },
   ]
@@ -407,6 +411,8 @@ function findShutterKnob(wrapper: VueWrapper) {
 }
 
 beforeEach(() => {
+  // 카메라 스트림은 방 단위 스토어가 쥔다 — 테스트마다 새로 만들어 앞 테스트의 스트림이 새지 않게 한다
+  setActivePinia(createPinia())
   venueMapMock = createVenueMapMock()
   createObjectURL.mockClear()
   revokeObjectURL.mockClear()
@@ -1831,15 +1837,23 @@ describe('CameraPage', () => {
     expect(wrapper.find('video').element.srcObject).toBe(stream)
   })
 
-  it('언마운트 시 스트림 트랙을 정지한다', async () => {
+  it('언마운트해도 카메라를 끄지 않고, 같은 방의 콕핏을 다시 열면 권한을 다시 요청하지 않는다', async () => {
     const stream = createFakeStream()
     stubGetUserMedia(() => Promise.resolve(stream))
+    const getUserMedia = vi.mocked(navigator.mediaDevices.getUserMedia)
 
-    const wrapper = mount(CameraPage)
+    const first = mount(CameraPage)
     await flushPromises()
-    wrapper.unmount()
+    first.unmount()
 
-    stream.getTracks().forEach((track) => expect(track.stop).toHaveBeenCalledOnce())
+    stream.getTracks().forEach((track) => expect(track.stop).not.toHaveBeenCalled())
+
+    const second = mount(CameraPage)
+    await flushPromises()
+
+    expect(getUserMedia).toHaveBeenCalledOnce()
+    expect(second.find('video').element.srcObject).toBe(stream)
+    expect(second.find('video').isVisible()).toBe(true)
   })
 })
 
