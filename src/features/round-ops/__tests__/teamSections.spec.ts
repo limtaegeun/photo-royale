@@ -16,6 +16,7 @@ function participant(id: string, team: string | null, assignedRound = 2): Partic
     previousPartnerIds: [],
     carryoverBase: null,
     hasBeenAssigned: false,
+    safetyConsentAt: null,
     isReady: true,
   }
 }

@@ -32,7 +32,8 @@ vi.mock('@/features/auth', () => ({
 const getRoomMock = vi.fn<(code: string) => Promise<RoomInfo | null>>()
 const joinRoomMock =
   vi.fn<(code: string, member: { uid: string; nickname: string }) => Promise<void>>()
-const setReadyMock = vi.fn<(code: string, uid: string) => Promise<void>>()
+const setReadyMock =
+  vi.fn<(code: string, uid: string, options?: { withSafetyConsent: boolean }) => Promise<void>>()
 const startGameMock = vi.fn<(code: string, round: number) => Promise<void>>()
 const kickParticipantMock = vi.fn<(code: string, uid: string) => Promise<void>>()
 const unsubscribeParticipantsMock = vi.fn<() => void>()
@@ -61,7 +62,8 @@ vi.mock('../api/rooms', async (importOriginal) => {
     getRoom: (code: string) => getRoomMock(code),
     joinRoom: (code: string, member: { uid: string; nickname: string }) =>
       joinRoomMock(code, member),
-    setReady: (code: string, uid: string) => setReadyMock(code, uid),
+    setReady: (code: string, uid: string, options?: { withSafetyConsent: boolean }) =>
+      setReadyMock(code, uid, options),
     startGame: (code: string, round: number) => startGameMock(code, round),
     kickParticipant: (code: string, uid: string) => kickParticipantMock(code, uid),
     subscribeToParticipants: (code: string, onChange: (participants: Participant[]) => void) =>
@@ -201,6 +203,7 @@ const ROSTER: Participant[] = [
     previousPartnerIds: [],
     carryoverBase: null,
     hasBeenAssigned: false,
+    safetyConsentAt: null,
     isReady: false,
   },
   {
@@ -214,6 +217,7 @@ const ROSTER: Participant[] = [
     previousPartnerIds: [],
     carryoverBase: null,
     hasBeenAssigned: false,
+    safetyConsentAt: null,
     isReady: true,
   },
   {
@@ -227,6 +231,7 @@ const ROSTER: Participant[] = [
     previousPartnerIds: [],
     carryoverBase: null,
     hasBeenAssigned: false,
+    safetyConsentAt: null,
     isReady: true,
   },
 ]
@@ -570,39 +575,202 @@ describe('WaitingRoomPage', () => {
     expect(wrapper.text()).toContain('방을 찾을 수 없어요')
   })
 
-  it('게스트는 안전 수칙 동의 CTA를 보고 팀 배정 시작 버튼은 없다', async () => {
+  it('게스트는 준비 완료 CTA와 안전 수칙 행을 보고 팀 배정 시작 버튼은 없다', async () => {
     const deliver = captureSnapshotCallbacks()
     const wrapper = mountPage()
     await flushPromises()
     deliver.participants(ROSTER)
     await flushPromises()
 
-    expect(findButton(wrapper, '확인하고 준비 완료')).toBeDefined()
+    expect(findButton(wrapper, '준비 완료')).toBeDefined()
     expect(findButton(wrapper, '팀 배정 시작')).toBeUndefined()
-    expect(wrapper.text()).toContain('아래 확인 버튼을 누르면 안전 수칙과 개인 책임에 동의합니다.')
+    expect(wrapper.text()).toContain('준비 완료를 누르면 먼저 확인해요')
+    // 진행자 전용 동의 현황 행은 게스트에게 없다
+    expect(wrapper.text()).not.toContain('안전 수칙 동의')
   })
 
-  it('CTA 클릭 시 레디를 요청하고 스냅샷 갱신으로 버튼이 비활성화된다', async () => {
+  describe('안전 수칙 동의 시트', () => {
+    /** 시트는 Teleport로 document.body에 그려진다 */
+    function sheetText() {
+      return document.body.querySelector('[data-testid="safety-consent-sheet"]')?.textContent ?? null
+    }
+    function findBodyCheckbox() {
+      const box = document.body.querySelector<HTMLElement>('[role="checkbox"]')
+      if (!box) throw new Error('document.body에서 동의 체크박스를 찾지 못했다')
+      return box
+    }
+
+    it('오늘 동의하지 않았으면 준비 완료가 동의 시트를 먼저 띄우고, 체크해야 동의하고 준비 완료가 눌린다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      await flushPromises()
+      deliver.participants(ROSTER)
+      await flushPromises()
+
+      await findButton(wrapper, '준비 완료')!.trigger('click')
+      await flushPromises()
+
+      // 아직 쓰지 않는다 — 시트가 먼저 뜬다
+      expect(setReadyMock).not.toHaveBeenCalled()
+      const text = sheetText()
+      expect(text).toContain('포토로얄은 오프라인 피지컬 서바이벌이에요.')
+      expect(text).toContain('뛰기 전에 주변부터 봐주세요.')
+      expect(text).toContain('계단, 경사로, 젖은 바닥에서는 걸어요.')
+      expect(text).toContain('공원은 우리만 쓰는 곳이 아니에요.')
+      expect(text).toContain('힘들면 언제든 쉬어도 괜찮아요.')
+      expect(text).toContain('게임 중 발생한 안전사고에 대한 책임은 본인에게 있습니다.')
+      expect(document.body.textContent).toContain('뛰기 전에, 이것만은 꼭 약속해요')
+
+      const agree = findBodyButton('동의하고 준비 완료')
+      expect(agree.hasAttribute('disabled')).toBe(true)
+      agree.click()
+      await flushPromises()
+      expect(setReadyMock).not.toHaveBeenCalled()
+
+      findBodyCheckbox().click()
+      await flushPromises()
+      expect(agree.hasAttribute('disabled')).toBe(false)
+
+      agree.click()
+      await flushPromises()
+
+      expect(setReadyMock).toHaveBeenCalledExactlyOnceWith('AB2C', 'me', { withSafetyConsent: true })
+    })
+
+    it('시트를 닫으면 준비하지 않고, 다시 열면 체크가 비어 있다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      await flushPromises()
+      deliver.participants(ROSTER)
+      await flushPromises()
+
+      await findButton(wrapper, '준비 완료')!.trigger('click')
+      await flushPromises()
+      findBodyCheckbox().click()
+      await flushPromises()
+      document.body.querySelector<HTMLElement>('button[aria-label="닫기"]')!.click()
+      await flushPromises()
+
+      expect(setReadyMock).not.toHaveBeenCalled()
+
+      await findButton(wrapper, '준비 완료')!.trigger('click')
+      await flushPromises()
+      expect(findBodyCheckbox().getAttribute('aria-checked')).toBe('false')
+      expect(findBodyButton('동의하고 준비 완료').hasAttribute('disabled')).toBe(true)
+    })
+
+    it('같은 날 이미 동의했으면 시트 없이 바로 준비한다(다음 라운드)', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      await flushPromises()
+      deliver.participants([
+        { ...ROSTER[0]!, hasBeenAssigned: true, safetyConsentAt: Date.now() },
+        ...ROSTER.slice(1),
+      ])
+      await flushPromises()
+
+      await findButton(wrapper, '준비 완료')!.trigger('click')
+      await flushPromises()
+
+      expect(sheetText()).toBeNull()
+      expect(setReadyMock).toHaveBeenCalledExactlyOnceWith('AB2C', 'me', { withSafetyConsent: false })
+      expect(wrapper.text()).toMatch(/오늘 \d{2}:\d{2}에 동의했어요/)
+    })
+
+    it('이미 동의한 사람이 안전 수칙 행의 보기를 누르면 동의 체크 없이 수칙과 동의 시각만 보인다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      await flushPromises()
+      const consentAt = new Date()
+      consentAt.setHours(0, 5, 0, 0)
+      deliver.participants([
+        { ...ROSTER[0]!, isReady: true, safetyConsentAt: consentAt.getTime() },
+        ...ROSTER.slice(1),
+      ])
+      await flushPromises()
+
+      await findButton(wrapper, '보기')!.trigger('click')
+      await flushPromises()
+
+      expect(sheetText()).toContain('오늘 00:05에 동의했어요')
+      expect(document.body.querySelector('[role="checkbox"]')).toBeNull()
+      expect(() => findBodyButton('동의하고 준비 완료')).toThrow('버튼을 찾지 못했다')
+      findBodyButton('닫기').click()
+      await flushPromises()
+      expect(sheetText()).toBeNull()
+    })
+  })
+
+  it('동의하고 준비하면 스냅샷 갱신으로 버튼이 완료 상태 줄로 바뀐다', async () => {
     const deliver = captureSnapshotCallbacks()
     const wrapper = mountPage()
     await flushPromises()
     deliver.participants(ROSTER)
     await flushPromises()
 
-    const cta = findButton(wrapper, '확인하고 준비 완료')!
-    await cta.trigger('click')
+    await findButton(wrapper, '준비 완료')!.trigger('click')
+    await flushPromises()
+    ;(document.body.querySelector('[role="checkbox"]') as HTMLElement).click()
+    await flushPromises()
+    findBodyButton('동의하고 준비 완료').click()
     await flushPromises()
 
-    expect(setReadyMock).toHaveBeenCalledExactlyOnceWith('AB2C', 'me')
+    expect(setReadyMock).toHaveBeenCalledExactlyOnceWith('AB2C', 'me', { withSafetyConsent: true })
 
     deliver.participants([{ ...ROSTER[0]!, isReady: true }, ...ROSTER.slice(1)])
     await flushPromises()
 
     expect(wrapper.text()).toContain('3명 입장 · 3명 준비')
     // 비활성 회색 버튼 대신 완료 상태 줄로 바뀐다(P19) — 다시 누를 버튼이 남지 않는다
-    expect(findButton(wrapper, '확인하고 준비 완료')).toBeUndefined()
+    expect(findButton(wrapper, '준비 완료')).toBeUndefined()
     const done = wrapper.find('[data-testid="guest-ready-bar"] [role="status"]')
     expect(done.text()).toBe('준비 완료')
+  })
+
+  it('호스트(진행자)는 안전 수칙 동의 현황을 보고, 명단 보기에서 누가 언제 동의했는지 확인한다', async () => {
+    const deliver = captureSnapshotCallbacks()
+    getRoomMock.mockResolvedValue(MY_ROOM)
+    const wrapper = mountPage()
+    await flushPromises()
+    const at = (hours: number, minutes: number) => {
+      const date = new Date()
+      date.setHours(hours, minutes, 0, 0)
+      return date.getTime()
+    }
+    deliver.participants([
+      { ...ROSTER[1]!, id: 'u2', name: '하린', isReady: false, safetyConsentAt: at(0, 9) },
+      { ...ROSTER[2]!, id: 'u3', name: '도윤', safetyConsentAt: at(0, 2) },
+      // 어제 동의한 기록은 오늘 아직 안 한 것으로 센다
+      { ...ROSTER[2]!, id: 'u4', name: '서아', isReady: false, safetyConsentAt: at(0, 1) - 24 * 60 * 60 * 1000 },
+      { ...ROSTER[0]!, id: 'u5', name: '민준' },
+    ])
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('4명 중 2명 동의')
+    // 게스트용 안전 수칙 행은 진행자에게 없다
+    expect(wrapper.text()).not.toContain('준비 완료를 누르면 먼저 확인해요')
+
+    await findButton(wrapper, '명단 보기')!.trigger('click')
+    await flushPromises()
+
+    const body = document.body.textContent ?? ''
+    expect(body).toContain('안전 수칙 동의 현황')
+    expect(body).toContain('4명 중 2명이 오늘 동의했어요.')
+    expect(body).toContain('아직 동의 안 함 2명')
+    expect(body).toContain('동의 2명')
+    // 동의한 사람은 동의 시각 순 — 먼저 동의한 도윤이 위다
+    const consentedRows = [
+      ...document.body.querySelectorAll('ul[aria-labelledby="consent-done-title"] li'),
+    ].map((row) =>
+      [...row.querySelectorAll('span')].map((cell) => cell.textContent?.trim()).join(' '),
+    )
+    expect(consentedRows).toEqual(['도윤 00:02 동의', '하린 00:09 동의'])
+    const pendingRows = [
+      ...document.body.querySelectorAll('ul[aria-labelledby="consent-pending-title"] li'),
+    ].map((row) =>
+      [...row.querySelectorAll('span')].map((cell) => cell.textContent?.trim()).join(' '),
+    )
+    expect(pendingRows).toEqual(['서아 미동의', '민준 미동의'])
   })
 
   it('호스트(진행자)는 팀 배정 시작 버튼만 보고, 준비 CTA·동의 안내문·명단의 자신이 없다', async () => {
@@ -616,9 +784,9 @@ describe('WaitingRoomPage', () => {
 
     expect(joinRoomMock).not.toHaveBeenCalled()
     expect(findButton(wrapper, '팀 배정 시작')).toBeDefined()
-    expect(findButton(wrapper, '확인하고 준비 완료')).toBeUndefined()
+    expect(findButton(wrapper, '준비 완료')).toBeUndefined()
     expect(findButton(wrapper, '게임 시작')).toBeUndefined()
-    expect(wrapper.text()).not.toContain('아래 확인 버튼을 누르면')
+    expect(wrapper.text()).not.toContain('준비 완료를 누르면 먼저 확인해요')
     // 준비 바·체크인 카드는 게스트 전용이다 — 호스트는 룸 카드와 흐름 끝의 CTA를 그대로 본다
     expect(wrapper.find('[data-testid="guest-ready-bar"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('내 체크인')
@@ -861,7 +1029,7 @@ describe('WaitingRoomPage', () => {
 
     expect(replaceMock).not.toHaveBeenCalledWith({ name: 'camera', params: { roomCode: 'AB2C' } })
     expect(wrapper.text()).toContain('이번 라운드에는 배정되지 않았어요')
-    expect(findButton(wrapper, '확인하고 준비 완료')).toBeUndefined()
+    expect(findButton(wrapper, '준비 완료')).toBeUndefined()
     // 누를 버튼이 없으니 "아래 버튼을 눌러 주세요"라는 체크인 카드도 띄우지 않고 룸 카드를 쓴다(P19)
     expect(wrapper.find('[data-testid="guest-ready-bar"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('내 체크인')
@@ -961,7 +1129,7 @@ describe('WaitingRoomPage', () => {
     mountPage()
     await flushPromises()
     deliver.room({ hostUid: 'host9', status: 'waiting', assignmentRound: 0, playedRound: 0, gameMode: 'normal', roundModes: {}, round: null })
-    deliver.participants([{ id: 'me', name: '나', gender: null, isReady: false, team: null, assignedRound: 0, isXTeam: false, sameGenderStreak: 0, previousPartnerIds: [], carryoverBase: null, hasBeenAssigned: false }])
+    deliver.participants([{ id: 'me', name: '나', gender: null, isReady: false, team: null, assignedRound: 0, isXTeam: false, sameGenderStreak: 0, previousPartnerIds: [], carryoverBase: null, hasBeenAssigned: false, safetyConsentAt: null }])
     await flushPromises()
 
     expect(replaceMock).not.toHaveBeenCalledWith(
@@ -1105,7 +1273,7 @@ describe('WaitingRoomPage', () => {
     expect(wrapper.text()).toContain('진행자가 내보냈어요')
     // 대기실 콘텐츠(명단·CTA)는 안내 카드로 대체된다
     expect(wrapper.findAllComponents(PlayerChip)).toHaveLength(0)
-    expect(findButton(wrapper, '확인하고 준비 완료')).toBeUndefined()
+    expect(findButton(wrapper, '준비 완료')).toBeUndefined()
 
     await findButton(wrapper, '입장 화면으로')!.trigger('click')
     expect(replaceMock).toHaveBeenCalledWith({ name: 'entry' })

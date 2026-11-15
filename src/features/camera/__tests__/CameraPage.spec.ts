@@ -273,9 +273,9 @@ function ledgerWith(hits: Record<string, number>): RoundLedger {
   }
 }
 const PLAYERS = [
-  { id: 'player1', name: '민우', team: 'A', assignedRound: 1, gender: 'male', isXTeam: false, sameGenderStreak: 0, previousPartnerIds: [], carryoverBase: null, hasBeenAssigned: false, isReady: true },
-  { id: 'player2', name: '하린', team: 'A', assignedRound: 1, gender: 'female', isXTeam: false, sameGenderStreak: 0, previousPartnerIds: [], carryoverBase: null, hasBeenAssigned: false, isReady: true },
-  { id: 'player3', name: '도윤', team: 'B', assignedRound: 1, gender: 'male', isXTeam: false, sameGenderStreak: 0, previousPartnerIds: [], carryoverBase: null, hasBeenAssigned: false, isReady: true },
+  { id: 'player1', name: '민우', team: 'A', assignedRound: 1, gender: 'male', isXTeam: false, sameGenderStreak: 0, previousPartnerIds: [], carryoverBase: null, hasBeenAssigned: false, safetyConsentAt: null, isReady: true },
+  { id: 'player2', name: '하린', team: 'A', assignedRound: 1, gender: 'female', isXTeam: false, sameGenderStreak: 0, previousPartnerIds: [], carryoverBase: null, hasBeenAssigned: false, safetyConsentAt: null, isReady: true },
+  { id: 'player3', name: '도윤', team: 'B', assignedRound: 1, gender: 'male', isXTeam: false, sameGenderStreak: 0, previousPartnerIds: [], carryoverBase: null, hasBeenAssigned: false, safetyConsentAt: null, isReady: true },
 ]
 
 /** 콕핏이 머물러야 하는 상태 — 진행 중인 방 + 시작된 라운드 */
@@ -375,6 +375,7 @@ function deliverAssignedParticipants() {
         previousPartnerIds: [],
         carryoverBase: null,
         hasBeenAssigned: false,
+        safetyConsentAt: null,
         isReady: true,
       },
     ])
@@ -583,6 +584,7 @@ describe('CameraPage 미배정 게스트 리다이렉트 (D-5)', () => {
           previousPartnerIds: [],
           carryoverBase: null,
           hasBeenAssigned: false,
+          safetyConsentAt: null,
           isReady: true,
         },
       ])
@@ -642,6 +644,7 @@ describe('CameraPage 미배정 게스트 리다이렉트 (D-5)', () => {
           previousPartnerIds: [],
           carryoverBase: null,
           hasBeenAssigned: false,
+          safetyConsentAt: null,
           isReady: true,
         },
       ])
@@ -1267,6 +1270,7 @@ describe('CameraPage', () => {
           previousPartnerIds: [],
           carryoverBase: null,
           hasBeenAssigned: false,
+          safetyConsentAt: null,
           isReady: true,
         },
         {
@@ -1280,6 +1284,7 @@ describe('CameraPage', () => {
           previousPartnerIds: [],
           carryoverBase: null,
           hasBeenAssigned: false,
+          safetyConsentAt: null,
           isReady: true,
         },
         {
@@ -1293,6 +1298,7 @@ describe('CameraPage', () => {
           previousPartnerIds: [],
           carryoverBase: null,
           hasBeenAssigned: false,
+          safetyConsentAt: null,
           isReady: true,
         },
       ])
@@ -1326,6 +1332,7 @@ describe('CameraPage', () => {
           previousPartnerIds: [],
           carryoverBase: null,
           hasBeenAssigned: false,
+          safetyConsentAt: null,
           isReady: true,
         },
         {
@@ -1339,6 +1346,7 @@ describe('CameraPage', () => {
           previousPartnerIds: [],
           carryoverBase: null,
           hasBeenAssigned: false,
+          safetyConsentAt: null,
           isReady: true,
         },
       ])

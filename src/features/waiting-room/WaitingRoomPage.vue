@@ -25,10 +25,15 @@ import { useAppHeader } from '@/shared/composables/useAppHeader'
 import GuestCheckInCard from './components/GuestCheckInCard.vue'
 import GuestReadyBar from './components/GuestReadyBar.vue'
 import KickableRosterChip from './components/KickableRosterChip.vue'
+import SafetyConsentRosterSheet from './components/SafetyConsentRosterSheet.vue'
+import SafetyConsentSheet from './components/SafetyConsentSheet.vue'
 import StandingsCard from './components/StandingsCard.vue'
 import VenueMapUploadSheet from './components/VenueMapUploadSheet.vue'
+import { formatClock } from '@/shared/utils/formatClock'
 import { isAssignedInRound, normalizeRoomCode, type Participant } from './api/rooms'
 import { hasPlayedRound } from './roundPlayMarker'
+import { isSafetyConsentValid } from './safetyConsent'
+import { serverNow } from './serverClock'
 import { useVenueMapStore } from './stores/useVenueMapStore'
 import { useWaitingRoomStore } from './stores/useWaitingRoomStore'
 
@@ -51,6 +56,8 @@ const {
   readyCount,
   canStartGame,
   isReadyConfirmed,
+  mySafetyConsentAt,
+  safetyConsentCount,
   isConfirmingReady,
   readyError,
   isHost,
@@ -151,12 +158,63 @@ const isRoundOverAwaitingHost = computed(
 const showGuestReadyCta = computed(() => !isHost.value && !showUnassignedNotice.value)
 
 /**
- * 게스트 CTA 문구 — 누를 수 있는 상태의 뷰별 행동 문구다(배정 카드 뷰는 안전 수칙 동의가 이미
- * 끝났으므로 라운드 준비만). 누른 뒤의 '준비 완료'는 준비 바가 완료 상태 줄로 따로 보인다(P19).
+ * 게스트 CTA 문구 — 누를 수 있는 상태의 뷰별 행동 문구다. 그날 처음 누르면 안전 수칙 동의 시트가 먼저
+ * 뜨고(requestReady), 시트의 버튼이 `동의하고 준비 완료`다. 누른 뒤의 '준비 완료'는 준비 바가 완료 상태
+ * 줄로 따로 보인다(P19).
  */
-const guestCtaLabel = computed(() =>
-  showGuestAssignment.value ? '라운드 준비 완료' : '확인하고 준비 완료',
+const guestCtaLabel = computed(() => (showGuestAssignment.value ? '라운드 준비 완료' : '준비 완료'))
+
+/**
+ * 안전 수칙 동의 시트 — 게스트가 그날 처음 준비할 때 consent로 뜨고, 대기실 안전 수칙 행에서 다시 열면
+ * 이미 동의한 사람에게는 review(수칙과 동의 시각만)로 뜬다.
+ */
+const isSafetyConsentSheetOpen = ref(false)
+const safetyConsentSheetMode = ref<'consent' | 'review'>('consent')
+
+/** 오늘 내가 동의했는가 — 대기실 안전 수칙 행의 캡션용. 누를 때의 판정은 store.needsSafetyConsent가 다시 잰다 */
+const hasMySafetyConsentToday = computed(() =>
+  isSafetyConsentValid(mySafetyConsentAt.value, serverNow()),
 )
+const mySafetyConsentCaption = computed(() =>
+  hasMySafetyConsentToday.value && mySafetyConsentAt.value !== null
+    ? `오늘 ${formatClock(mySafetyConsentAt.value)}에 동의했어요`
+    : '준비 완료를 누르면 먼저 확인해요',
+)
+
+/** 준비 바 클릭 — 오늘 동의 기록이 없으면 동의 시트를 먼저 띄우고, 있으면 바로 준비한다(같은 날 다음 라운드) */
+function requestReady() {
+  if (store.needsSafetyConsent()) {
+    safetyConsentSheetMode.value = 'consent'
+    isSafetyConsentSheetOpen.value = true
+    return
+  }
+  store.confirmReady()
+}
+
+/**
+ * 대기실 안전 수칙 행의 `보기` — 아직 동의하지 않았고 준비할 수 있는 상태면 동의 시트로, 그 밖(이미 동의함·
+ * 이미 준비함·이번 라운드 미배정이라 준비 버튼이 없음)에는 수칙만 보는 시트로 연다.
+ */
+function openSafetyRules() {
+  safetyConsentSheetMode.value =
+    showGuestReadyCta.value && !isReadyConfirmed.value && store.needsSafetyConsent()
+      ? 'consent'
+      : 'review'
+  isSafetyConsentSheetOpen.value = true
+}
+
+/**
+ * 동의하고 준비 완료 — 시트는 쓰기를 기다리지 않고 먼저 닫는다. 오프라인 쓰기는 실패하지 않고 큐잉된 채
+ * 끝나지 않으므로(내보내기 확인과 같은 이유) 기다리면 시트가 스피너로 굳는다. 지연 보상으로 준비 바가 곧장
+ * 완료 상태로 바뀌고, 실패·지연 안내는 준비 바가 보인다.
+ */
+function confirmSafetyConsent() {
+  isSafetyConsentSheetOpen.value = false
+  store.confirmReady({ withSafetyConsent: true })
+}
+
+/** 안전 수칙 동의 현황 시트(진행자) */
+const isSafetyConsentRosterOpen = ref(false)
 
 /** 명단 묶음 제목 색 — 상태를 색과 글자로 함께 표기한다. 동적 클래스라 리터럴 맵으로 둔다 */
 const ROSTER_GROUP_TITLE_CLASS = {
@@ -593,16 +651,29 @@ async function copyInviteLink() {
             </div>
           </BaseCard>
 
-          <!-- 행사장 지도(P08 §2.2) — 호스트만. 등록하면 참가자 콕핏 왼쪽 칸에 지도 버튼이 열린다.
-               행이 자체 패딩을 갖는 리스트 카드라 padding="none" -->
+          <!-- 호스트 준비물 — 행이 자체 패딩을 갖는 리스트 카드라 padding="none".
+               행사장 지도(P08 §2.2): 등록하면 참가자 콕핏 왼쪽 칸에 지도 버튼이 열린다.
+               안전 수칙 동의: 준비는 라운드마다 풀리지만 동의는 그날 한 번이라 명단의 준비 수와 따로 센다 -->
           <BaseCard v-if="isHost" padding="none">
-            <BaseListRow label="행사장 지도" :caption="mapImageCaption">
-              <template #control>
-                <BaseButton variant="ghost" size="sm" @click="openMapImageSheet">
-                  {{ mapImage === null ? '지도 등록' : '바꾸기' }}
-                </BaseButton>
-              </template>
-            </BaseListRow>
+            <div class="divide-y divide-stroke">
+              <BaseListRow label="행사장 지도" :caption="mapImageCaption">
+                <template #control>
+                  <BaseButton variant="ghost" size="sm" @click="openMapImageSheet">
+                    {{ mapImage === null ? '지도 등록' : '바꾸기' }}
+                  </BaseButton>
+                </template>
+              </BaseListRow>
+              <BaseListRow
+                label="안전 수칙 동의"
+                :caption="`${participantCount}명 중 ${safetyConsentCount}명 동의`"
+              >
+                <template #control>
+                  <BaseButton variant="ghost" size="sm" @click="isSafetyConsentRosterOpen = true">
+                    명단 보기
+                  </BaseButton>
+                </template>
+              </BaseListRow>
+            </div>
           </BaseCard>
 
           <!-- 입장 명단 -->
@@ -650,16 +721,14 @@ async function copyInviteLink() {
             </p>
           </div>
 
-          <!-- 안전 수칙 카드 — 보조 정보라 라벨+캡션으로 낮춰 CTA·명단에 시선을 양보한다 -->
-          <BaseCard>
-            <h2 class="text-label text-content">안전 수칙 확인</h2>
-            <p class="mt-2 text-caption text-content-secondary">
-              무리한 추격, 도로 진입, 촬영 중 충돌을 피하고 진행자 안내를 우선합니다.
-            </p>
-            <!-- 동의 버튼은 게스트에게만 있으므로 안내문도 게스트에게만 보여준다 -->
-            <p v-if="!isHost" class="mt-2 text-caption font-semibold text-warning">
-              아래 확인 버튼을 누르면 안전 수칙과 개인 책임에 동의합니다.
-            </p>
+          <!-- 안전 수칙 행(게스트) — 동의는 준비 완료를 누를 때 시트로 받는다. 여기서는 동의 여부를 보이고
+               언제든 수칙을 다시 볼 수 있게 한다. 보조 정보라 CTA·명단보다 낮은 리스트 행으로 둔다 -->
+          <BaseCard v-if="!isHost" padding="none">
+            <BaseListRow label="안전 수칙" :caption="mySafetyConsentCaption">
+              <template #control>
+                <BaseButton variant="ghost" size="sm" @click="openSafetyRules">보기</BaseButton>
+              </template>
+            </BaseListRow>
           </BaseCard>
         </div>
       </template>
@@ -780,7 +849,23 @@ async function copyInviteLink() {
       :participant-count="participantCount"
       :is-assigned="showGuestAssignment"
       :show-progress="gameStatus !== 'playing'"
-      @confirm="store.confirmReady()"
+      @confirm="requestReady"
+    />
+
+    <!-- 안전 수칙 동의(게스트) — 그날 처음 준비할 때 먼저 뜬다. 동의 체크 전에는 버튼이 눌리지 않는다 -->
+    <SafetyConsentSheet
+      v-if="!isHost"
+      v-model:open="isSafetyConsentSheetOpen"
+      :mode="safetyConsentSheetMode"
+      :consent-at="hasMySafetyConsentToday ? mySafetyConsentAt : null"
+      @confirm="confirmSafetyConsent"
+    />
+
+    <!-- 안전 수칙 동의 현황(진행자) — 누가 언제 동의했고 누가 아직인지 -->
+    <SafetyConsentRosterSheet
+      v-if="isHost"
+      v-model:open="isSafetyConsentRosterOpen"
+      :participants="participants"
     />
 
     <!-- 같은 차수 재실행 확인 — 안전한 경로(다음 배정)를 위에 채운 배경으로, 위험을 감수하는

@@ -18,6 +18,7 @@ function participant(id: string, team: string): Participant {
     previousPartnerIds: [],
     carryoverBase: null,
     hasBeenAssigned: false,
+    safetyConsentAt: null,
     isReady: true,
   }
 }
