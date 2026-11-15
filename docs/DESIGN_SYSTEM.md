@@ -125,6 +125,7 @@ src/shared/components/
 | `BaseBadge` | 상태·팀 표식 | `tone` brand·accent·success·warning·danger·info·neutral. `flex` 컨테이너 안에 둘 때는 `self-start` 필수(stretch로 폭이 늘어난다) |
 | `BaseInput` / `BaseSegmented` / `BaseSwitch` / `BaseCheckbox` | 입력·선택·토글·확인 | `BaseCheckbox`는 라벨 글자를 슬롯으로 받고 행 전체(최소 48px)가 터치 영역이다 |
 | `BaseDialog` / `BaseBottomSheet` / `BaseToast`(+`useToast`) | 오버레이 | |
+| `BaseAccordion` | 접고 펴는 목록 | 카드 한 장 안에 칸을 구분선으로 쌓는다. 칸 = 번호 표식(`marker`) + 제목 버튼(최소 56px), 본문은 `#content` 슬롯. 여러 칸을 함께 편다(v-model = 펼친 칸 목록). 규칙 설명서의 기본 규칙(P26)이 쓴다 |
 | `BaseCard` | 카드 서피스(`bg-elevated` + 보더 + radius + 패딩) | `padding` md(16)·lg(20)·none. `none`은 `BaseListRow`를 담는 리스트 카드용 |
 | `BaseSectionHeader` | 화면 섹션 제목 행(제목 + 요약 + `#aside` 슬롯) | 섹션 헤딩 위계를 `text-subheading`으로 고정 |
 | `BaseListRow` | 설정 행(라벨 + 캡션 / `#control` 슬롯) | 행 높이를 `--pr-size-control-lg`로 고정. 캡션은 한 줄 말줄임 — 잠긴 컨트롤의 이유처럼 잘리면 안 되는 캡션은 `wrapCaption`(줄바꿈, 행이 늘어난다). 여러 행은 `BaseCard padding="none"` + `divide-y divide-stroke` |
@@ -144,6 +145,7 @@ src/shared/components/
   - `BaseCheckbox` — `Checkbox`(단일 boolean 확인·동의; 체크 시 accent 채움 + 체크 표시. 행 전체를 `<label>`로 감싸 글자를 눌러도 체크된다. 설정 on/off는 `BaseSwitch`).
   - `BaseDialog` — `Dialog` 중앙 모달(focus trap·scroll lock·Escape/backdrop dismiss·포털).
   - `BaseBottomSheet` — `Dialog` 하단 시트(모바일 코어, safe-area·슬라이드업).
+  - `BaseAccordion` — `Accordion`(type multiple; 제목은 heading 안의 버튼, aria-expanded·aria-controls·화살표키 이동은 Reka가 담당). 펼침은 `--reka-accordion-content-height`로 높이만 애니메이션하고 reduced-motion이면 끈다.
   - `BaseToast` + `useToast`(`shared/composables`) + `BaseToastProvider` — `Toast`(ARIA live region·스와이프 dismiss). Provider는 `App.vue`에 1회 마운트하고, 발행은 어느 기능에서든 `useToast().toast({ title, tone })`. 자동 닫힘 타이머는 Reka 것을 끄고 `BaseToast`가 토스트마다 직접 센다 — Reka는 일시정지 플래그 하나를 뷰포트 전체가 공유해, 한 번 안 풀리면 다음 토스트부터 전부 안 닫혔다. 그 토스트 위에 마우스가 있거나 키보드 포커스가 들어와 있을 때만 멈추고, 탭 포커스·창 blur로는 멈추지 않는다.
 - 진입/이탈 애니메이션은 Reka `Presence`가 `data-state=closed`에서 애니메이션 종료까지 언마운트를 지연하므로, scoped `<style>`의 `@keyframes`로 작성하되 값은 `--pr-duration-*`/`--pr-easing-*` 토큰만 참조한다(`prefers-reduced-motion` 대응 포함).
 - **비행동형 레이아웃 컴포넌트**(`BaseCard`·`BaseSectionHeader`·`BaseListRow`)는 접근성 행동이 없어 Reka primitive의 실익이 없다. `BaseCard`만 다형 렌더(`as="section"`)가 필요해 `Primitive`를 쓰고, 나머지는 평범한 마크업 + 슬롯으로 둔다.
