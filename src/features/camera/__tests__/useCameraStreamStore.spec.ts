@@ -6,6 +6,7 @@ function createFakeStream() {
   const listeners: Record<string, () => void> = {}
   const createFakeTrack = () => ({
     readyState: 'live' as MediaStreamTrackState,
+    enabled: true,
     stop: vi.fn<() => void>(),
     applyConstraints: vi.fn<(constraints: MediaTrackConstraints) => Promise<void>>(() =>
       Promise.resolve(),
@@ -39,7 +40,7 @@ function stubGetUserMedia(
 }
 
 const COCKPIT_RESTORE = { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }
-const PARKED = { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 5 } }
+const PARKED = { width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 1 } }
 
 beforeEach(() => {
   setActivePinia(createPinia())
@@ -122,7 +123,7 @@ describe('useCameraStreamStore 권한·상태', () => {
 })
 
 describe('useCameraStreamStore 방 단위 유지', () => {
-  it('park하면 끄지 않고 저화질로 낮춘다', async () => {
+  it('park하면 정지하지 않고 최저 화질로 낮춘 뒤 트랙을 꺼 둔다', async () => {
     const { stream, tracks } = createFakeStream()
     stubGetUserMedia(() => Promise.resolve(stream))
     const store = useCameraStreamStore()
@@ -132,11 +133,12 @@ describe('useCameraStreamStore 방 단위 유지', () => {
 
     expect(tracks[0]!.stop).not.toHaveBeenCalled()
     expect(tracks[0]!.applyConstraints).toHaveBeenLastCalledWith(PARKED)
+    expect(tracks[0]!.enabled).toBe(false)
     expect(store.status).toBe('active')
     expect(store.stream).toBe(stream)
   })
 
-  it('같은 방에서 다시 acquire하면 권한을 다시 묻지 않고 콕핏 화질·프레임률로 되돌려 쓴다', async () => {
+  it('같은 방에서 다시 acquire하면 권한을 다시 묻지 않고 트랙을 켜서 콕핏 화질·프레임률로 되돌려 쓴다', async () => {
     const { stream, tracks } = createFakeStream()
     const getUserMedia = stubGetUserMedia(() => Promise.resolve(stream))
     const store = useCameraStreamStore()
@@ -146,6 +148,7 @@ describe('useCameraStreamStore 방 단위 유지', () => {
     await store.acquire('ABCD')
 
     expect(getUserMedia).toHaveBeenCalledOnce()
+    expect(tracks[0]!.enabled).toBe(true)
     expect(tracks[0]!.applyConstraints).toHaveBeenLastCalledWith(COCKPIT_RESTORE)
     expect(store.stream).toBe(stream)
     expect(store.status).toBe('active')

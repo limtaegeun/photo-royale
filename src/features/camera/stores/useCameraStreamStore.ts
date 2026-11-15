@@ -15,21 +15,34 @@ export type CameraStreamStatus =
  */
 const COCKPIT_VIDEO: MediaTrackConstraints = { width: { ideal: 1920 }, height: { ideal: 1080 } }
 /**
- * 쥐고 있던 트랙을 콕핏 화질로 되돌릴 때 — 프레임률을 적지 않으면 iOS 사파리가 낮춰 둔 5fps 를 그대로 둬서
+ * 쥐고 있던 트랙을 콕핏 화질로 되돌릴 때 — 프레임률을 적지 않으면 iOS 사파리가 낮춰 둔 프레임률을 그대로 둬서
  * 뷰파인더가 끊긴다(11/15 iOS 27.2 시뮬레이터 실측). 처음 요청은 기기 기본값을 받으므로 되돌릴 때만 적는다.
  */
 const COCKPIT_RESTORE_VIDEO: MediaTrackConstraints = { ...COCKPIT_VIDEO, frameRate: { ideal: 30 } }
-/** 콕핏 밖(대기실)에서 쥐고만 있을 때 — 화면에 그리지 않으니 발열·배터리만 줄인다 */
+/**
+ * 콕핏 밖(대기실)에서 쥐고만 있을 때 — 화면에 그리지 않으니 기기가 허용하는 가장 낮은 해상도·프레임률로 내린다.
+ * ideal 이라 기기가 못 맞추면 가장 가까운 값으로 내려간다(실패하지 않는다).
+ */
 const PARKED_VIDEO: MediaTrackConstraints = {
-  width: { ideal: 640 },
-  height: { ideal: 480 },
-  frameRate: { ideal: 5 },
+  width: { ideal: 320 },
+  height: { ideal: 240 },
+  frameRate: { ideal: 1 },
 }
 /** 콕핏 밖에서 카메라를 쥐고 있는 최대 시간 — 지나면 놓는다(다음 진입은 권한을 다시 물을 수 있다) */
 export const CAMERA_PARK_LIMIT_MS = 30 * 60 * 1000
 
 function isLive(media: MediaStream) {
   return media.getVideoTracks().some((track) => track.readyState !== 'ended')
+}
+
+/**
+ * 쥐고만 있는 동안은 트랙을 꺼서(enabled=false) 프레임을 내보내지 않는다. 스트림은 끝나지 않아서 iOS 가 권한을
+ * 다시 묻지 않는다(11/15 iOS 27.2 시뮬레이터 실측: 75초·11분·홈 4분 뒤 재진입 모두 권한 창 없음).
+ */
+function setVideoEnabled(media: MediaStream, enabled: boolean) {
+  media.getVideoTracks().forEach((track) => {
+    track.enabled = enabled
+  })
 }
 
 function applyVideo(media: MediaStream, constraints: MediaTrackConstraints) {
@@ -46,7 +59,7 @@ function applyVideo(media: MediaStream, constraints: MediaTrackConstraints) {
  * 콕핏을 나갈 때 트랙을 끄면 다음 라운드 진입에서 권한 창이 다시 뜬다. iOS WebKit은 카메라를 끈 지
  * 1분이 지나면 탭 없는 getUserMedia를 다시 묻고(대기실 → 콕핏 전환은 방 스냅샷이 일으켜 탭이 없다),
  * 10분이 지나면 탭이 있어도 다시 묻는다. 그래서 콕핏을 나가도 같은 방에 있는 동안은 끄지 않고
- * 저화질로 낮춰 쥐고 있다가, 다음 진입에서 그대로 다시 쓴다.
+ * 최저 화질로 낮추고 트랙을 꺼 둔 채(enabled=false) 쥐고 있다가, 다음 진입에서 그대로 다시 쓴다.
  *
  * - 놓는 때: 방을 벗어날 때(`releaseCameraOutsideRoom`), 콕핏 밖에서 30분이 지날 때
  * - 트랙이 외부 요인(OS 회수 등)으로 끝나면 버리고, 콕핏 안이면 error로 재시도 UI를 띄운다
@@ -71,6 +84,7 @@ export const useCameraStreamStore = defineStore('cameraStream', () => {
 
   function holdOutsideCockpit(media: MediaStream) {
     void applyVideo(media, PARKED_VIDEO)
+    setVideoEnabled(media, false)
     clearParkTimer()
     parkTimer = setTimeout(release, CAMERA_PARK_LIMIT_MS)
   }
@@ -83,6 +97,7 @@ export const useCameraStreamStore = defineStore('cameraStream', () => {
     const current = stream.value
     if (current !== null && roomCode.value === room && isLive(current)) {
       status.value = 'active'
+      setVideoEnabled(current, true)
       await applyVideo(current, COCKPIT_RESTORE_VIDEO)
       return
     }
