@@ -23,7 +23,8 @@ const joinRoomMock =
       member: { uid: string; nickname: string; gender: 'male' | 'female' | null },
     ) => Promise<void>
   >()
-const setReadyMock = vi.fn<(code: string, uid: string) => Promise<void>>()
+const setReadyMock =
+  vi.fn<(code: string, uid: string, options?: { withSafetyConsent: boolean }) => Promise<void>>()
 const startGameMock = vi.fn<(code: string, round: number) => Promise<void>>()
 const kickParticipantMock =
   vi.fn<
@@ -75,7 +76,8 @@ vi.mock('../api/rooms', () => ({
     code: string,
     member: { uid: string; nickname: string; gender: 'male' | 'female' | null },
   ) => joinRoomMock(code, member),
-  setReady: (code: string, uid: string) => setReadyMock(code, uid),
+  setReady: (code: string, uid: string, options?: { withSafetyConsent: boolean }) =>
+    setReadyMock(code, uid, options),
   startGame: (code: string, round: number) => startGameMock(code, round),
   kickParticipant: (
     code: string,
@@ -214,6 +216,7 @@ const ME_WAITING: Participant = {
   previousPartnerIds: [],
   carryoverBase: null,
   hasBeenAssigned: false,
+  safetyConsentAt: null,
   isReady: false,
 }
 const ME_READY: Participant = { ...ME_WAITING, isReady: true }
@@ -228,6 +231,7 @@ const OTHER_READY: Participant = {
   previousPartnerIds: [],
   carryoverBase: null,
   hasBeenAssigned: false,
+  safetyConsentAt: null,
   isReady: true,
 }
 
@@ -495,13 +499,67 @@ describe('useWaitingRoomStore', () => {
     await store.enter('AB2C')
     deliver.participants([ME_WAITING])
 
-    await store.confirmReady()
+    await store.confirmReady({ withSafetyConsent: true })
 
-    expect(setReadyMock).toHaveBeenCalledExactlyOnceWith('AB2C', 'me')
+    expect(setReadyMock).toHaveBeenCalledExactlyOnceWith('AB2C', 'me', { withSafetyConsent: true })
 
     deliver.participants([ME_READY])
     expect(store.isReadyConfirmed).toBe(true)
     expect(store.readyCount).toBe(1)
+  })
+
+  describe('안전 수칙 동의', () => {
+    const DAY_MS = 24 * 60 * 60 * 1000
+
+    it('오늘 동의 기록이 없으면 시트를 거치지 않은 준비 요청은 쓰지 않는다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useWaitingRoomStore()
+      await store.enter('AB2C')
+      deliver.participants([ME_WAITING])
+
+      expect(store.needsSafetyConsent()).toBe(true)
+      await store.confirmReady()
+
+      expect(setReadyMock).not.toHaveBeenCalled()
+    })
+
+    it('같은 날 이미 동의했으면 다시 묻지 않고 레디만 쓴다(다음 라운드)', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useWaitingRoomStore()
+      await store.enter('AB2C')
+      deliver.participants([{ ...ME_WAITING, hasBeenAssigned: true, safetyConsentAt: Date.now() }])
+
+      expect(store.needsSafetyConsent()).toBe(false)
+      await store.confirmReady()
+
+      expect(setReadyMock).toHaveBeenCalledExactlyOnceWith('AB2C', 'me', { withSafetyConsent: false })
+    })
+
+    it('어제 동의한 기록은 오늘 다시 묻는다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useWaitingRoomStore()
+      await store.enter('AB2C')
+      deliver.participants([{ ...ME_WAITING, safetyConsentAt: Date.now() - DAY_MS }])
+
+      expect(store.needsSafetyConsent()).toBe(true)
+    })
+
+    it('진행자 현황은 오늘 동의한 참가자만 세고 호스트 문서는 빼며, 준비가 풀려도 동의는 남는다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      getRoomMock.mockResolvedValue(MY_ROOM)
+      const store = useWaitingRoomStore()
+      await store.enter('AB2C')
+      deliver.participants([
+        // 진행자 모델 이전에 남은 호스트('me') 문서 — 동의 기록이 있어도 세지 않는다
+        { ...ME_WAITING, safetyConsentAt: Date.now() },
+        { ...OTHER_READY, isReady: false, safetyConsentAt: Date.now() },
+        { ...OTHER_READY, id: 'u3', safetyConsentAt: Date.now() - DAY_MS },
+        { ...OTHER_READY, id: 'u4' },
+      ])
+
+      expect(store.safetyConsentCount).toBe(1)
+      expect(store.readyCount).toBe(2)
+    })
   })
 
   it('호스트는 confirmReady를 호출해도 아무 요청도 하지 않는다', async () => {
@@ -533,10 +591,10 @@ describe('useWaitingRoomStore', () => {
     deliver.participants([ME_WAITING])
 
     setReadyMock.mockRejectedValueOnce(new Error('network'))
-    await store.confirmReady()
+    await store.confirmReady({ withSafetyConsent: true })
     expect(store.readyError).not.toBeNull()
 
-    await store.confirmReady()
+    await store.confirmReady({ withSafetyConsent: true })
     expect(store.readyError).toBeNull()
     expect(setReadyMock).toHaveBeenCalledTimes(2)
   })
@@ -556,7 +614,7 @@ describe('useWaitingRoomStore', () => {
           resolveWrite = resolve
         }),
       )
-      const confirming = store.confirmReady()
+      const confirming = store.confirmReady({ withSafetyConsent: true })
 
       vi.advanceTimersByTime(8000)
       await confirming
@@ -792,6 +850,7 @@ describe('useWaitingRoomStore', () => {
         previousPartnerIds: [],
         carryoverBase: null,
         hasBeenAssigned: false,
+        safetyConsentAt: null,
         isReady: true,
       }
     }

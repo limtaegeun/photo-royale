@@ -19,6 +19,7 @@ import {
 import { saveVenueMapImage } from '../api/venueMap'
 import { hasPlayedRound, markRoundPlayed } from '../roundPlayMarker'
 import { isRoundLiveAt, isRoundOverAt } from '../roundClock'
+import { isSafetyConsentValid } from '../safetyConsent'
 import { serverNow } from '../serverClock'
 import { useVenueMapStore } from './useVenueMapStore'
 import { restartFirestoreNetwork } from '@/shared/api/firestoreConnection'
@@ -166,6 +167,26 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
   const isReadyConfirmed = computed(
     () => participants.value.find((p) => p.id === myId.value)?.isReady ?? false,
   )
+  /** 내가 안전 수칙에 동의한 시각(ms) — 동의한 적이 없으면 null */
+  const mySafetyConsentAt = computed(
+    () => participants.value.find((p) => p.id === myId.value)?.safetyConsentAt ?? null,
+  )
+  /**
+   * 오늘 안전 수칙에 동의한 참가자 수(진행자 현황용). 준비는 라운드마다 풀리지만 동의는 남으므로
+   * 준비 수와 따로 센다. 날짜는 서버 시각으로 가른다 — 시계가 틀린 진행자 기기가 어제 동의를 오늘로 세지 않게.
+   */
+  const safetyConsentCount = computed(() => {
+    const now = serverNow()
+    return participants.value.filter((p) => isSafetyConsentValid(p.safetyConsentAt, now)).length
+  })
+
+  /**
+   * 준비 전에 동의 시트를 띄워야 하는가 — 오늘 동의 기록이 없으면 참이다. 늦게 들어온 사람은 기록이 없으니
+   * 처음 준비할 때 묻고, 같은 날 다음 라운드에서는 묻지 않는다. 자정을 넘긴 화면에서도 맞도록 누를 때마다 잰다.
+   */
+  function needsSafetyConsent(): boolean {
+    return !isSafetyConsentValid(mySafetyConsentAt.value, serverNow())
+  }
 
   /**
    * 명단 표시용 — 이번 라운드 배정이 아닌 완장은 숨긴다(null). 직전 라운드에 배정됐다가 이번엔
@@ -376,20 +397,25 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
     mapImageError.value = null
   }
 
-  /** 안전 수칙 동의 + 내 준비 완료 확정(게스트 전용) — 스냅샷 구독이 상태를 갱신한다 */
-  async function confirmReady() {
+  /**
+   * 내 준비 완료 확정(게스트 전용) — 스냅샷 구독이 상태를 갱신한다. 동의 시트에서 눌렀으면
+   * (withSafetyConsent) 동의 시각을 함께 남긴다. 오늘 동의 기록이 없는데 시트를 거치지 않은 호출은
+   * 쓰지 않는다 — 동의 없이 준비가 되는 길을 화면 분기 하나에만 맡기지 않는다.
+   */
+  async function confirmReady(options: { withSafetyConsent: boolean } = { withSafetyConsent: false }) {
     if (
       !roomCode.value ||
       !myId.value ||
       isHost.value ||
       isReadyConfirmed.value ||
-      isConfirmingReady.value
+      isConfirmingReady.value ||
+      (!options.withSafetyConsent && needsSafetyConsent())
     ) {
       return
     }
     isConfirmingReady.value = true
     readyError.value = null
-    const write = setReady(roomCode.value, myId.value)
+    const write = setReady(roomCode.value, myId.value, options)
     try {
       await withTimeout(write, READY_WRITE_TIMEOUT_MS)
     } catch (error) {
@@ -520,6 +546,8 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
     readyCount,
     canStartGame,
     isReadyConfirmed,
+    mySafetyConsentAt,
+    safetyConsentCount,
     isConfirmingReady,
     readyError,
     isStartingGame,
@@ -532,6 +560,7 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
     standings,
     enter,
     leave,
+    needsSafetyConsent,
     confirmReady,
     startPlaying,
     kick,

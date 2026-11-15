@@ -478,6 +478,7 @@ describe('subscribeToParticipants', () => {
             previousPartnerIds: ['x'],
             baseSameGenderStreak: 1,
             basePreviousPartnerIds: [],
+            safetyConsentAt: { toMillis: () => 1_763_180_000_000 },
           }),
         },
         {
@@ -500,6 +501,7 @@ describe('subscribeToParticipants', () => {
         previousPartnerIds: [],
         carryoverBase: null,
         hasBeenAssigned: false,
+        safetyConsentAt: null,
         isReady: true,
       },
       {
@@ -513,6 +515,7 @@ describe('subscribeToParticipants', () => {
         previousPartnerIds: ['x'],
         carryoverBase: { sameGenderStreak: 1, previousPartnerIds: [] },
         hasBeenAssigned: true,
+        safetyConsentAt: 1_763_180_000_000,
         isReady: false,
       },
       {
@@ -526,6 +529,7 @@ describe('subscribeToParticipants', () => {
         previousPartnerIds: [],
         carryoverBase: null,
         hasBeenAssigned: false,
+        safetyConsentAt: null,
         isReady: true,
       },
     ])
@@ -799,7 +803,7 @@ describe('kickParticipant', () => {
 })
 
 describe('setReady', () => {
-  it('내 참가자 문서의 isReady만 갱신한다', async () => {
+  it('같은 날 이미 동의한 사람의 준비는 isReady만 갱신한다', async () => {
     updateDocMock.mockResolvedValue(undefined)
 
     await setReady('AB2C', 'u1')
@@ -807,6 +811,17 @@ describe('setReady', () => {
     expect(updateDocMock).toHaveBeenCalledExactlyOnceWith(
       { path: 'rooms/AB2C/participants/u1' },
       { isReady: true },
+    )
+  })
+
+  it('동의 시트에서 누르면 동의 시각을 서버 시각으로 함께 남긴다', async () => {
+    updateDocMock.mockResolvedValue(undefined)
+
+    await setReady('AB2C', 'u1', { withSafetyConsent: true })
+
+    expect(updateDocMock).toHaveBeenCalledExactlyOnceWith(
+      { path: 'rooms/AB2C/participants/u1' },
+      { isReady: true, safetyConsentAt: 'server-timestamp' },
     )
   })
 })

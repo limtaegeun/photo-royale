@@ -111,6 +111,11 @@ export interface Participant {
    */
   hasBeenAssigned: boolean
   isReady: boolean
+  /**
+   * 안전 수칙에 동의한 시각(ms) — 동의하고 준비 완료할 때 서버 시각으로 찍힌다. 동의한 적이 없으면 null.
+   * 배정 확정이 준비를 풀어도 이 값은 남으므로, 같은 날 다음 라운드에서는 동의를 다시 묻지 않는다.
+   */
+  safetyConsentAt: number | null
 }
 
 /** 배정 확정 직전의 이월값 — Participant.carryoverBase 참조 */
@@ -480,7 +485,9 @@ export function subscribeToParticipants(
     (snapshot) => {
       onChange(
         snapshot.docs.map((participantDoc) => {
-          const data = participantDoc.data()
+          // 방금 동의한 내 문서는 서버 시각(safetyConsentAt)이 오기 전 한 틱 동안 비어 있다 — 예상값으로
+          // 채워 그 사이에도 동의 기록이 빠지지 않게 한다. 이 맵이 읽는 시각 필드는 그것 하나다
+          const data = participantDoc.data({ serverTimestamps: 'estimate' })
           return {
             id: participantDoc.id,
             name: data.nickname as string,
@@ -493,6 +500,7 @@ export function subscribeToParticipants(
             carryoverBase: toCarryoverBase(data),
             hasBeenAssigned: typeof data.sameGenderStreak === 'number',
             isReady: data.isReady as boolean,
+            safetyConsentAt: (data.safetyConsentAt as Timestamp | undefined)?.toMillis() ?? null,
           }
         }),
       )
@@ -501,9 +509,22 @@ export function subscribeToParticipants(
   )
 }
 
-/** 내 참가자 문서의 레디 확정 — 스냅샷 구독이 화면 상태를 갱신한다 */
-export async function setReady(code: string, uid: string): Promise<void> {
-  await updateDoc(doc(db, 'rooms', code, 'participants', uid), { isReady: true })
+/**
+ * 내 참가자 문서의 레디 확정 — 스냅샷 구독이 화면 상태를 갱신한다.
+ * 안전 수칙 동의 시트에서 눌렀으면(withSafetyConsent) 동의 시각을 서버 시각으로 함께 남긴다.
+ * 같은 날 이미 동의한 사람의 다음 라운드 준비는 레디만 쓴다.
+ */
+export async function setReady(
+  code: string,
+  uid: string,
+  options: { withSafetyConsent: boolean } = { withSafetyConsent: false },
+): Promise<void> {
+  await updateDoc(
+    doc(db, 'rooms', code, 'participants', uid),
+    options.withSafetyConsent
+      ? { isReady: true, safetyConsentAt: serverTimestamp() }
+      : { isReady: true },
+  )
 }
 
 /**
