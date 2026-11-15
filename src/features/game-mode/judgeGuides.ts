@@ -1,5 +1,5 @@
 import { GROUP_LABELS, groupForArmband } from './armbandGroups'
-import { KING_HUNT_POINTS, KING_KILL_POINTS, KING_OUT_PENALTY, livesOf, scaleTeamScore } from './scoring'
+import { KING_HUNT_GROUP_POINTS, KING_HUNT_POINTS, livesOf, scaleTeamScore } from './scoring'
 import { nextPreyOf } from './targeting'
 import type { JudgeContext, JudgeGuide } from './types'
 
@@ -55,36 +55,32 @@ export const TAIL_CHASE_JUDGE_GUIDE: JudgeGuide = {
   },
 }
 
-/** 왕잡기 — 왕 표시는 진행자 판정 화면에만 있다. 규칙서에서 왕은 비밀이라 참가자 화면에 넣지 않는다 */
+/** 그룹 한글 라벨 — 그룹이 없는 완장(X)은 빈 문자열 */
+function groupLabelOf(armband: string): string {
+  const group = groupForArmband(armband)
+  return group === null ? '' : GROUP_LABELS[group].ko
+}
+
+/**
+ * 왕잡기(노션 ② 왕잡기 카드) — 왕 표시는 진행자 판정 화면에만 있다. 왕은 같은 그룹에만 알리는 비밀이라 다른 그룹
+ * 참가자 화면에는 넣지 않는다. 왕을 잡는(아웃시키는) 킬이면 잡은 팀 +30 · 잡은 팀 그룹 전체 +10 · 왕의 그룹 전원
+ * 아웃을 미리 보인다. 1인 팀 왕은 라이프가 2라 첫 킬로는 잡히지 않는다 — 그때는 일반 킬이다.
+ */
 export const KING_HUNT_JUDGE_GUIDE: JudgeGuide = {
   teamMark: (armband, context) => (context.xTeams.includes(armband) ? '왕' : null),
   outcome(attacker, target, context) {
-    if (context.xTeams.includes(target)) {
-      const huntPoints = scaleTeamScore(context.rosters, attacker, KING_HUNT_POINTS)
-      if (!isOutAfterKill(context, target)) {
-        return {
-          approveLabel: `팀 ${target} 왕 사냥 확정`,
-          note: `왕 사냥 +${huntPoints}`,
-          toast: `팀 ${target} 왕 사냥으로 판정했어요.`,
-        }
-      }
-      const group = groupForArmband(target)
-      const groupLabel = group === null ? '' : GROUP_LABELS[group].ko
-      const penalty = `${groupLabel} 그룹 전원 −${Math.abs(KING_OUT_PENALTY)}`
-      return {
-        approveLabel: `팀 ${target} 왕 사냥 확정`,
-        note: `왕 사냥 +${huntPoints} · ${penalty}`,
-        toast: `팀 ${target} 왕 사냥으로 판정했어요. ${penalty}이에요.`,
-      }
+    if (!context.xTeams.includes(target)) return null
+    if (!isOutAfterKill(context, target)) {
+      return { note: '왕이 한 번 더 맞아야 잡혀요' }
     }
-    if (context.xTeams.includes(attacker)) {
-      return {
-        approveLabel: `팀 ${target} 왕의 킬 확정`,
-        note: `왕의 킬 +${scaleTeamScore(context.rosters, attacker, KING_KILL_POINTS)}`,
-        toast: `팀 ${target} 왕의 킬로 판정했어요.`,
-      }
+    const huntPoints = scaleTeamScore(context.rosters, attacker, KING_HUNT_POINTS)
+    const attackerGroup = groupLabelOf(attacker)
+    const targetGroup = groupLabelOf(target)
+    return {
+      approveLabel: `팀 ${target} 왕 잡기 확정`,
+      note: `왕 잡기 +${huntPoints} · ${attackerGroup} 그룹 +${KING_HUNT_GROUP_POINTS} · ${targetGroup} 그룹 전원 아웃`,
+      toast: `팀 ${target} 왕 잡기로 판정했어요. ${targetGroup} 그룹은 전원 아웃이에요.`,
     }
-    return null
   },
 }
 

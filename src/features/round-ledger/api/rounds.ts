@@ -110,7 +110,7 @@ export function addTallyToBatch(
   }
   batch.update(roundLedgerDoc(code, roundNo), {
     [`tally.${attackerTeam}.${killField}`]: increment(1),
-    // 피격 팀이 X 겸직(왕)이면 왕 사냥 건수도 같이 올린다 — kills·tripleKills의 부분집합
+    // 이 킬로 X 겸직 팀(왕)이 아웃되면 왕 잡기 건수도 같이 올린다 — kills·tripleKills의 부분집합
     ...(kingTarget ? { [`tally.${attackerTeam}.kingKills`]: increment(1) } : {}),
     [`hits.${targetTeam}`]: increment(1),
     ...absorbUpdates,

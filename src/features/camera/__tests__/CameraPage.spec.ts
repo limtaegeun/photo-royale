@@ -895,7 +895,7 @@ describe('CameraPage 탈락 게이트 (P07 M3)', () => {
     expect(findShutterKnob(wrapper).classes()).not.toContain('bg-brand')
     expect(wrapper.text()).toContain('우리 팀이 잡혔어요. 이번 라운드는 촬영할 수 없어요.')
     // 목표 문구는 그대로 — 탈락은 자기 자리에서 알린다
-    expect(wrapper.text()).toContain('상대 완장 알파벳을 찍어 제출하세요.')
+    expect(wrapper.text()).toContain('개인전: 모든 팀을 전멸시키세요')
   })
 
   it('확인 화면이 열린 채 우리 팀이 잡히면 제출을 막고 안내한다', async () => {
@@ -943,6 +943,59 @@ describe('CameraPage 탈락 게이트 (P07 M3)', () => {
     await flushPromises()
     expect(document.querySelector('[role="dialog"]')).toBeNull()
     expect(wrapper.text()).toContain('팀 B에게 잡혔어요.')
+    wrapper.unmount()
+  })
+
+  /** 왕잡기(노션 ② "우리 왕이 잡히면 그 판은 그룹 전체가 즉시 아웃됩니다") — A·E = 파랑 그룹(왕 E), B = 주황 */
+  function kingHuntLedger(hits: Record<string, number>): RoundLedger {
+    return {
+      ...ledgerWith(hits),
+      mode: 'king-hunt',
+      teams: { A: ['player1', 'player2'], B: ['player3'], E: ['king1', 'king2'] },
+      xTeams: ['E', 'B'],
+    }
+  }
+
+  it('왕잡기에서 우리 그룹 왕이 잡히면 우리 팀도 아웃이라 셔터가 잠기고 그룹 탈락 안내 창이 뜬다', async () => {
+    const deliverByTeam: Record<string, (records: unknown[]) => void> = {}
+    subscribeHitsMock.mockImplementation((_code, _round, team, onChange) => {
+      deliverByTeam[team] = onChange
+      return unsubscribeHitsMock
+    })
+    const { deliverRoom, deliverLedger } = mountAssignedA()
+    const wrapper = await mountWithActiveCamera()
+    deliverRoom(playingRoom({ gameMode: 'king-hunt' }))
+    deliverLedger(kingHuntLedger({}))
+    await flushPromises()
+
+    // 우리 팀 피격과 함께 같은 그룹 왕(E)의 피격도 구독한다 — 다른 그룹 왕(B)은 보지 않는다
+    expect(subscribeHitsMock).toHaveBeenCalledWith('AB2C', 1, 'A', expect.any(Function), expect.any(Function))
+    expect(subscribeHitsMock).toHaveBeenCalledWith('AB2C', 1, 'E', expect.any(Function), expect.any(Function))
+    expect(subscribeHitsMock).not.toHaveBeenCalledWith('AB2C', 1, 'B', expect.any(Function), expect.any(Function))
+    expect(findShutter(wrapper).attributes('disabled')).toBeUndefined()
+
+    deliverLedger(kingHuntLedger({ E: 1 }))
+    deliverByTeam.E!([hitOnA({ id: 'king-hit', team: 'B', targetTeam: 'E' })])
+    await flushPromises()
+
+    expect(findShutter(wrapper).attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('우리 그룹 왕이 잡혀 그룹 전체가 아웃됐어요.')
+    expect(wrapper.text()).toContain('바로 베이스캠프로 돌아가요.')
+    expect(wrapper.text()).toContain('생존 1 / 3팀')
+    const dialog = document.querySelector('[role="dialog"]')
+    expect(dialog?.textContent).toContain('우리 그룹 왕이 잡혔어요')
+    expect(dialog?.textContent).toContain('우리 그룹 왕(팀 E)이 팀 B에게 잡혔어요.')
+    expect(dialog?.textContent).toContain('그룹 전체가 이번 판에서 즉시 아웃이에요.')
+    wrapper.unmount()
+  })
+
+  it('스태프 추격전 콕핏 목표는 노션 ② 목표 문구 그대로다', async () => {
+    const { deliverRoom } = mountAssignedA()
+    const wrapper = await mountWithActiveCamera()
+    deliverRoom(playingRoom({ gameMode: 'staff-chase' }))
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('추격전: 3분동안 헌터로부터 살아남으세요')
     wrapper.unmount()
   })
 
@@ -1034,7 +1087,7 @@ describe('CameraPage 꼬리잡기 목표 카드 (P17)', () => {
     expect(text).toContain('우리 팀팀원 하린')
     expect(text).toContain('잡을 팀주황')
     // 일반 목표 문구와 칩 줄은 사라진다
-    expect(text).not.toContain('바로 다음 알파벳만 사냥할 수 있습니다.')
+    expect(text).not.toContain('바로 다음 알파벳만 잡을 수 있어요.')
     expect(text).not.toContain('팀 A · 팀원 하린')
   })
 
@@ -1042,7 +1095,7 @@ describe('CameraPage 꼬리잡기 목표 카드 (P17)', () => {
     const { wrapper } = await mountTailChase()
 
     const text = wrapper.text()
-    expect(text).toContain('바로 다음 알파벳만 사냥할 수 있습니다.')
+    expect(text).toContain('바로 다음 알파벳만 잡을 수 있어요.')
     expect(text).toContain('팀 A · 팀원 하린')
     expect(text).not.toContain('쫓는 팀')
   })
@@ -1053,7 +1106,7 @@ describe('CameraPage 꼬리잡기 목표 카드 (P17)', () => {
     await flushPromises()
 
     const text = wrapper.text()
-    expect(text).toContain('상대 완장 알파벳을 찍어 제출하세요.')
+    expect(text).toContain('개인전: 모든 팀을 전멸시키세요')
     expect(text).toContain('팀 A · 팀원 하린')
     expect(text).not.toContain('쫓는 팀')
   })
@@ -1091,7 +1144,7 @@ describe('CameraPage 꼬리잡기 목표 카드 (P17)', () => {
 
     const text = wrapper.text()
     expect(text).toContain('우리 팀이 잡혔어요. 이번 라운드는 촬영할 수 없어요.')
-    expect(text).toContain('바로 다음 알파벳만 사냥할 수 있습니다.')
+    expect(text).toContain('바로 다음 알파벳만 잡을 수 있어요.')
     expect(text).not.toContain('합류한 팀')
   })
 
@@ -1165,7 +1218,7 @@ describe('CameraPage 일시정지 게이트', () => {
     expect(findShutterKnob(wrapper).classes()).not.toContain('bg-brand')
     expect(wrapper.text()).toContain('진행자가 게임을 멈췄어요. 자리에 멈춰 안내를 기다려 주세요.')
     // 일시정지는 별도 블록이라 목표 문구를 밀어내지 않는다 — 재개 후 다시 읽을 필요가 없어야 한다
-    expect(wrapper.text()).toContain('상대 완장 알파벳을 찍어 제출하세요.')
+    expect(wrapper.text()).toContain('개인전: 모든 팀을 전멸시키세요')
   })
 
   it('진행 중에는 일시정지 안내를 띄우지 않는다', async () => {
@@ -1316,7 +1369,7 @@ describe('CameraPage', () => {
     deliverRoom(playingRoom())
     await flushPromises()
 
-    expect(wrapper.text()).toContain('상대 완장 알파벳을 찍어 제출하세요.')
+    expect(wrapper.text()).toContain('개인전: 모든 팀을 전멸시키세요')
     expect(wrapper.text()).toContain('20:00')
     expect(wrapper.text()).toContain('팀 A · 팀원 하린')
     // 칩에는 내 이름(민우)이 실리지 않는다 — 팀원 이름이 내 이름으로 읽히지 않게 '팀원'을 붙인다

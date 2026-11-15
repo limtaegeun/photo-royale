@@ -877,6 +877,30 @@ describe('useWaitingRoomStore', () => {
       expect(store.roster.find((p) => p.id === 'me')!.team).toBeNull()
     })
 
+    it('왕잡기에서 왕이 아니면 같은 그룹의 비밀 왕 완장을 알려 준다 — 다른 그룹 왕·지난 라운드 왕은 알리지 않는다', async () => {
+      const kingRoom: RoomInfo = { ...ROUND2_ROOM, gameMode: 'king-hunt' }
+      getRoomMock.mockResolvedValue(kingRoom)
+      const deliver = captureSnapshotCallbacks()
+      const store = useWaitingRoomStore()
+      await store.enter('AB2C')
+      deliver.room(kingRoom)
+      // E·A·I = 파랑 그룹, B = 주황 그룹
+      deliver.participants([
+        assigned('me', '오리', 'E', 2),
+        { ...assigned('u2', '하린', 'A', 2), isXTeam: true }, // 우리 그룹 왕
+        { ...assigned('u3', '도윤', 'B', 2), isXTeam: true }, // 다른 그룹 왕
+        { ...assigned('u4', '서연', 'I', 1), isXTeam: true }, // 지난 라운드 잔재
+      ])
+      expect(store.myAssignment?.groupKingArmband).toBe('A')
+
+      // 내가 왕이면 알릴 왕이 없다(배정 카드가 왕 안내를 따로 보인다)
+      deliver.participants([
+        { ...assigned('me', '오리', 'E', 2), isXTeam: true },
+        { ...assigned('u3', '도윤', 'B', 2), isXTeam: true },
+      ])
+      expect(store.myAssignment?.groupKingArmband).toBeNull()
+    })
+
     it('이번 라운드에 배정된 사람만 팀원 목록에 넣는다', async () => {
       getRoomMock.mockResolvedValue(ROUND2_ROOM)
       const deliver = captureSnapshotCallbacks()
@@ -892,6 +916,8 @@ describe('useWaitingRoomStore', () => {
       expect(store.myAssignment).toEqual({
         armband: 'A',
         isXTeam: false,
+        // 일반전은 비밀 왕이 없다
+        groupKingArmband: null,
         members: [
           { id: 'me', name: '오리', isReady: true },
           { id: 'u2', name: '하린', isReady: true },
@@ -984,11 +1010,11 @@ describe('useWaitingRoomStore', () => {
       ])
 
       expect(store.settledRoundCount).toBe(1)
-      expect(store.standings.map((row) => [row.rank, row.name, row.points, row.isMe])).toEqual([
-        [1, OTHER_READY.name, 10, false],
-        [2, ME_WAITING.name, 7, true],
-        // 명단에 없는 uid는 포인트를 그대로 둔 채 '나간 참가자'로 표기한다
-        [3, '나간 참가자', 1, false],
+      expect(store.standings.map((row) => [row.rank, row.name, row.score, row.isMe])).toEqual([
+        [1, OTHER_READY.name, 40, false],
+        [2, ME_WAITING.name, 10, true],
+        // 명단에 없는 uid는 점수를 그대로 둔 채 '나간 참가자'로 표기한다
+        [3, '나간 참가자', 0, false],
       ])
     })
 

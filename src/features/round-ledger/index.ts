@@ -14,18 +14,14 @@ export {
 } from './api/rounds'
 export type { RoundSnapshotTeam } from './api/rounds'
 export {
-  TIER_POINTS,
-  TIER_FLOOR_POINTS,
-  ZERO_SCORE_POINTS,
   aliveTeamCount,
   computeStandings,
-  groupByTier,
-  pointsForTier,
-  rankTiers,
+  formatRoundScores,
+  groupByScore,
+  rankByScore,
   settleRound,
   teamOutStatus,
-  tierLabel,
 } from './scoring'
-export type { RoundSettlement, Standing, TierGroup } from './scoring'
+export type { RoundSettlement, ScoreGroup, Standing } from './scoring'
 export { ROUND_KICK_KEYS, ROUND_RESULT_KEYS, ROUND_SNAPSHOT_KEYS, ROUND_TALLY_KEYS } from './types'
 export type { ArmbandMap, RoundLedger, RoundResult, RoundSnapshot, TeamTally } from './types'

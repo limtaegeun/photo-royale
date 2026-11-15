@@ -7,10 +7,15 @@ import type { SubmissionRecord } from '@/features/round-ops'
 export interface EliminationNotice {
   /** 안내의 근거가 된 킬샷 — 확인 기록의 키 */
   submissionId: string
-  /** out: 이 피격으로 목숨이 다 닳았다. hit: 아직 목숨이 남았다(1인 팀의 첫 피격) */
-  kind: 'out' | 'hit'
-  /** 잡은 팀 완장 */
+  /**
+   * out: 이 피격으로 목숨이 다 닳았다. hit: 아직 목숨이 남았다(1인 팀의 첫 피격).
+   * group-out: 우리 그룹 왕이 잡혀 그룹 전체가 아웃됐다(왕잡기, 노션 ② "그룹 전체가 즉시 아웃됩니다")
+   */
+  kind: 'out' | 'hit' | 'group-out'
+  /** 잡은 팀 완장 — group-out이면 왕을 잡은 팀 */
   attackerTeam: string
+  /** group-out일 때 잡힌 우리 그룹 왕의 완장. 그 밖에는 null */
+  kingTeam: string | null
   /** 판정 사진(JPEG 데이터 URL) */
   photo: string
   /** 판정 시각 — 서버 시각 반영 전이면 null */
@@ -41,10 +46,39 @@ export function deriveEliminationNotice(
     submissionId: latest.id,
     kind: livesLeft === 0 ? 'out' : 'hit',
     attackerTeam: latest.team,
+    kingTeam: null,
     photo: latest.photo,
     judgedAtMs: latest.judgedAtMs,
     isTripleKill: latest.multiplier === 3,
     livesLeft,
+  }
+}
+
+/**
+ * 그룹 탈락 안내(왕잡기) — 우리 그룹 왕이 목숨을 다 쓴 킬샷이 아직 확인되지 않았을 때만. 왕이 잡힌 킬샷(목숨 수만큼째
+ * 피격)의 사진·잡은 팀을 보인다. 아직 왕이 살아 있으면 null.
+ *
+ * @param kingHits 우리 그룹 왕 팀을 잡은 확정 킬샷, 판정 순
+ * @param kingLives 왕 팀 목숨(livesOf)
+ * @param kingTeam 왕 팀 완장
+ */
+export function deriveGroupOutNotice(
+  kingHits: SubmissionRecord[],
+  kingLives: number,
+  kingTeam: string,
+  acknowledged: ReadonlySet<string>,
+): EliminationNotice | null {
+  const fatal = kingHits[kingLives - 1]
+  if (fatal === undefined || acknowledged.has(fatal.id)) return null
+  return {
+    submissionId: fatal.id,
+    kind: 'group-out',
+    attackerTeam: fatal.team,
+    kingTeam,
+    photo: fatal.photo,
+    judgedAtMs: fatal.judgedAtMs,
+    isTripleKill: false,
+    livesLeft: 0,
   }
 }
 

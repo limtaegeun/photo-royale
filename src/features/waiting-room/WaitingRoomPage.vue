@@ -11,7 +11,7 @@ import BaseDialog from '@/shared/components/BaseDialog.vue'
 import BaseListRow from '@/shared/components/BaseListRow.vue'
 import BaseSectionHeader from '@/shared/components/BaseSectionHeader.vue'
 import PlayerChip from '@/shared/components/PlayerChip.vue'
-import { DEFAULT_GAME_MODE, GAME_MODES } from '@/features/game-mode'
+import { DEFAULT_GAME_MODE, GAME_MODES, GameRulesGuide } from '@/features/game-mode'
 import {
   AssignmentBoard,
   MAX_ASSIGNABLE_MEMBERS,
@@ -28,6 +28,7 @@ import KickableRosterChip from './components/KickableRosterChip.vue'
 import SafetyConsentRosterSheet from './components/SafetyConsentRosterSheet.vue'
 import SafetyConsentSheet from './components/SafetyConsentSheet.vue'
 import StandingsCard from './components/StandingsCard.vue'
+import VenueMapPreview from './components/VenueMapPreview.vue'
 import VenueMapUploadSheet from './components/VenueMapUploadSheet.vue'
 import { formatClock } from '@/shared/utils/formatClock'
 import { isAssignedInRound, normalizeRoomCode, type Participant } from './api/rooms'
@@ -644,15 +645,24 @@ async function copyInviteLink() {
           @confirmed="onAssignmentConfirmed"
         />
 
-        <!-- 게스트: 배정 확정 후 라운드 배정 카드(룸 카드·명단·안전수칙을 대체) -->
-        <RoundAssignmentCard
-          v-else-if="showGuestAssignment"
-          :armband="myAssignment!.armband"
-          :members="myAssignment!.members"
-          :my-id="myId!"
-          :is-x-team="myAssignment!.isXTeam"
-          :game-mode="room!.gameMode"
-        />
+        <!-- 게스트: 배정 확정 후 라운드 배정 카드(룸 카드·명단·안전수칙을 대체). 그 아래로 내리면 행사장 지도와
+             규칙 설명서가 차례로 보인다(노션 ② "배정 카드(P03)와 지도(P05) 아래로 내리면 이 화면이 보여야 합니다") -->
+        <div v-else-if="showGuestAssignment" class="flex flex-col gap-6">
+          <RoundAssignmentCard
+            :armband="myAssignment!.armband"
+            :members="myAssignment!.members"
+            :my-id="myId!"
+            :is-x-team="myAssignment!.isXTeam"
+            :game-mode="room!.gameMode"
+            :group-king-armband="myAssignment!.groupKingArmband"
+          />
+          <!-- 행사장 지도(P05) — 진행자가 등록했을 때만. 콕핏 지도 시트와 같은 미리보기라 누르면 크게 본다 -->
+          <section v-if="mapImage !== null" class="flex flex-col gap-3" data-guest-venue-map>
+            <BaseSectionHeader title="행사장 지도" />
+            <VenueMapPreview :image="mapImage" alt="행사장 지도" image-class="max-h-[50dvh]" />
+          </section>
+          <GameRulesGuide :game-mode="room!.gameMode" />
+        </div>
 
         <!-- 기본 대기실 뷰 — 블록 사이 여백은 mt-* 체인이 아니라 컨테이너 gap으로 준다
              (조건부 렌더에서 첫 블록의 마진이 남는 문제를 없앤다) -->

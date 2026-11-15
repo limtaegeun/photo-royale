@@ -50,11 +50,46 @@ service cloud.firestore {
     // src/features/game-mode/scoring.ts의 livesOf와 **같아야 한다**(변경 시 양쪽을 함께 갱신·배포할 것).
     // 콕핏은 이미 탈락 팀의 셔터·제출을 잠그지만 클라를 우회한 쓰기는 그것만으로는 통과하므로
     // 서버에서도 같은 기준으로 막는다(p07-elimination §5). 스냅샷에 없는 완장은 판정 근거가 없어 탈락이 아니다.
-    function isTeamOutInLedger(ledger, team) {
+    function hitsReachLives(ledger, team) {
       return 'hits' in ledger
         && team in ledger.hits
         && team in ledger.teams
         && ledger.hits[team] >= (ledger.teams[team].size() == 1 ? 2 : 1);
+    }
+
+    // 완장 → 그룹 색. src/features/game-mode/armbandGroups.ts의 groupForArmband(알파벳 4색 순환 A=파랑·B=주황·
+    // C=초록·D=빨강, 특수 완장 X는 그룹 없음)와 **같아야 한다**.
+    function armbandGroup(team) {
+      return team.matches('^[AEIMQUY]$') ? 'blue'
+        : team.matches('^[BFJNRVZ]$') ? 'orange'
+        : team.matches('^[CGKOSW]$') ? 'green'
+        : team.matches('^[DHLPT]$') ? 'red'
+        : 'none';
+    }
+
+    // 왕잡기의 xTeams[index]가 이 팀과 같은 그룹의 왕이고 아웃인가 — 규칙 언어에 반복문이 없어 칸마다 따로 본다
+    function isKingDownAt(ledger, team, index) {
+      return ledger.xTeams.size() > index
+        && armbandGroup(ledger.xTeams[index]) == armbandGroup(team)
+        && hitsReachLives(ledger, ledger.xTeams[index]);
+    }
+
+    // 왕잡기(노션 ② "우리 왕이 잡히면 그 판은 그룹 전체가 즉시 아웃됩니다") — 같은 그룹 왕이 아웃이면 이 팀도 탈락이다.
+    // src/features/game-mode/scoring.ts의 isKingDownInGroup과 **같아야 한다**. 왕은 그룹마다 한 팀이라(그룹 4개)
+    // xTeams 앞 네 칸만 본다.
+    function isKingDownInGroup(ledger, team) {
+      return ledger.mode == 'king-hunt'
+        && armbandGroup(team) != 'none'
+        && (isKingDownAt(ledger, team, 0)
+          || isKingDownAt(ledger, team, 1)
+          || isKingDownAt(ledger, team, 2)
+          || isKingDownAt(ledger, team, 3));
+    }
+
+    // 탈락 팀 — 라이프를 다 썼거나, 왕잡기에서 같은 그룹 왕이 잡혔다(src/features/game-mode/elimination.ts
+    // isTeamEliminated와 같은 기준)
+    function isTeamOutInLedger(ledger, team) {
+      return hitsReachLives(ledger, team) || isKingDownInGroup(ledger, team);
     }
 
     // 방 삭제(P09) — 요청자가 이 방의 호스트이고 방이 삭제 표식(deleting)을 달았는가.

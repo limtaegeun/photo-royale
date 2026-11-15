@@ -2,6 +2,7 @@ import { computed, onScopeDispose, ref, shallowRef, watch, type Ref } from 'vue'
 import { subscribeToHitsOnTeam, type SubmissionRecord } from '@/features/round-ops'
 import {
   deriveEliminationNotice,
+  deriveGroupOutNotice,
   eliminatedByTeam,
   type EliminationNotice,
 } from '../eliminationNotice'
@@ -20,6 +21,13 @@ export interface UseEliminationNoticeOptions {
   lives: Ref<number | null>
   /** 이 모드에서 안내를 띄우는가 — 잡힌 팀이 상대 꼬리로 편입되는 모드(꼬리잡기)는 목표 카드가 이미 알린다 */
   enabled: Ref<boolean>
+  /**
+   * 우리 그룹의 비밀 왕 완장 — 왕잡기에서 내가 왕이 아닐 때만. 왕이 잡히면 그룹 전체가 아웃이라(노션 ②) 왕의 피격도
+   * 구독해 그룹 탈락 안내를 띄운다. 생략·null이면 구독하지 않는다
+   */
+  kingTeam?: Ref<string | null>
+  /** 우리 그룹 왕 팀의 목숨(livesOf) — kingTeam과 함께 넘긴다 */
+  kingLives?: Ref<number | null>
 }
 
 export interface UseEliminationNoticeResult {
@@ -64,8 +72,10 @@ function writeAcknowledged(code: string, round: number, ids: Set<string>): void 
  */
 export function useEliminationNotice(options: UseEliminationNoticeOptions): UseEliminationNoticeResult {
   const hits = shallowRef<SubmissionRecord[]>([])
+  const kingHits = shallowRef<SubmissionRecord[]>([])
   const acknowledged = ref<Set<string>>(new Set())
   let unsubscribe: (() => void) | null = null
+  let unsubscribeKing: (() => void) | null = null
 
   function resubscribe() {
     unsubscribe?.()
@@ -94,10 +104,41 @@ export function useEliminationNotice(options: UseEliminationNoticeOptions): UseE
 
   watch([options.roomCode, options.team, options.round], resubscribe, { immediate: true })
 
+  /** 우리 그룹 왕의 피격 구독 — 왕잡기에서 내가 왕이 아닐 때만. 구독 오류는 팀 피격 구독처럼 조용히 둔다 */
+  function resubscribeKing() {
+    unsubscribeKing?.()
+    unsubscribeKing = null
+    kingHits.value = []
+    const code = options.roomCode.value
+    const round = options.round.value
+    const kingTeam = options.kingTeam?.value ?? null
+    if (code === null || round === null || kingTeam === null) return
+    unsubscribeKing = subscribeToHitsOnTeam(
+      code,
+      round,
+      kingTeam,
+      (records) => {
+        kingHits.value = records
+      },
+      () => {},
+    )
+  }
+
+  watch(
+    () => [options.roomCode.value, options.round.value, options.kingTeam?.value ?? null],
+    resubscribeKing,
+    { immediate: true },
+  )
+
   const notice = computed(() => {
     const lives = options.lives.value
     if (!options.enabled.value || lives === null) return null
-    return deriveEliminationNotice(hits.value, lives, acknowledged.value)
+    const own = deriveEliminationNotice(hits.value, lives, acknowledged.value)
+    if (own !== null) return own
+    const kingTeam = options.kingTeam?.value ?? null
+    const kingLives = options.kingLives?.value ?? null
+    if (kingTeam === null || kingLives === null) return null
+    return deriveGroupOutNotice(kingHits.value, kingLives, kingTeam, acknowledged.value)
   })
 
   const eliminatedBy = computed(() => {
@@ -121,12 +162,15 @@ export function useEliminationNotice(options: UseEliminationNoticeOptions): UseE
     // 지금 안내까지의 피격을 모두 확인한 것으로 본다 — 안내는 늘 마지막 피격이라 앞의 것도 이미 반영돼 있다
     const next = new Set(acknowledged.value)
     for (const hit of hits.value) next.add(hit.id)
+    // 그룹 탈락 안내는 우리 팀 피격이 없을 때만 뜬다 — 지금 안내가 그것이면 왕의 피격까지 확인한 것으로 본다
+    if (notice.value.kind === 'group-out') for (const hit of kingHits.value) next.add(hit.id)
     acknowledged.value = next
     writeAcknowledged(code, round, next)
   }
 
   onScopeDispose(() => {
     unsubscribe?.()
+    unsubscribeKing?.()
   })
 
   return { notice, eliminatedBy, acknowledge }

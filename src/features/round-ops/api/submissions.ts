@@ -379,7 +379,7 @@ export interface ApprovalTally {
   roundNo: number
   /** 공격 완장 = 킬샷의 team */
   attackerTeam: string
-  /** 피격 팀이 이 라운드의 X 겸직 팀(왕)인지 — 원장 kingKills(왕잡기 왕 사냥) 근거. 생략 = false */
+  /** 이 킬로 이 라운드의 X 겸직 팀(왕)이 아웃되는지 — 원장 kingKills(왕잡기 왕 잡기) 근거. 생략 = false */
   kingTarget?: boolean
   /**
    * 편입 모드(꼬리잡기, P07 §4.2)의 킬 효과 — 킬 시점의 사냥 팀 소속(credits)과 이 킬로 아웃된 팀의

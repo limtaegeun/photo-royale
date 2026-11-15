@@ -6,11 +6,15 @@ export const fastSurvivalMode: GameModeDefinition = {
   id: 'fast-survival',
   label: '빠른생존',
   description: '자원 수집 서바이벌',
-  rules: [
-    { kind: 'composition' },
-    { kind: 'static', text: '식량·약·물 QR을 각 1개씩 수집해 본부 반납 QR을 스캔하세요.' },
-    { kind: 'static', text: '자원 거점은 인당 1회만 획득할 수 있습니다.' },
-  ],
+  // 아직 열지 않은 모드(노션 ②에 카드 없음) — 규칙서 v1.0 문구를 그대로 둔다
+  objective: '식량·약·물 QR을 각 1개씩 수집해 본부 반납 QR을 스캔하세요.',
+  ruleCard: {
+    icon: 'flag',
+    lines: [
+      '식량·약·물 QR을 각 1개씩 수집해 본부 반납 QR을 스캔하세요.',
+      '자원 거점은 인당 1회만 획득할 수 있습니다.',
+    ],
+  },
   // 자기 원점수 규칙이 아직 없다 — 기본 킬 규칙(M4에서 교체)
   scoring: killScoring,
   available: false,

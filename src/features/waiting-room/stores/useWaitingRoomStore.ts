@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { fetchMyGender, useAuthStore } from '@/features/auth'
+import { GAME_MODES, isSameGroup } from '@/features/game-mode'
 import { computeStandings, subscribeToRoundLedgers, type RoundLedger } from '@/features/round-ledger'
 import {
   RoomNotFoundError,
@@ -203,6 +204,25 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
   )
 
   /**
+   * 우리 그룹의 비밀 왕 완장 — 비밀 왕 모드(왕잡기)에서 내가 왕이 아닐 때만. 같은 그룹에서 이번 라운드에 배정된
+   * X 겸직 팀이 왕이다(노션 ② 왕잡기 "그룹마다 몰래 왕을 1명 정해요" — 같은 그룹에만 알린다).
+   */
+  function groupKingArmbandFor(me: Participant): string | null {
+    const gameMode = room.value?.gameMode
+    if (gameMode === undefined || GAME_MODES[gameMode].secretKing !== true) return null
+    if (me.isXTeam || me.team === null) return null
+    const king = participants.value.find(
+      (participant) =>
+        participant.isXTeam &&
+        participant.team !== null &&
+        participant.team !== me.team &&
+        isAssignedInRound(participant, assignmentRound.value) &&
+        isSameGroup(participant.team, me.team!),
+    )
+    return king?.team ?? null
+  }
+
+  /**
    * 내 이번 라운드 배정 — 배정 카드(P03)가 쓰는 유일한 소스. 이번 라운드에 배정되지 않았으면
    * (미배정·대기자·늦은 합류) null이라 카드가 뜨지 않고 기존 대기실 뷰가 유지된다.
    * 팀원도 같은 기준으로 걸러 다른 라운드의 잔재가 팀원 목록에 섞이지 않게 한다.
@@ -213,6 +233,7 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
     return {
       armband: me.team!,
       isXTeam: me.isXTeam,
+      groupKingArmband: groupKingArmbandFor(me),
       members: participants.value
         .filter(
           (participant) =>

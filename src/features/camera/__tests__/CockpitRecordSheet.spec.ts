@@ -255,7 +255,7 @@ describe('CockpitRecordSheet', () => {
       expect(bodyText()).toContain('아직 끝난 라운드가 없어요.')
     })
 
-    it('내 누적 순위·포인트·원점수와 라운드별 등급 내역을 보여준다', async () => {
+    it('내 누적 순위·점수 합과 라운드별 점수를 보여준다 — 노션 ② "세 판 점수를 더해 우승자를 정해요"', async () => {
       await mountSheet({
         pastLedgers: [
           settledLedger(1, { tier: 2, points: 7, score: 10 }, { tier: 1, points: 10, score: 20 }),
@@ -264,19 +264,20 @@ describe('CockpitRecordSheet', () => {
       })
 
       const text = bodyText()
-      // 포인트 17 동점(player1·player2) → 원점수도 같아 공동 1위, player3(17)도 같은 포인트지만 원점수 30 < 40
-      expect(text).toContain('순위 1위 · 누적 17P · 원점수 40')
-      expect(text).toContain('1R 2등급 · 2R 1등급')
+      // 점수 합 40 동점(player1·player2) → 공동 1위, player3은 30
+      expect(text).toContain('순위 1위 · 누적 40점')
+      expect(text).toContain('1R 10점 · 2R 30점')
+      expect(text).not.toContain('등급')
     })
 
-    it('등급 없음(원점수 0 이하)은 0점 이하로 적는다', async () => {
+    it('0점 라운드도 점수로 적는다', async () => {
       await mountSheet({
         pastLedgers: [settledLedger(1, { tier: 0, points: 1, score: 0 }, { tier: 1, points: 10, score: 20 })],
       })
 
       const text = bodyText()
-      expect(text).toContain('순위 2위 · 누적 1P · 원점수 0')
-      expect(text).toContain('1R 0점 이하')
+      expect(text).toContain('순위 2위 · 누적 0점')
+      expect(text).toContain('1R 0점')
     })
 
     it('끝난 라운드는 있지만 내 기록이 없으면 그 사실을 알린다', async () => {

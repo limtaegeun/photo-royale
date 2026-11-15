@@ -65,46 +65,54 @@ describe('RoundAssignmentCard', () => {
     expect(wrapper.text()).toContain('바람부는날에사진찍는사람(나)')
   })
 
-  it('1인 팀이면 목숨·포인트 2배 문구를 표시한다', () => {
+  it('1인 팀이면 체력·점수 2배 문구를 표시한다 — 노션 ② 기본 규칙 5와 같은 말', () => {
     const wrapper = mountCard({ members: [{ id: 'me', name: '오리', isReady: false }] })
 
-    expect(wrapper.text()).toContain('1인 팀 · 목숨과 포인트 2배')
-    expect(wrapper.text()).toContain('1인 팀입니다.')
-    expect(wrapper.text()).toContain('목숨과 포인트가 2배입니다.')
+    expect(wrapper.text()).toContain('1인 팀 · 체력과 점수 2배')
   })
 
-  it('X 팀이면 특수 완장 X 안내와 규칙을 추가로 표시한다', () => {
+  it('X 팀이면 특수 완장 X 안내를 표시한다', () => {
     const wrapper = mountCard({ isXTeam: true })
 
     expect(wrapper.text()).toContain('특수 완장 X')
     expect(wrapper.text()).toContain('X끼리만 서로 사냥할 수 있어요')
-    expect(wrapper.text()).toContain('X끼리만 서로 사냥할 수 있습니다.')
   })
 
-  it('왕잡기의 X 팀은 왕 안내를 보이고 "X끼리만 사냥" 문구는 카드·규칙서 어디에도 없다', () => {
+  it('왕잡기의 왕 팀은 X 완장 대신 비밀 왕 안내를 보인다 — 노션 ② "그룹마다 몰래 왕을 1명 정해요"', () => {
     const wrapper = mountCard({ isXTeam: true, gameMode: 'king-hunt' })
 
-    expect(wrapper.text()).toContain('특수 완장 X')
-    expect(wrapper.text()).toContain('우리 그룹의 왕이에요. 잡히면 그룹 전체가 감점을 받아요.')
+    expect(wrapper.text()).toContain('비밀 왕')
+    expect(wrapper.text()).toContain('우리 팀이 그룹의 왕이에요. 다른 그룹에는 비밀이에요.')
+    expect(wrapper.text()).toContain('잡히면 그룹 전체가 즉시 아웃돼요.')
+    expect(wrapper.text()).not.toContain('특수 완장 X')
     expect(wrapper.text()).not.toContain('X끼리만')
   })
 
-  // 모드별 규칙서 내용(꼬리잡기·스태프 추격전·X 번호 매김 등)은 game-mode 기능의
-  // GameModeRulebook.spec.ts가 직접 검증한다. 여기서는 카드가 배정 컨텍스트(모드·팀 구성·
-  // 그룹 색)를 규칙서에 올바르게 연결하는지만 통합 수준으로 확인한다.
-  it('규칙서(헤더·모드 배지·배정 컨텍스트 규칙)를 렌더한다', () => {
-    const wrapper = mountCard({ armband: 'A' })
+  it('왕잡기에서 왕이 아닌 팀은 우리 그룹 왕을 안내받는다 — 같은 그룹에만 알린다', () => {
+    const wrapper = mountCard({ gameMode: 'king-hunt', groupKingArmband: 'E' })
 
-    expect(wrapper.text()).toContain('이번 게임 규칙서')
-    expect(wrapper.text()).toContain('일반전')
-    expect(wrapper.text()).toContain('팀은 2인 1조입니다.')
-    expect(wrapper.text()).toContain('그룹은 완장 색깔입니다.')
-    // 완장(A=파랑)에서 파생한 그룹 컨텍스트가 규칙서 문구·색으로 이어진다
-    expect(wrapper.text()).toContain('이번 라운드는 파랑 그룹입니다.')
-    expect(wrapper.find('ol .text-team-blue').exists()).toBe(true)
+    const notice = wrapper.find('[data-group-king]')
+    expect(notice.exists()).toBe(true)
+    expect(notice.text()).toContain('우리 그룹 왕 · 팀 E')
+    expect(notice.text()).toContain('다른 그룹에는 비밀이에요.')
+    expect(notice.text()).toContain('왕을 꼭 지키세요.')
   })
 
-  it('X 팀이 아니면 X 규칙을 노출하지 않는다', () => {
+  it('왕 안내가 없으면(다른 모드·왕 팀) 그룹 왕 줄을 그리지 않는다', () => {
+    expect(mountCard().find('[data-group-king]').exists()).toBe(false)
+    expect(
+      mountCard({ isXTeam: true, gameMode: 'king-hunt', groupKingArmband: 'E' }).find('[data-group-king]').exists(),
+    ).toBe(false)
+  })
+
+  it('규칙 설명서는 카드에 넣지 않는다 — 페이지가 지도와 함께 카드 아래에 붙인다', () => {
+    const wrapper = mountCard({ armband: 'A' })
+
+    expect(wrapper.text()).not.toContain('규칙 설명서')
+    expect(wrapper.text()).not.toContain('이번 게임 규칙서')
+  })
+
+  it('X 팀이 아니면 X 안내를 노출하지 않는다', () => {
     const wrapper = mountCard({ isXTeam: false })
     expect(wrapper.text()).not.toContain('특수 완장 X')
   })
@@ -115,7 +123,7 @@ describe('RoundAssignmentCard', () => {
       isXTeam: true,
     })
 
-    expect(wrapper.text()).toContain('1인 팀 · 목숨과 포인트 2배')
+    expect(wrapper.text()).toContain('1인 팀 · 체력과 점수 2배')
     expect(wrapper.text()).toContain('특수 완장 X')
     expect(wrapper.text()).toContain('X끼리만 서로 사냥할 수 있어요')
   })
@@ -128,9 +136,9 @@ describe('RoundAssignmentCard', () => {
       ],
     })
 
-    // 구성 요약 줄이 '3인 팀'이다(규칙서 본문의 '2인 1조' 문구와 구분해 검증한다)
+    // 구성 요약 줄이 '3인 팀'이다
     expect(wrapper.text()).toContain('· 3인 팀')
     expect(wrapper.text()).not.toContain('· 2인 1조')
-    expect(wrapper.text()).not.toContain('1인 팀 · 목숨과 포인트 2배')
+    expect(wrapper.text()).not.toContain('1인 팀 · 체력과 점수 2배')
   })
 })

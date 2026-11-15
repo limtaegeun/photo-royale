@@ -193,3 +193,60 @@ describe('useEliminationNotice (P22)', () => {
     expect(unsubscribeMock).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('useEliminationNotice — 왕잡기 그룹 탈락', () => {
+  function setupWithKing() {
+    const roomCode = ref<string | null>('AB2C')
+    const team = ref<string | null>('B')
+    const round = ref<number | null>(1)
+    const lives = ref<number | null>(1)
+    const enabled = ref(true)
+    const kingTeam = ref<string | null>('F')
+    const kingLives = ref<number | null>(1)
+    const scope = effectScope()
+    const result = scope.run(() =>
+      useEliminationNotice({ roomCode, team, round, lives, enabled, kingTeam, kingLives }),
+    )!
+    /** 팀별 구독의 스냅샷 콜백 */
+    const deliverTo = (target: string, records: SubmissionRecord[]) => {
+      const calls = subscribeToHitsOnTeamMock.mock.calls.filter((call) => call[2] === target)
+      calls[calls.length - 1]![3](records)
+    }
+    return { scope, kingTeam, deliverTo, ...result }
+  }
+
+  it('우리 그룹 왕의 피격도 구독하고, 왕이 잡히면 그룹 탈락 안내를 띄운 뒤 확인하면 다시 띄우지 않는다', async () => {
+    const { scope, deliverTo, notice, acknowledge } = setupWithKing()
+    expect(subscribeToHitsOnTeamMock).toHaveBeenCalledWith('AB2C', 1, 'F', expect.any(Function), expect.any(Function))
+
+    deliverTo('F', [hit({ id: 'king', team: 'C', targetTeam: 'F' })])
+    await nextTick()
+    expect(notice.value).toMatchObject({ kind: 'group-out', kingTeam: 'F', attackerTeam: 'C' })
+    expect(vibrateMock).toHaveBeenCalledTimes(1)
+
+    acknowledge()
+    await nextTick()
+    expect(notice.value).toBeNull()
+    scope.stop()
+  })
+
+  it('우리 팀이 직접 잡힌 안내가 그룹 탈락보다 먼저다', async () => {
+    const { scope, deliverTo, notice } = setupWithKing()
+
+    deliverTo('F', [hit({ id: 'king', team: 'C', targetTeam: 'F' })])
+    deliverTo('B', [hit({ id: 'mine', team: 'E' })])
+    await nextTick()
+    expect(notice.value).toMatchObject({ kind: 'out', submissionId: 'mine' })
+    scope.stop()
+  })
+
+  it('왕 완장이 없어지면(다른 모드·내가 왕) 왕 구독을 끊는다', async () => {
+    const { scope, kingTeam } = setupWithKing()
+    const before = unsubscribeMock.mock.calls.length
+
+    kingTeam.value = null
+    await nextTick()
+    expect(unsubscribeMock.mock.calls.length).toBe(before + 1)
+    scope.stop()
+  })
+})

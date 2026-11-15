@@ -19,11 +19,21 @@ export type GameModeId =
   | 'kkomkkomi'
   | 'fast-survival'
 
-/** 규칙서 한 항목 — 정적 텍스트 또는 라운드 컨텍스트가 필요한 동적 항목 */
-export type GameModeRuleEntry =
-  | { kind: 'composition' } // 팀 구성 규칙 — 2인 1조/1인 팀 variant는 렌더러가 배정 컨텍스트로 채운다
-  | { kind: 'group' } // 그룹 규칙 — "그룹은 완장 색깔" + 이번 라운드 그룹 색 문구
-  | { kind: 'static'; text: string; caption?: string }
+/**
+ * 규칙 설명서의 라운드 모드 카드(노션 ② "라운드 모드 카드") — 라운드 모드에 맞는 카드 하나만 대기실 규칙 설명서에
+ * 보인다. 문구는 노션 원문 그대로다.
+ */
+/** 모드 카드 머리의 아이콘 — 시안(규칙 설명서 캔버스 ModeCard)의 선 아이콘. 그리는 SVG는 GameRulesGuide가 소유한다 */
+export type RuleCardIcon = 'target' | 'tail' | 'group' | 'crown' | 'timer' | 'flag'
+
+export interface GameModeRuleCard {
+  /** 카드 머리 아이콘 — 노션 원문의 이모지(🎯 🐍 🤝 👑 🏃) 자리를 시안의 선 아이콘으로 그린다 */
+  icon: RuleCardIcon
+  /** 굵은 첫 줄 — 노션 원문에 굵은 첫 줄이 있는 모드만. 콕핏 목표 문구(objective)와 같아야 한다 */
+  headline?: string
+  /** 본문 줄 — 순서대로 한 줄씩 */
+  lines: readonly string[]
+}
 
 /**
  * 정산 입력(P07) — 라운드 원장(round-ledger)이 자기 문서를 이 형태로 넘긴다. 모드 파일이 원장
@@ -36,7 +46,7 @@ export interface ModeScoringInput {
   xTeams: string[]
   /**
    * 공격 완장별 판정 집계. 판정이 없던 완장은 키 자체가 없다.
-   * kingKills = kills·tripleKills 중 X 겸직 팀(왕)을 잡은 건수 — 왕잡기의 왕 사냥 근거(M4-3 이전 문서엔 없다)
+   * kingKills = kills·tripleKills 중 X 겸직 팀(왕)을 아웃시킨 건수 — 왕잡기의 왕 잡기 근거(M4-3 이전 문서엔 없다)
    */
   tally: Record<string, { kills: number; tripleKills: number; kingKills?: number }>
   /** 피격 완장별 집계 */
@@ -131,8 +141,13 @@ export interface GameModeDefinition {
   label: string
   /** 모드 선택 리스트의 한 줄 설명 */
   description: string
-  /** 규칙서 — 배열 순서대로 번호를 매겨 렌더한다 */
-  rules: GameModeRuleEntry[]
+  /**
+   * 콕핏(카메라 화면, 노션 P04) 맨 위 목표 문구. 노션 ② "굵은 첫 줄은 카메라 화면 맨 위 목표 문구와 같아요" —
+   * ruleCard.headline이 있는 모드는 그 문구와 같아야 한다(registry.spec이 대조한다)
+   */
+  objective: string
+  /** 규칙 설명서의 라운드 모드 카드 — 노션 원문 그대로 */
+  ruleCard: GameModeRuleCard
   /**
    * 라운드 원점수 규칙(P07 §4) — 모드 1개 = 파일 1개 원칙대로 각 모드가 소유한다.
    * 아직 자기 규칙이 없는 모드는 기본 킬 규칙(scoring.ts killScoring)을 둔다.
@@ -153,6 +168,13 @@ export interface GameModeDefinition {
   absorbsCaughtTeam?: boolean
   /** X 겸직 팀의 배정 카드에 보이는 역할 한 줄 — 없으면 X 모듈 기본 문구("X끼리만 서로 사냥") */
   xTeamCaption?: string
+  /** X 겸직 팀의 배정 카드 배지 — 없으면 '특수 완장 X'. 왕잡기는 X 완장을 차지 않는 비밀 왕이라 '비밀 왕' */
+  xTeamBadge?: string
+  /**
+   * X 겸직 팀이 그 그룹의 비밀 왕인 모드(왕잡기, 노션 ② "그룹마다 몰래 왕을 1명 정해요") — 왕은 같은 그룹에만
+   * 알리고(배정 카드), 왕이 아웃되면 같은 그룹 전체가 그 판에서 즉시 아웃된다(isKingDownInGroup).
+   */
+  secretKing?: boolean
   /**
    * 참가자가 킬샷을 제출하지 않는 모드의 콕핏 안내(스태프 추격전 — 스태프의 태그는 진행자가 기록한다).
    * 있으면 콕핏이 셔터를 잠그고 이 문구로 이유를 보인다.

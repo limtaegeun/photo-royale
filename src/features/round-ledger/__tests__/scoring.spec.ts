@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest'
-import { aliveTeamCount, computeStandings, groupByTier, pointsForTier, rankTiers, settleRound, teamOutStatus, tierLabel } from '../scoring'
+import {
+  aliveTeamCount,
+  computeStandings,
+  formatRoundScores,
+  groupByScore,
+  rankByScore,
+  settleRound,
+  teamOutStatus,
+} from '../scoring'
 import type { RoundLedger } from '../types'
 
 function ledger(overrides: Partial<RoundLedger> = {}): RoundLedger {
@@ -18,38 +26,9 @@ function ledger(overrides: Partial<RoundLedger> = {}): RoundLedger {
   }
 }
 
-describe('pointsForTier', () => {
-  it('등급 표 10/7/5/3, 5등급부터 2, 0등급(원점수 0 이하)은 참가점 1', () => {
-    expect([0, 1, 2, 3, 4, 5, 9].map(pointsForTier)).toEqual([1, 10, 7, 5, 3, 2, 2])
-  })
-})
-
-describe('tierLabel', () => {
-  it('등급 라벨 — N등급, 0 이하는 "0점 이하"', () => {
-    expect(tierLabel(1)).toBe('1등급')
-    expect(tierLabel(2)).toBe('2등급')
-    expect(tierLabel(0)).toBe('0점 이하')
-    expect(tierLabel(-1)).toBe('0점 이하')
-  })
-})
-
-describe('rankTiers', () => {
-  it('같은 점수는 같은 등급이고 다음 등급은 바로 이어진다(1-2-2-3)', () => {
-    expect(rankTiers({ a: 40, b: 10, c: 10, d: 10, e: 30 })).toEqual({
-      a: 1,
-      e: 2,
-      b: 3,
-      c: 3,
-      d: 3,
-    })
-  })
-
-  it('0 이하는 등급 0 — 음수(왕잡기 감점)도 등급을 잃는 것으로 작용한다', () => {
-    expect(rankTiers({ a: 10, b: 0, c: -10 })).toEqual({ a: 1, b: 0, c: 0 })
-  })
-
-  it('킬이 한 팀에서만 나면 1등급과 0등급 두 칸뿐이다', () => {
-    expect(rankTiers({ a: 10, b: 10, c: 0 })).toEqual({ a: 1, b: 1, c: 0 })
+describe('rankByScore', () => {
+  it('같은 점수는 같은 순위이고 다음 순위는 바로 이어진다(1-2-2-3) — 0점도 순위가 있다', () => {
+    expect(rankByScore({ a: 40, b: 10, c: 10, d: 0, e: 30 })).toEqual({ a: 1, e: 2, b: 3, c: 3, d: 4 })
   })
 })
 
@@ -58,7 +37,7 @@ describe('settleRound', () => {
    * 일반전 = 킬 10·3배 30 + 생존 5(탈락 모델 M3: 맞은 횟수가 라이프에 닿으면 아웃, 아웃은 보너스 없음).
    * 기획 §예시 라운드 1에서 A·B는 잡혀서(hits) 아웃, C만 생존이다.
    */
-  it('팀 킬 ×10 + 생존 5를 팀원 전원에게 동일 지급하고 등급·포인트를 낸다 — 기획 §예시 라운드 1', () => {
+  it('팀 킬 ×10 + 생존 5를 팀원 전원에게 동일 지급하고 라운드 안 순위를 붙인다 — 기획 §예시 라운드 1', () => {
     const settlement = settleRound(
       ledger({
         tally: {
@@ -80,23 +59,24 @@ describe('settleRound', () => {
       도윤: 45,
     })
     expect(settlement.playerTiers).toEqual({ 서연: 1, 도윤: 1, 하늘: 2, 민재: 2, 준호: 2, 소율: 2 })
-    expect(settlement.playerPoints).toEqual({ 서연: 10, 도윤: 10, 하늘: 7, 민재: 7, 준호: 7, 소율: 7 })
+    // 최종 순위에 더하는 값은 원점수 그대로다(노션 ② "세 판 점수를 더해 우승자를 정해요")
+    expect(settlement.playerPoints).toEqual(settlement.playerScores)
   })
 
-  it('킬 없이 잡힌 팀은 원점수 0, 등급 0, 참가점 1 — 킬 없이 살아남은 팀은 생존 5로 한 등급 위', () => {
+  it('킬 없이 잡힌 팀은 원점수 0 — 킬 없이 살아남은 팀은 생존 5로 한 순위 위', () => {
     const settlement = settleRound(ledger({ tally: { A: { kills: 2, tripleKills: 0, kingKills: 0 } }, hits: { B: 1 } }))
 
     expect(settlement.teamScores).toEqual({ A: 25, B: 0, C: 5 })
-    expect(settlement.playerTiers).toEqual({ 하늘: 1, 민재: 1, 준호: 0, 소율: 0, 서연: 2, 도윤: 2 })
-    expect(settlement.playerPoints.준호).toBe(1)
-    expect(settlement.playerPoints.서연).toBe(7)
+    expect(settlement.playerTiers).toEqual({ 하늘: 1, 민재: 1, 준호: 3, 소율: 3, 서연: 2, 도윤: 2 })
+    expect(settlement.playerPoints.준호).toBe(0)
+    expect(settlement.playerPoints.서연).toBe(5)
   })
 
-  it('판정이 하나도 없으면(tally null) 전원 생존 5 → 전원 1등급 10포인트', () => {
+  it('판정이 하나도 없으면(tally null) 전원 생존 5', () => {
     const settlement = settleRound(ledger())
 
     expect(Object.values(settlement.teamScores)).toEqual([5, 5, 5])
-    expect(Object.values(settlement.playerPoints)).toEqual([10, 10, 10, 10, 10, 10])
+    expect(Object.values(settlement.playerPoints)).toEqual([5, 5, 5, 5, 5, 5])
   })
 
   it('편성 스냅샷에 없는 uid는 결과에 없다 — 집계에만 있는 완장도 무시한다', () => {
@@ -126,15 +106,15 @@ describe('settleRound', () => {
 })
 
 describe('settleRound — 모드 위임', () => {
-  it('원장의 모드가 가진 scoring으로 원점수를 내고 등급·포인트만 붙인다', () => {
-    // 일반전은 생존 5가 붙고, 아직 자기 규칙이 없는 모드(그룹전)는 기본 킬 규칙뿐이다
+  it('원장의 모드가 가진 scoring으로 원점수를 낸다', () => {
+    // 일반전은 생존 5가 붙고, 그룹전은 우리 팀 킬 + 그룹 점수(같은 그룹 킬 합)다 — A·B·C는 모두 다른 그룹
     const base = ledger({ tally: { A: { kills: 1, tripleKills: 0, kingKills: 0 } } })
     const asNormal = settleRound({ ...base, mode: 'normal' })
     const asGroup = settleRound({ ...base, mode: 'group' })
 
     expect(asNormal.teamScores).toEqual({ A: 15, B: 5, C: 5 })
-    expect(asGroup.teamScores).toEqual({ A: 10, B: 0, C: 0 })
-    expect(asGroup.playerPoints).toEqual({ 하늘: 10, 민재: 10, 준호: 1, 소율: 1, 서연: 1, 도윤: 1 })
+    expect(asGroup.teamScores).toEqual({ A: 20, B: 0, C: 0 })
+    expect(asGroup.playerPoints).toEqual({ 하늘: 20, 민재: 20, 준호: 0, 소율: 0, 서연: 0, 도윤: 0 })
   })
 })
 
@@ -149,28 +129,41 @@ describe('teamOutStatus · aliveTeamCount (탈락 모델)', () => {
   it('hits가 없으면 전원 생존', () => {
     expect(aliveTeamCount(ledger())).toBe(3)
   })
+
+  it('왕잡기는 왕이 잡힌 그룹 전원이 아웃이다 — 노션 ② "그룹 전체가 즉시 아웃"', () => {
+    // A·E = 파랑(왕 A), B = 주황(왕 B), C = 초록
+    const l = ledger({
+      mode: 'king-hunt',
+      teams: { A: ['하늘', '민재'], E: ['지우', '서우'], B: ['준호', '소율'], C: ['서연', '도윤'] },
+      xTeams: ['A', 'B'],
+      hits: { A: 1 },
+    })
+
+    expect(teamOutStatus(l)).toEqual({ A: true, E: true, B: false, C: false })
+    expect(aliveTeamCount(l)).toBe(2)
+    // 같은 원장이 다른 모드면 맞은 팀만 아웃이다
+    expect(teamOutStatus({ ...l, mode: 'group' })).toEqual({ A: true, E: false, B: false, C: false })
+  })
 })
 
-describe('groupByTier', () => {
-  it('1등급부터 차례로 묶고 등급 없음(0점 이하)은 마지막에 둔다', () => {
-    const groups = groupByTier({
+describe('groupByScore', () => {
+  it('점수 높은 묶음부터 차례로 묶고 같은 점수는 uid 순이다', () => {
+    const groups = groupByScore({
       teamScores: {},
-      playerScores: { 서연: 40, 도윤: 40, 하늘: 10, 준호: 0, 민재: -10 },
-      playerTiers: { 서연: 1, 도윤: 1, 하늘: 2, 준호: 0, 민재: 0 },
-      playerPoints: { 서연: 10, 도윤: 10, 하늘: 7, 준호: 1, 민재: 1 },
+      playerScores: { 서연: 40, 도윤: 40, 하늘: 10, 준호: 0, 민재: 0 },
+      playerTiers: {},
+      playerPoints: {},
     })
 
     expect(groups).toEqual([
-      { tier: 1, points: 10, uids: ['도윤', '서연'] },
-      { tier: 2, points: 7, uids: ['하늘'] },
-      { tier: 0, points: 1, uids: ['준호', '민재'] },
+      { score: 40, uids: ['도윤', '서연'] },
+      { score: 10, uids: ['하늘'] },
+      { score: 0, uids: ['민재', '준호'] },
     ])
   })
 
   it('정산할 사람이 없으면 빈 목록', () => {
-    expect(
-      groupByTier({ teamScores: {}, playerScores: {}, playerTiers: {}, playerPoints: {} }),
-    ).toEqual([])
+    expect(groupByScore({ teamScores: {}, playerScores: {}, playerTiers: {}, playerPoints: {} })).toEqual([])
   })
 })
 
@@ -197,16 +190,22 @@ describe('computeStandings', () => {
     },
   })
 
-  it('포인트 합 내림차순 — 두 라운드 모두 상위권인 사람이 한 라운드 폭발보다 위다', () => {
+  it('라운드 원점수 합 내림차순 — 노션 ② "세 판 점수를 더해 우승자를 정해요"', () => {
     const standings = computeStandings([round2, round1])
 
-    expect(standings.map((s) => [s.rank, s.uid, s.points, s.rawScore])).toEqual([
-      [1, '하늘', 17, 40],
-      [2, '도윤', 15, 50],
-      [3, '서연', 11, 40],
-      [4, '준호', 8, 20],
-      [5, '민재', 8, 10],
+    expect(standings.map((s) => [s.rank, s.uid, s.score])).toEqual([
+      [1, '도윤', 50],
+      [2, '서연', 40],
+      [2, '하늘', 40],
+      [4, '준호', 20],
+      [5, '민재', 10],
     ])
+  })
+
+  it('등급 포인트 시절에 정산한 원장도 원점수(playerScores)로 더한다 — playerPoints는 읽지 않는다', () => {
+    const [first] = computeStandings([round1])
+    // round1의 playerPoints는 등급 포인트(서연 10)지만 원점수 40을 더한다
+    expect(first).toMatchObject({ uid: '도윤', score: 40 })
   })
 
   it('라운드 내역은 차수 오름차순이고 없던 라운드는 항목이 없다', () => {
@@ -226,28 +225,21 @@ describe('computeStandings', () => {
     ])
 
     expect(standings.find((s) => s.uid === '하늘')?.rounds).toEqual([
-      { roundNo: 1, tier: 2, points: 7 },
-      { roundNo: 2, tier: 1, points: 10 },
+      { roundNo: 1, score: 10 },
+      { roundNo: 2, score: 30 },
     ])
-    expect(standings.find((s) => s.uid === '신입')?.rounds).toEqual([{ roundNo: 3, tier: 1, points: 10 }])
+    expect(standings.find((s) => s.uid === '신입')?.rounds).toEqual([{ roundNo: 3, score: 10 }])
   })
 
-  it('포인트 동점은 원점수 합으로 가른다(준호 20 > 민재 10)', () => {
-    const [, , , fourth, fifth] = computeStandings([round1, round2])
-
-    expect(fourth?.uid).toBe('준호')
-    expect(fifth?.uid).toBe('민재')
-  })
-
-  it('원점수 합까지 같으면 1등급 횟수, 그래도 같으면 공동 순위이고 다음 순위는 인원수만큼 건너뛴다', () => {
+  it('점수 합이 같으면 공동 순위이고 다음 순위는 인원수만큼 건너뛴다', () => {
     const standings = computeStandings([
       ledger({
         roundNo: 1,
         result: {
           teamScores: {},
           playerScores: { 갑: 30, 을: 30, 병: 30, 정: 0 },
-          playerTiers: { 갑: 1, 을: 1, 병: 1, 정: 0 },
-          playerPoints: { 갑: 10, 을: 10, 병: 10, 정: 1 },
+          playerTiers: {},
+          playerPoints: {},
           finishedAtMs: 1,
         },
       }),
@@ -256,23 +248,30 @@ describe('computeStandings', () => {
         result: {
           teamScores: {},
           playerScores: { 갑: 20, 을: 20, 병: 10, 정: 30 },
-          playerTiers: { 갑: 2, 을: 2, 병: 3, 정: 1 },
-          playerPoints: { 갑: 7, 을: 7, 병: 5, 정: 10 },
+          playerTiers: {},
+          playerPoints: {},
           finishedAtMs: 2,
         },
       }),
     ])
 
-    expect(standings.map((s) => [s.rank, s.uid, s.points, s.rawScore, s.firstTierCount])).toEqual([
-      [1, '갑', 17, 50, 1],
-      [1, '을', 17, 50, 1],
-      [3, '병', 15, 40, 1],
-      [4, '정', 11, 30, 1],
+    expect(standings.map((s) => [s.rank, s.uid, s.score])).toEqual([
+      [1, '갑', 50],
+      [1, '을', 50],
+      [3, '병', 40],
+      [4, '정', 30],
     ])
   })
 
   it('정산이 없는(result null) 라운드는 무시하고, 라운드가 하나도 없으면 빈 목록', () => {
     expect(computeStandings([ledger({ roundNo: 1 })])).toEqual([])
     expect(computeStandings([])).toEqual([])
+  })
+})
+
+describe('formatRoundScores', () => {
+  it('라운드별 점수를 "1R 40점 · 2R 10점"으로 잇는다', () => {
+    expect(formatRoundScores([{ roundNo: 1, score: 40 }, { roundNo: 2, score: 10 }])).toBe('1R 40점 · 2R 10점')
+    expect(formatRoundScores([])).toBe('')
   })
 })

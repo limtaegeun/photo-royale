@@ -8,6 +8,7 @@ function notice(overrides: Partial<EliminationNotice> = {}): EliminationNotice {
     submissionId: 'h1',
     kind: 'out',
     attackerTeam: 'E',
+    kingTeam: null,
     photo: 'data:image/jpeg;base64,hit',
     judgedAtMs: new Date(2026, 10, 8, 14, 32).getTime(),
     isTripleKill: false,
@@ -45,11 +46,21 @@ describe('EliminationNoticeDialog (P22)', () => {
 
     expect(dialogText()).toContain('우리 팀이 탈락했어요')
     expect(dialogText()).toContain('14:32에 팀 E의 킬샷으로 판정됐어요.')
-    expect(dialogText()).toContain('진행자 안내에 따라 베이스캠프로 이동해 주세요.')
+    expect(dialogText()).toContain('바로 베이스캠프로 돌아가요.')
     const photo = document.querySelector<HTMLImageElement>('[role="dialog"] img')!
     expect(photo.getAttribute('src')).toBe('data:image/jpeg;base64,hit')
     expect(photo.getAttribute('alt')).toBe('우리 팀이 찍힌 판정 사진')
     expect(dialogText()).not.toContain('3배')
+  })
+
+  it('그룹 탈락(왕잡기) — 우리 그룹 왕이 잡힌 사진·잡은 팀과 그룹 전체 아웃을 알린다', async () => {
+    await mountDialog(notice({ kind: 'group-out', attackerTeam: 'C', kingTeam: 'A' }))
+
+    expect(dialogText()).toContain('우리 그룹 왕이 잡혔어요')
+    expect(dialogText()).toContain('14:32에 우리 그룹 왕(팀 A)이 팀 C에게 잡혔어요.')
+    expect(dialogText()).toContain('그룹 전체가 이번 판에서 즉시 아웃이에요.')
+    expect(dialogText()).toContain('바로 베이스캠프로 돌아가요.')
+    expect(document.querySelector('[role="dialog"] img')?.getAttribute('alt')).toBe('우리 그룹 왕이 찍힌 판정 사진')
   })
 
   it('판정 시각을 아직 모르면 시각 없이 잡은 팀만 적는다', async () => {

@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { useAuthStore } from '@/features/auth'
-import { GAME_MODES, absorbKillEffect, isTeamOut } from '@/features/game-mode'
+import { GAME_MODES, absorbKillEffect, isTeamEliminated, isTeamOut } from '@/features/game-mode'
 import {
   endGame,
   markRoundPlayed,
@@ -13,7 +13,7 @@ import {
   serverNow,
 } from '@/features/waiting-room'
 import {
-  groupByTier,
+  groupByScore,
   recordStaffOut,
   settleRound,
   subscribeToRoundLedger,
@@ -134,14 +134,14 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
   const round = computed(() => room.value?.round ?? null)
 
   /**
-   * 이번 라운드 정산 미리보기(P07) — 지금 종료하면 원장에 쓰일 값 그대로(settleRound)를 등급별로
+   * 이번 라운드 정산 미리보기(P07) — 지금 종료하면 원장에 쓰일 값 그대로(settleRound)를 점수별로
    * 묶고 이름을 붙인다. 원장이 없는 라운드는 null이라 화면이 카드를 띄우지 않는다. 판정이 들어올
    * 때마다 원장 스냅샷이 바뀌므로 자동으로 따라온다.
    */
   const settlementPreview = computed(() => {
     const ledger = currentLedger.value
     if (ledger === null) return null
-    return groupByTier(settleRound(ledger)).map((group) => ({
+    return groupByScore(settleRound(ledger)).map((group) => ({
       ...group,
       names: group.uids.map(
         (uid) => participants.value.find((participant) => participant.id === uid)?.name ?? '나간 참가자',
@@ -422,19 +422,29 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
   }
 
   /**
-   * 이 확정으로 피격 팀이 탈락하면, 그 팀의 대기 킬샷 중 확정하는 킬샷보다 늦게 제출된 건의 id를 돌려준다.
+   * 이 확정으로 탈락하는 팀들의 대기 킬샷 중 확정하는 킬샷보다 늦게 제출된 건의 id를 돌려준다.
    * 탈락은 판정 때 정해져서 찍힌 팀도 판정 전까지는 제출할 수 있다. 찍힌 뒤에 낸 샷은 킬로 인정하지 않으므로
    * 판정 탭에 남기지 않고 함께 반려한다. 먼저 낸 샷은 호스트의 판정 순서로 사라지지 않게 큐에 그대로 둔다.
-   * 서버 시각 반영 전(null)은 큐 정렬과 같이 가장 늦은 제출로 본다.
+   * 왕잡기는 왕을 잡는 확정이 왕의 그룹 전원을 탈락시키므로(노션 ② "그룹 전체가 즉시 아웃") 그 그룹 팀들의
+   * 늦은 샷도 같이 반려한다. 서버 시각 반영 전(null)은 큐 정렬과 같이 가장 늦은 제출로 본다.
    */
   function lateSubmissionIdsOnOut(approved: Submission, targetTeam: string, ledger: RoundLedger): string[] {
-    const hitsAfterApproval = { ...ledger.hits, [targetTeam]: (ledger.hits?.[targetTeam] ?? 0) + 1 }
-    if (!isTeamOut({ teams: ledger.teams, hits: hitsAfterApproval }, targetTeam)) return []
+    const hitsBefore = ledger.hits ?? {}
+    const hitsAfterApproval = { ...hitsBefore, [targetTeam]: (hitsBefore[targetTeam] ?? 0) + 1 }
+    const before = { teams: ledger.teams, hits: hitsBefore, xTeams: ledger.xTeams }
+    const after = { ...before, hits: hitsAfterApproval }
+    const outTeamsAfter = Object.keys(ledger.teams).filter(
+      (team) =>
+        isTeamEliminated(ledger.mode, after, team) &&
+        (team === targetTeam || !isTeamEliminated(ledger.mode, before, team)),
+    )
+    if (outTeamsAfter.length === 0) return []
     const approvedAtMs = approved.createdAtMs ?? Number.MAX_SAFE_INTEGER
     return pendingSubmissions.value
       .filter(
         (entry) =>
-          entry.team === targetTeam && (entry.createdAtMs ?? Number.MAX_SAFE_INTEGER) > approvedAtMs,
+          outTeamsAfter.includes(entry.team) &&
+          (entry.createdAtMs ?? Number.MAX_SAFE_INTEGER) > approvedAtMs,
       )
       .map((entry) => entry.id)
   }
@@ -454,13 +464,22 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     // rules의 선판정 충돌로 실패한다(기존 경로).
     const submission = pendingSubmissions.value.find((entry) => entry.id === submissionId)
     const ledger = currentLedger.value
-    // 피격 팀이 편성 스냅샷의 X 겸직 팀이면 왕 사냥(kingKills)으로도 센다 — 왕잡기 원점수 근거
+    // 이 킬로 편성 스냅샷의 X 겸직 팀(왕)이 아웃되면 왕 잡기(kingKills)로도 센다 — 왕잡기 원점수 근거. 1인 팀
+    // 왕의 첫 킬은 왕이 아직 살아 있어 일반 킬이다(노션 ② "왕을 잡으면 +30" — 잡힘 = 아웃)
     const tally =
       ledger !== null && submission !== undefined && submission.round === ledger.roundNo
         ? {
             roundNo: ledger.roundNo,
             attackerTeam: submission.team,
-            kingTarget: ledger.xTeams.includes(target.team),
+            kingTarget:
+              ledger.xTeams.includes(target.team) &&
+              isTeamOut(
+                {
+                  teams: ledger.teams,
+                  hits: { ...ledger.hits, [target.team]: (ledger.hits?.[target.team] ?? 0) + 1 },
+                },
+                target.team,
+              ),
             // 편입 모드(꼬리잡기)에서만 — 킬 시점 소속(팀원 + 꼬리)을 크레딧으로, 이 킬로 아웃된 팀의
             // 합류를 꼬리로 원장에 남긴다. 판정 시점 원장의 hits·tails가 근거다
             ...(GAME_MODES[ledger.mode].absorbsCaughtTeam === true

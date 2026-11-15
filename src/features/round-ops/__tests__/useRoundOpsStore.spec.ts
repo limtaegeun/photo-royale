@@ -835,7 +835,8 @@ describe('useRoundOpsStore', () => {
           teamScores: { A: 15, B: 10 },
           playerScores: { u1: 15, u2: 15, u3: 10 },
           playerTiers: { u1: 1, u2: 1, u3: 2 },
-          playerPoints: { u1: 10, u2: 10, u3: 7 },
+          // 최종 순위에 더하는 값 = 원점수(노션 ② "세 판 점수를 더해 우승자를 정해요")
+          playerPoints: { u1: 15, u2: 15, u3: 10 },
         },
       })
     })
@@ -986,6 +987,28 @@ describe('useRoundOpsStore', () => {
       )
     })
 
+    /** 왕잡기(노션 ② "왕을 잡으면 +30") — 잡힘 = 아웃이라 1인 팀 왕의 첫 킬은 왕 잡기가 아니다 */
+    it('1인 팀 왕의 첫 킬은 왕이 아직 살아 있어 kingTarget을 켜지 않고, 두 번째 킬에 켠다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room({ round: RUNNING }))
+      deliver.ledger(ledger({ teams: { A: ['u1'], B: ['u3', 'u4'] }, xTeams: ['A'], hits: {} }))
+      deliver.submissions([
+        { id: 's1', uid: 'u3', team: 'B', round: 2, photo: 'data:', status: 'pending', createdAtMs: NOW },
+      ])
+
+      await store.approveSubmission('s1', { team: 'A', participantUid: 'u1' })
+      expect(approveSubmissionMock.mock.lastCall?.[3]).toMatchObject({ kingTarget: false })
+
+      deliver.ledger(ledger({ teams: { A: ['u1'], B: ['u3', 'u4'] }, xTeams: ['A'], hits: { A: 1 } }))
+      deliver.submissions([
+        { id: 's2', uid: 'u4', team: 'B', round: 2, photo: 'data:', status: 'pending', createdAtMs: NOW },
+      ])
+      await store.approveSubmission('s2', { team: 'A', participantUid: 'u1' })
+      expect(approveSubmissionMock.mock.lastCall?.[3]).toMatchObject({ kingTarget: true })
+    })
+
     /**
      * 꼬리잡기 편입(P07 §4.2, M4-6) — 편입 모드에서만 킬 시점의 사냥 팀 소속(팀원 + 꼬리)과 이 킬로
      * 아웃되는 팀의 합류 인원을 absorb로 넘겨 원장 credits·tails에 남긴다. 근거는 판정 시점의 원장이다.
@@ -1130,6 +1153,24 @@ describe('useRoundOpsStore', () => {
         await store.approveSubmission('second', { team: 'A', participantUid: 'u1' })
 
         expect(lateSubmissionIdsMock).toHaveBeenCalledExactlyOnceWith(['late'])
+      })
+
+      it('왕잡기에서 왕을 잡는 확정은 왕의 그룹 팀들이 더 늦게 낸 킬샷도 함께 반려한다 — 노션 ② "그룹 전체가 즉시 아웃"', async () => {
+        // A·E = 파랑(왕 A), B = 주황
+        const store = enterWith(
+          { mode: 'king-hunt', teams: { A: ['u1', 'u2'], E: ['u5', 'u6'], B: ['u3', 'u4'] }, xTeams: ['A'], hits: {} },
+          [
+            queued('early-e', 'E', NOW - 2000),
+            queued('fatal', 'B', NOW - 1000),
+            queued('late-e', 'E', NOW),
+            queued('late-a', 'A', NOW + 500),
+            queued('other', 'B', NOW + 1000),
+          ],
+        )
+
+        await store.approveSubmission('fatal', { team: 'A', participantUid: 'u1' })
+
+        expect(lateSubmissionIdsMock).toHaveBeenCalledExactlyOnceWith(['late-e', 'late-a'])
       })
 
       it('원장이 없는 라운드는 탈락이 없어 반려하지 않는다', async () => {

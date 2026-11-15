@@ -2,14 +2,12 @@ import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import StandingsCard, { type StandingRow } from '../components/StandingsCard.vue'
 
-function row(rank: number, uid: string, points: number, overrides: Partial<StandingRow> = {}): StandingRow {
+function row(rank: number, uid: string, score: number, overrides: Partial<StandingRow> = {}): StandingRow {
   return {
     uid,
     rank,
-    points,
-    rawScore: points * 3,
-    firstTierCount: 0,
-    rounds: [{ roundNo: 1, tier: 1, points }],
+    score,
+    rounds: [{ roundNo: 1, score }],
     name: uid,
     isMe: false,
     ...overrides,
@@ -50,7 +48,7 @@ describe('StandingsCard', () => {
     expect(mine.text()).toContain('7')
     expect(mine.text()).toContain('사')
     expect(mine.text()).toContain('(나)')
-    expect(mine.text()).toContain('3P')
+    expect(mine.text()).toContain('3점')
   })
 
   it('내가 상위권 안이면 그 줄을 강조하고 따로 붙이지 않는다', () => {
@@ -71,5 +69,18 @@ describe('StandingsCard', () => {
     })
 
     expect(wrapper.text()).not.toContain('전체 보기')
+  })
+
+  it('전체 시트는 라운드별 점수를 보인다 — 노션 ② "세 판 점수를 더해 우승자를 정해요"', async () => {
+    const rows = [
+      row(1, '가', 50, { rounds: [{ roundNo: 1, score: 40 }, { roundNo: 2, score: 10 }] }),
+      row(2, '나', 30, { rounds: [{ roundNo: 1, score: 30 }] }),
+    ]
+    const wrapper = mount(StandingsCard, { props: { rows, settledRoundCount: 2 }, attachTo: document.body })
+
+    await wrapper.find('button').trigger('click')
+    expect(document.body.textContent).toContain('1R 40점 · 2R 10점')
+    expect(document.body.textContent).toContain('50점')
+    wrapper.unmount()
   })
 })

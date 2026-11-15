@@ -589,7 +589,10 @@ describe('WaitingRoomPage', () => {
     expect(wrapper.text()).toContain('1개 라운드 정산')
     expect(wrapper.text()).toContain(`${ROSTER[1]!.name}`)
     expect(wrapper.text()).toContain('오리 (나)')
-    expect(wrapper.text()).toContain('10P')
+    // 노션 ② "세 판 점수를 더해 우승자를 정해요" — 등급 포인트가 아니라 점수 합이다
+    expect(wrapper.text()).toContain('10점')
+    expect(wrapper.text()).toContain('40점')
+    expect(wrapper.text()).not.toContain('10P')
   })
 
   /**
@@ -1603,7 +1606,10 @@ describe('WaitingRoomPage', () => {
     ])
     await flushPromises()
 
-    expect(wrapper.text()).toContain('이번 게임 규칙서')
+    // 배정 카드 아래로 규칙 설명서(노션 ②)가 이어진다 — 한 줄 요약과 이번 라운드 모드 카드가 먼저 보인다
+    expect(wrapper.text()).toContain('규칙 설명서')
+    expect(wrapper.text()).toContain('다른 팀을 찍으면 킬! 나는 찍히지 않게!')
+    expect(wrapper.find('[data-rules-mode-card]').text()).toContain('개인전: 모든 팀을 전멸시키세요')
     expect(wrapper.text()).toContain('오리(나)')
     expect(wrapper.text()).toContain('하린')
     expect(wrapper.text()).not.toContain('ROOM AB2C')

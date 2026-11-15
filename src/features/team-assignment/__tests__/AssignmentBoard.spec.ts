@@ -221,7 +221,7 @@ describe('AssignmentBoard', () => {
     const toggle = wrapper.get('[role="switch"]')
     expect(toggle.attributes('aria-checked')).toBe('true')
     expect(toggle.attributes('disabled')).toBeDefined()
-    expect(wrapper.text()).toContain('왕잡기는 그룹마다 왕(X)이 필요해 항상 켜집니다')
+    expect(wrapper.text()).toContain('왕잡기는 그룹마다 비밀 왕이 필요해 항상 켜집니다. 왕은 X 완장을 차지 않아요')
   })
 
   it.each([
