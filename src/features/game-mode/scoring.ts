@@ -6,7 +6,7 @@
 import { isSameGroup } from './armbandGroups'
 import type { ModeScoringInput, ModeScoringOutput } from './types'
 
-/** 킬 1건의 원점수 — 기획서의 3배(+30)·2배(+20)에서 역산한 확정값 */
+/** 킬 1건의 원점수 — 노션 ② 기본 규칙 5 "킬샷 1번에 +10점이에요" */
 export const KILL_POINTS = 10
 /** 낙오(팀원과 2m 이탈) 포착 킬 — 판정 카드 토글로 호스트가 정한다(M2) */
 export const TRIPLE_KILL_POINTS = 30
@@ -24,19 +24,15 @@ export function killCountOf(tally: ModeScoringInput['tally'], armband: string): 
 }
 
 /**
- * 같은 그룹 다른 팀의 킬 1건 — 그룹원 각자에게(P07 §4.3, 결정 2). 직접 킬한 팀(10)이 그룹 동료(5)보다
- * 한 등급 위에 서도록 킬 점수의 절반이다. 그룹전·왕잡기가 쓴다.
+ * 그룹 점수 — 같은 그룹 모든 팀(이 팀 포함)의 킬 원점수 합. 노션 ② 그룹전 카드 "그룹이 함께 번 점수와 우리 팀 점수를
+ * 더해서 계산해요"의 "그룹이 함께 번 점수"다. 그룹이 없는 완장(X)은 자기 킬 원점수만 센다.
  */
-export const GROUP_ASSIST_POINTS = 5
-
-/** 완장 1개의 그룹 동료 킬 원점수 — 같은 그룹의 다른 완장이 올린 킬 건수 × 5. 자기 킬은 제외 */
-export function groupAssistScoreOf(input: Pick<ModeScoringInput, 'teams' | 'tally'>, armband: string): number {
-  let assists = 0
+export function groupKillScoreOf(input: Pick<ModeScoringInput, 'teams' | 'tally'>, armband: string): number {
+  let total = 0
   for (const other of Object.keys(input.teams)) {
-    if (other === armband || !isSameGroup(armband, other)) continue
-    assists += killCountOf(input.tally, other)
+    if (other === armband || isSameGroup(armband, other)) total += killScoreOf(input.tally, other)
   }
-  return assists * GROUP_ASSIST_POINTS
+  return total
 }
 
 /**
@@ -55,10 +51,10 @@ export function distributeToPlayers(
 }
 
 /**
- * 1인 팀 보정 — 규칙서(앱 규칙 카드 "1인 팀은 목숨과 포인트가 2배")대로 1인 팀의 라운드 원점수는
- * 2배다(기획자 확정 2026-09-16). 단 2배는 혼자 뛰는 불리함의 보상이라 양수 원점수에만 적용하고,
- * 왕 아웃 같은 그룹 감점은 본인 잘못이 아니라 1배 그대로다(기획자 확정 2026-09-20). 라이프 2배는
- * livesOf가 맡는다. 모드와 무관한 편성 규칙이라 모든 모드 규칙이 마지막에 이 보정을 거친다.
+ * 1인 팀 보정 — 노션 ② 기본 규칙 5 "짝꿍이 오지 않아 혼자 남은 팀은 체력과 점수가 2배예요"대로 1인 팀의
+ * 라운드 원점수는 2배다. 양수 원점수에만 적용한다(감점은 1배, 기획자 확정 2026-09-20 — 지금 규칙에는 감점이
+ * 없지만 기준은 남긴다). 라이프 2배는 livesOf가 맡는다. 모드와 무관한 편성 규칙이라 모든 모드 규칙이 마지막에
+ * 이 보정을 거친다.
  */
 export const SOLO_TEAM_SCALE = 2
 
@@ -207,76 +203,104 @@ export function tailChaseScoring(input: ModeScoringInput): ModeScoringOutput {
   return { teamScores, playerScores }
 }
 
-/** 왕(X 겸직 팀)의 킬 — 일반 킬의 2배(P07 §4.4) */
-export const KING_KILL_POINTS = 20
-/** 왕 사냥 — 상대 왕을 잡은 킬. 누가 잡았든 3배 */
+/** 왕잡기 — 왕을 잡은 킬. 잡은 팀이 킬 10 대신 받는다(노션 ② 왕잡기 "왕을 잡으면 잡은 사람이 +30점") */
 export const KING_HUNT_POINTS = 30
-/** 왕 아웃 — 잡힌 왕의 그룹원 각자 감점(결정 3: 즉시 패배 대신 감점, 라운드 계속) */
-export const KING_OUT_PENALTY = -20
+/** 왕잡기 — 왕을 잡은 팀의 그룹 전체(잡은 팀 포함)가 받는다(노션 ② 왕잡기 "그룹 전체는 +10점") */
+export const KING_HUNT_GROUP_POINTS = 10
 
 /**
- * 왕잡기 공격 완장 1개의 킬 원점수 — 왕 사냥 건(kingKills)은 30, 나머지 건은 왕이면 20·아니면 10.
- * 낙오 3배는 일반전 한정이라 tripleKills도 일반 건으로 센다.
+ * 왕잡기 공격 완장 1개의 킬 원점수 — 왕을 잡은 건(kingKills)은 30, 나머지 건은 10(노션 ② 기본 규칙 5 "킬샷 1번에
+ * +10점"). 낙오 3배는 일반전 한정이라 tripleKills도 일반 건으로 센다. kingKills는 왕을 아웃시킨 킬만 센다.
  */
-export function kingHuntKillScoreOf(
-  input: Pick<ModeScoringInput, 'tally' | 'xTeams'>,
-  armband: string,
-): number {
+export function kingHuntKillScoreOf(input: Pick<ModeScoringInput, 'tally'>, armband: string): number {
   const events = killCountOf(input.tally, armband)
   const hunts = Math.min(input.tally[armband]?.kingKills ?? 0, events)
-  const perKill = input.xTeams.includes(armband) ? KING_KILL_POINTS : KILL_POINTS
-  return hunts * KING_HUNT_POINTS + (events - hunts) * perKill
+  return hunts * KING_HUNT_POINTS + (events - hunts) * KILL_POINTS
+}
+
+/** 완장 1개의 왕 사냥 그룹 보너스 — 같은 그룹 모든 팀(이 팀 포함)이 잡은 왕 수 × 10 */
+export function kingHuntGroupBonusOf(input: Pick<ModeScoringInput, 'teams' | 'tally'>, armband: string): number {
+  let hunts = 0
+  for (const other of Object.keys(input.teams)) {
+    if (other !== armband && !isSameGroup(armband, other)) continue
+    hunts += Math.min(input.tally[other]?.kingKills ?? 0, killCountOf(input.tally, other))
+  }
+  return hunts * KING_HUNT_GROUP_POINTS
 }
 
 /**
- * 왕잡기(P07 §4.4) — 킬(일반 10 · 왕 20 · 왕 사냥 30) + 그룹 동료 킬 5, 잡힌 왕(hits ≥ 라이프)의
- * 같은 그룹 전원(왕 팀 포함) −20. 팀원 각자에게, 생존 보너스 없음, 1인 팀 2배.
+ * 왕잡기 그룹 탈락 — 노션 ② 왕잡기 "우리 왕이 잡히면 그 판은 그룹 전체가 즉시 아웃됩니다". 같은 그룹의 왕(X 겸직 팀)이
+ * 아웃(hits ≥ 라이프)이면 이 팀도 아웃이다. 그룹이 없는 완장(X)은 해당하지 않는다. 모드 정의의 secretKing이 켜진
+ * 모드만 이 판정을 쓴다(elimination.ts isTeamEliminated).
+ */
+export function isKingDownInGroup(
+  input: Pick<ModeScoringInput, 'teams' | 'hits' | 'xTeams'>,
+  armband: string,
+): boolean {
+  return input.xTeams.some(
+    (king) => king in input.teams && isSameGroup(king, armband) && isTeamOut(input, king),
+  )
+}
+
+/**
+ * 왕잡기(노션 ② 왕잡기 카드) — 킬 10 · 왕을 잡은 킬 30 · 왕을 잡은 팀의 그룹 전체(잡은 팀 포함) +10, 팀원 각자에게.
+ * 왕이 잡힌 그룹은 감점 없이 그 판에서 전원 아웃된다(isKingDownInGroup). 생존 보너스 없음, 1인 팀 2배.
  */
 export function kingHuntScoring(input: ModeScoringInput): ModeScoringOutput {
   const raw: Record<string, number> = {}
   for (const armband of Object.keys(input.teams)) {
-    raw[armband] = kingHuntKillScoreOf(input, armband) + groupAssistScoreOf(input, armband)
-  }
-  for (const king of input.xTeams) {
-    if (!(king in input.teams) || !isTeamOut(input, king)) continue
-    for (const armband of Object.keys(input.teams)) {
-      if (isSameGroup(king, armband)) raw[armband]! += KING_OUT_PENALTY
-    }
+    raw[armband] = kingHuntKillScoreOf(input, armband) + kingHuntGroupBonusOf(input, armband)
   }
   const teamScores = applyTeamScale(input.teams, raw)
   return { teamScores, playerScores: distributeToPlayers(input.teams, teamScores) }
 }
 
 /**
- * 그룹전(P07 §4.3) — 내 팀 킬 10 · 같은 그룹 다른 팀의 킬 5, 팀원 각자에게. 생존 보너스는 없다
- * (결정 5는 일반전·꼬리잡기 한정). 1인 팀은 2배.
+ * 그룹전(노션 ② 그룹전 카드 "그룹이 함께 번 점수와 우리 팀 점수를 더해서 계산해요") — 우리 팀 킬 원점수 + 그룹 점수
+ * (같은 그룹 모든 팀의 킬 원점수 합, 우리 팀 포함), 팀원 각자에게. 그래서 우리 팀 킬은 20, 같은 그룹 다른 팀의 킬은
+ * 10이 된다. 생존 보너스는 없다(결정 5는 일반전·꼬리잡기 한정). 1인 팀은 2배.
  */
 export function groupScoring(input: ModeScoringInput): ModeScoringOutput {
   const raw: Record<string, number> = {}
   for (const armband of Object.keys(input.teams)) {
-    raw[armband] = killScoreOf(input.tally, armband) + groupAssistScoreOf(input, armband)
+    raw[armband] = killScoreOf(input.tally, armband) + groupKillScoreOf(input, armband)
   }
   const teamScores = applyTeamScale(input.teams, raw)
   return { teamScores, playerScores: distributeToPlayers(input.teams, teamScores) }
 }
 
-/** 스태프 추격전 — 라운드 끝까지 스태프에게 잡히지 않은 팀원 각자(P07 §4.5, 결정 4: 생존자가 위 등급) */
-export const STAFF_SURVIVAL_POINTS = 15
-/** 스태프 추격전 — 스태프에게 잡혀 아웃된 팀원 각자(아래 등급) */
-export const STAFF_OUT_POINTS = 5
+/**
+ * 스태프 추격전 — 참가자 전원이 살아남았을 때 모두가 받는 원점수. 킬샷 1번(+10)과 같은 크기로 잡았다 — 노션 ②는
+ * "많을수록 모두의 점수가 올라가요"까지만 정해서 수치는 개발 판단이다(기획 확인 필요). 인원이 12명이든 40명이든
+ * 같은 크기가 되게 생존자 수가 아니라 생존 비율에 곱한다(기획서 §3.5 "생존 비율에 비례한 전체 점수").
+ */
+export const STAFF_CHASE_FULL_SURVIVAL_POINTS = 10
+
+/** 스태프 추격전의 생존자 수와 참가자 수 — 아웃 아닌 팀의 팀원이 생존자다 */
+export function staffChaseHeadcount(input: Pick<ModeScoringInput, 'teams' | 'hits'>): {
+  survivors: number
+  participants: number
+} {
+  let survivors = 0
+  let participants = 0
+  for (const [armband, memberIds] of Object.entries(input.teams)) {
+    participants += memberIds.length
+    if (!isTeamOut(input, armband)) survivors += memberIds.length
+  }
+  return { survivors, participants }
+}
 
 /**
- * 스태프 추격전(P07 §4.5) — 생존 15 · 아웃 5, 팀원 각자에게. 킬은 없다(참가자 전원이 동맹이고
- * 스태프의 태그는 호스트의 수동 아웃 처리 = hits로만 들어온다). 결정 7(모든 모드 마지막 단계 ×2)과
- * 배정 카드 문구 "1인 팀 · 목숨과 포인트 2배"를 따라 1인 팀 2배를 적용한다 — 등급은 1인 생존 30 ·
- * 생존 15 · 1인 아웃 10 · 아웃 5로 넷이 될 수 있지만 "생존자 위·아웃자 아래"(결정 4)는 유지된다
- * (기획자 확정 2026-09-20, #45의 예외를 되돌림).
+ * 스태프 추격전(노션 ② 스태프 추격전 카드 "이번엔 모두가 한편이에요 … 끝까지 살아남은 사람이 많을수록 모두의 점수가
+ * 올라가요") — 생존 비율 × 10을 반올림해 참가자 모두에게 같게 준다. 잡힌 사람도 같은 점수다(모두가 한편). 킬은 없다
+ * (스태프의 태그는 호스트의 수동 아웃 처리 = hits로만 들어온다). 1인 팀은 2배(노션 ② 기본 규칙 5).
  */
 export function staffChaseScoring(input: ModeScoringInput): ModeScoringOutput {
+  const { survivors, participants } = staffChaseHeadcount(input)
+  const shared =
+    participants === 0 ? 0 : Math.round((STAFF_CHASE_FULL_SURVIVAL_POINTS * survivors) / participants)
   const raw: Record<string, number> = {}
-  for (const armband of Object.keys(input.teams)) {
-    raw[armband] = isTeamOut(input, armband) ? STAFF_OUT_POINTS : STAFF_SURVIVAL_POINTS
-  }
+  for (const armband of Object.keys(input.teams)) raw[armband] = shared
   const teamScores = applyTeamScale(input.teams, raw)
   return { teamScores, playerScores: distributeToPlayers(input.teams, teamScores) }
 }

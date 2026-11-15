@@ -8,7 +8,7 @@ import { computed } from 'vue'
 import BaseBottomSheet from '@/shared/components/BaseBottomSheet.vue'
 import BaseButton from '@/shared/components/BaseButton.vue'
 import BaseCard from '@/shared/components/BaseCard.vue'
-import { tierLabel } from '@/features/round-ledger'
+import { formatRoundScores } from '@/features/round-ledger'
 import type { Standing } from '@/features/round-ledger'
 
 /** 순위 한 줄 — round-ledger의 Standing에 대기실이 이름·본인 여부를 붙인 것 */
@@ -40,11 +40,9 @@ const myRowBelowTop = computed(() => {
 })
 const hiddenCount = computed(() => Math.max(props.rows.length - TOP_COUNT, 0))
 
-/** 라운드별 내역 한 줄 — "1R 2등급 · 2R 1등급". 등급 없음(0점 이하)은 '0점 이하' */
+/** 라운드별 내역 한 줄 — "1R 40점 · 2R 10점" */
 function formatRounds(row: StandingRow): string {
-  return row.rounds
-    .map((entry) => `${entry.roundNo}R ${tierLabel(entry.tier)}`)
-    .join(' · ')
+  return formatRoundScores(row.rounds)
 }
 </script>
 
@@ -56,7 +54,7 @@ function formatRounds(row: StandingRow): string {
         <p class="text-caption text-content-secondary">{{ settledRoundCount }}개 라운드 정산</p>
       </div>
 
-      <!-- 순위·이름·포인트 3열. 포인트는 tabular로 자리 정렬 -->
+      <!-- 순위·이름·점수 합 3열. 점수는 tabular로 자리 정렬 — 노션 ② "세 판 점수를 더해 우승자를 정해요" -->
       <ol class="flex flex-col gap-2" aria-label="상위 순위">
         <li
           v-for="row in topRows"
@@ -69,7 +67,7 @@ function formatRounds(row: StandingRow): string {
           <span class="min-w-0 flex-1 truncate text-body" :class="{ 'font-semibold': row.isMe }">
             {{ row.name }}<span v-if="row.isMe" class="text-caption text-content-tertiary"> (나)</span>
           </span>
-          <span class="shrink-0 text-label tabular-nums">{{ row.points }}P</span>
+          <span class="shrink-0 text-label tabular-nums">{{ row.score }}점</span>
         </li>
       </ol>
 
@@ -83,7 +81,7 @@ function formatRounds(row: StandingRow): string {
         <span class="min-w-0 flex-1 truncate text-body font-semibold">
           {{ myRowBelowTop.name }}<span class="text-caption text-content-tertiary"> (나)</span>
         </span>
-        <span class="shrink-0 text-label tabular-nums">{{ myRowBelowTop.points }}P</span>
+        <span class="shrink-0 text-label tabular-nums">{{ myRowBelowTop.score }}점</span>
       </div>
 
       <BaseBottomSheet v-if="hiddenCount > 0 || rows.some((row) => row.rounds.length > 1)" title="누적 순위 전체">
@@ -105,13 +103,12 @@ function formatRounds(row: StandingRow): string {
               <p class="truncate text-body" :class="{ 'font-semibold': row.isMe }">
                 {{ row.name }}<span v-if="row.isMe" class="text-caption text-content-tertiary"> (나)</span>
               </p>
-              <!-- 라운드별 등급 + 원점수 합 — 원점수는 동점 순서의 근거다. 말줄임하면 4~5라운드부터
-                   줄 끝의 원점수가 가장 먼저 잘려 누구도 볼 수 없으므로, 자르지 않고 줄바꿈한다 -->
+              <!-- 라운드별 점수 — 말줄임하면 4~5라운드부터 줄 끝이 잘려 누구도 볼 수 없으므로, 자르지 않고 줄바꿈한다 -->
               <p class="text-caption text-pretty break-keep text-content-tertiary">
-                {{ formatRounds(row) }} · 원점수 {{ row.rawScore }}
+                {{ formatRounds(row) }}
               </p>
             </div>
-            <span class="shrink-0 text-label tabular-nums">{{ row.points }}P</span>
+            <span class="shrink-0 text-label tabular-nums">{{ row.score }}점</span>
           </li>
         </ol>
       </BaseBottomSheet>

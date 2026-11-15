@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { SubmissionRecord } from '@/features/round-ops'
-import { deriveEliminationNotice, eliminatedByTeam } from '../eliminationNotice'
+import { deriveEliminationNotice, deriveGroupOutNotice, eliminatedByTeam } from '../eliminationNotice'
 
 /** 우리 팀(B)을 잡은 확정 킬샷 한 건 — 바뀌는 필드만 override한다 */
 function hit(overrides: Partial<SubmissionRecord> = {}): SubmissionRecord {
@@ -30,6 +30,7 @@ describe('deriveEliminationNotice (P22)', () => {
       submissionId: 'h1',
       kind: 'out',
       attackerTeam: 'E',
+      kingTeam: null,
       photo: 'data:image/jpeg;base64,hit',
       judgedAtMs: 2_000,
       isTripleKill: false,
@@ -74,5 +75,35 @@ describe('eliminatedByTeam (P22)', () => {
   it('아직 탈락 전이면 null', () => {
     expect(eliminatedByTeam([], 1)).toBeNull()
     expect(eliminatedByTeam([hit()], 2)).toBeNull()
+  })
+})
+
+describe('deriveGroupOutNotice (왕잡기 — 노션 ② "우리 왕이 잡히면 그룹 전체가 즉시 아웃")', () => {
+  /** 우리 그룹 왕(A)을 잡은 확정 킬샷 */
+  const kingHit = (overrides: Partial<SubmissionRecord> = {}) => hit({ targetTeam: 'A', ...overrides })
+
+  it('왕이 아직 살아 있으면 안내가 없다', () => {
+    expect(deriveGroupOutNotice([], 1, 'A', new Set())).toBeNull()
+    // 1인 팀 왕(목숨 2)은 첫 피격으로는 잡히지 않는다
+    expect(deriveGroupOutNotice([kingHit()], 2, 'A', new Set())).toBeNull()
+  })
+
+  it('왕이 목숨을 다 쓴 킬샷으로 그룹 탈락 안내를 낸다 — 잡은 팀·왕 완장·사진을 싣는다', () => {
+    expect(deriveGroupOutNotice([kingHit()], 1, 'A', new Set())).toEqual({
+      submissionId: 'h1',
+      kind: 'group-out',
+      attackerTeam: 'E',
+      kingTeam: 'A',
+      photo: 'data:image/jpeg;base64,hit',
+      judgedAtMs: 2_000,
+      isTripleKill: false,
+      livesLeft: 0,
+    })
+    const second = deriveGroupOutNotice([kingHit(), kingHit({ id: 'h2', team: 'C' })], 2, 'A', new Set())
+    expect(second).toMatchObject({ submissionId: 'h2', kind: 'group-out', attackerTeam: 'C' })
+  })
+
+  it('확인한 그룹 탈락은 다시 띄우지 않는다', () => {
+    expect(deriveGroupOutNotice([kingHit()], 1, 'A', new Set(['h1']))).toBeNull()
   })
 })

@@ -37,13 +37,21 @@ const open = computed({
 })
 
 const isOut = computed(() => shown.value?.kind !== 'hit')
-const title = computed(() => (isOut.value ? '우리 팀이 탈락했어요' : '한 번 찍혔어요'))
+const isGroupOut = computed(() => shown.value?.kind === 'group-out')
+const TITLE = { out: '우리 팀이 탈락했어요', hit: '한 번 찍혔어요', 'group-out': '우리 그룹 왕이 잡혔어요' } as const
+const title = computed(() => TITLE[shown.value?.kind ?? 'out'])
 const description = computed(() => {
   const notice = shown.value
   if (notice === null) return undefined
-  const by = `팀 ${notice.attackerTeam}의 킬샷으로 판정됐어요.`
+  const by =
+    notice.kind === 'group-out'
+      ? `우리 그룹 왕(팀 ${notice.kingTeam})이 팀 ${notice.attackerTeam}에게 잡혔어요.`
+      : `팀 ${notice.attackerTeam}의 킬샷으로 판정됐어요.`
   return notice.judgedAtMs === null ? by : `${formatClock(notice.judgedAtMs)}에 ${by}`
 })
+const photoAlt = computed(() =>
+  isGroupOut.value ? '우리 그룹 왕이 찍힌 판정 사진' : '우리 팀이 찍힌 판정 사진',
+)
 </script>
 
 <template>
@@ -52,7 +60,7 @@ const description = computed(() => {
       <!-- 우리 팀이 찍힌 판정 사진 — 진행자는 팀만 고르므로 누가 찍혔는지는 사진으로 알린다 -->
       <img
         :src="shown.photo"
-        alt="우리 팀이 찍힌 판정 사진"
+        :alt="photoAlt"
         decoding="async"
         class="aspect-4/3 w-full rounded-md border border-stroke object-cover"
       />
@@ -62,9 +70,13 @@ const description = computed(() => {
       >
         팀원과 떨어진 채 찍혀 상대 팀이 3배 점수를 받았어요.
       </p>
+      <!-- 노션 ② 기본 규칙 4 "킬샷을 맞으면 DEAD예요. 바로 베이스캠프로 돌아가요." -->
       <template v-if="isOut">
+        <p v-if="isGroupOut" class="text-body text-pretty break-keep text-content">
+          그룹 전체가 이번 판에서 즉시 아웃이에요.
+        </p>
         <p class="text-body text-pretty break-keep text-content-secondary">
-          이번 라운드는 촬영할 수 없어요. 진행자 안내에 따라 베이스캠프로 이동해 주세요.
+          이번 라운드는 촬영할 수 없어요. 바로 베이스캠프로 돌아가요.
         </p>
       </template>
       <div v-else class="flex flex-col gap-2">

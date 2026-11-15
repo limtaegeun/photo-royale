@@ -3,20 +3,24 @@ import {
   absorbKillEffect,
   applyTeamScale,
   distributeToPlayers,
-  groupAssistScoreOf,
+  groupKillScoreOf,
   groupScoring,
+  isKingDownInGroup,
   isTeamOut,
   killCountOf,
   killScoreOf,
   killScoring,
+  kingHuntGroupBonusOf,
   kingHuntKillScoreOf,
   kingHuntScoring,
   livesOf,
   normalScoring,
+  staffChaseHeadcount,
   staffChaseScoring,
   tailChaseScoring,
   teamScaleOf,
 } from '../scoring'
+import { isTeamEliminated } from '../elimination'
 import { GAME_MODES } from '../registry'
 
 const TEAMS = { A: ['하늘', '민재'], B: ['준호'], C: ['서연', '도윤'] }
@@ -322,7 +326,7 @@ describe('꼬리잡기 편입 (P07 §4.2, M4-6)', () => {
   })
 })
 
-describe('그룹전 (P07 §4.3)', () => {
+describe('그룹전 (노션 ② 그룹전 카드)', () => {
   /** A·E = 파랑 그룹, B = 주황, C = 초록 — 그룹 동료가 있는 팀은 A·E뿐 */
   const GROUP_TEAMS = { A: ['하늘', '민재'], E: ['지우'], B: ['준호'], C: ['서연', '도윤'] }
 
@@ -331,15 +335,15 @@ describe('그룹전 (P07 §4.3)', () => {
     expect(killCountOf({}, 'A')).toBe(0)
   })
 
-  it('그룹 동료 킬은 같은 그룹 다른 팀의 킬 건수 × 5 — 자기 킬과 다른 그룹 킬은 세지 않는다', () => {
+  it('그룹 점수는 같은 그룹 모든 팀(우리 팀 포함)의 킬 원점수 합 — 다른 그룹 킬은 세지 않는다', () => {
     const tally = { A: { kills: 2, tripleKills: 0 }, E: { kills: 1, tripleKills: 0 }, B: { kills: 3, tripleKills: 0 } }
-    expect(groupAssistScoreOf({ teams: GROUP_TEAMS, tally }, 'A')).toBe(5)
-    expect(groupAssistScoreOf({ teams: GROUP_TEAMS, tally }, 'E')).toBe(10)
-    expect(groupAssistScoreOf({ teams: GROUP_TEAMS, tally }, 'B')).toBe(0)
-    expect(groupAssistScoreOf({ teams: GROUP_TEAMS, tally }, 'C')).toBe(0)
+    expect(groupKillScoreOf({ teams: GROUP_TEAMS, tally }, 'A')).toBe(30)
+    expect(groupKillScoreOf({ teams: GROUP_TEAMS, tally }, 'E')).toBe(30)
+    expect(groupKillScoreOf({ teams: GROUP_TEAMS, tally }, 'B')).toBe(30)
+    expect(groupKillScoreOf({ teams: GROUP_TEAMS, tally }, 'C')).toBe(0)
   })
 
-  it('내 킬 10 + 동료 킬 5를 팀원 각자에게 — 직접 킬한 팀이 동료보다 위, 생존 보너스는 없다', () => {
+  it('"그룹이 함께 번 점수와 우리 팀 점수를 더해서" — 우리 팀 킬 20, 같은 그룹 다른 팀 킬 10, 생존 보너스는 없다', () => {
     const output = groupScoring({
       teams: GROUP_TEAMS,
       xTeams: [],
@@ -347,9 +351,9 @@ describe('그룹전 (P07 §4.3)', () => {
       hits: { B: 1 },
     })
 
-    // A 20(내 킬 2건) · E 20(동료 킬 2건 × 5 = 10, 1인 팀 2배) · B 0(아웃이어도 감점 없음) · C 0(생존해도 보너스 없음)
-    expect(output.teamScores).toEqual({ A: 20, E: 20, B: 0, C: 0 })
-    expect(output.playerScores).toEqual({ 하늘: 20, 민재: 20, 지우: 20, 준호: 0, 서연: 0, 도윤: 0 })
+    // A 40(우리 팀 20 + 그룹 20) · E 40(그룹 20, 1인 팀 2배) · B 0(아웃이어도 감점 없음) · C 0(생존해도 보너스 없음)
+    expect(output.teamScores).toEqual({ A: 40, E: 40, B: 0, C: 0 })
+    expect(output.playerScores).toEqual({ 하늘: 40, 민재: 40, 지우: 40, 준호: 0, 서연: 0, 도윤: 0 })
   })
 
   it('레지스트리의 그룹전 정의가 이 규칙을 쓴다', () => {
@@ -357,32 +361,39 @@ describe('그룹전 (P07 §4.3)', () => {
   })
 })
 
-
-describe('왕잡기 (P07 §4.4)', () => {
+describe('왕잡기 (노션 ② 왕잡기 카드)', () => {
   /** A·E = 파랑(왕 A), B·F = 주황(왕 F, 1인 팀), C = 초록(왕 C), D = 빨강(왕 D) */
   const KH_TEAMS = { A: ['하늘', '민재'], E: ['지우'], B: ['준호', '유나'], F: ['서준'], C: ['서연', '도윤'], D: ['하준', '수아'] }
   const KINGS = ['A', 'C', 'D', 'F']
 
-  it('킬 원점수: 일반 팀 10 · 왕 20 · 왕 사냥 30, 왕 사냥 건수는 킬 건수를 넘지 못한다', () => {
+  it('킬 원점수: 왕을 잡은 킬 30, 나머지 킬은 왕이 잡아도 10 — 왕 잡기 건수는 킬 건수를 넘지 못한다', () => {
     const tally = {
-      B: { kills: 2, tripleKills: 0, kingKills: 1 }, // 일반 팀: 왕 사냥 1 + 일반 1
-      A: { kills: 1, tripleKills: 0, kingKills: 0 }, // 왕의 일반 킬
+      B: { kills: 2, tripleKills: 0, kingKills: 1 }, // 왕 잡기 1 + 일반 1
+      A: { kills: 1, tripleKills: 0, kingKills: 0 }, // 왕의 일반 킬도 10
       C: { kills: 1, tripleKills: 0, kingKills: 1 }, // 왕이 왕을 잡음 → 30
       D: { kills: 0, tripleKills: 0, kingKills: 3 }, // 손상 데이터 — 건수 상한
     }
-    expect(kingHuntKillScoreOf({ tally, xTeams: KINGS }, 'B')).toBe(40)
-    expect(kingHuntKillScoreOf({ tally, xTeams: KINGS }, 'A')).toBe(20)
-    expect(kingHuntKillScoreOf({ tally, xTeams: KINGS }, 'C')).toBe(30)
-    expect(kingHuntKillScoreOf({ tally, xTeams: KINGS }, 'D')).toBe(0)
-    expect(kingHuntKillScoreOf({ tally, xTeams: KINGS }, 'E')).toBe(0)
+    expect(kingHuntKillScoreOf({ tally }, 'B')).toBe(40)
+    expect(kingHuntKillScoreOf({ tally }, 'A')).toBe(10)
+    expect(kingHuntKillScoreOf({ tally }, 'C')).toBe(30)
+    expect(kingHuntKillScoreOf({ tally }, 'D')).toBe(0)
+    expect(kingHuntKillScoreOf({ tally }, 'E')).toBe(0)
   })
 
   it('kingKills가 없는 옛 집계는 전부 일반 킬로 센다', () => {
-    expect(kingHuntKillScoreOf({ tally: { B: { kills: 2, tripleKills: 0 } }, xTeams: KINGS }, 'B')).toBe(20)
+    expect(kingHuntKillScoreOf({ tally: { B: { kills: 2, tripleKills: 0 } } }, 'B')).toBe(20)
   })
 
-  it('잡힌 왕의 그룹 전원(왕 팀 포함)이 −20, 그룹 동료 킬 5, 생존 보너스 없음, 1인 팀 2배', () => {
-    // B(주황)가 파랑 왕 A를 잡았다(왕 아웃) · A는 잡히기 전 B를 한 번 잡았다(왕의 킬, B는 왕이 아니라 감점 없음)
+  it('왕을 잡으면 잡은 팀의 그룹 전체(잡은 팀 포함)가 +10 — 다른 그룹은 받지 않는다', () => {
+    const tally = { B: { kills: 1, tripleKills: 0, kingKills: 1 } }
+    expect(kingHuntGroupBonusOf({ teams: KH_TEAMS, tally }, 'B')).toBe(10)
+    expect(kingHuntGroupBonusOf({ teams: KH_TEAMS, tally }, 'F')).toBe(10)
+    expect(kingHuntGroupBonusOf({ teams: KH_TEAMS, tally }, 'A')).toBe(0)
+    expect(kingHuntGroupBonusOf({ teams: KH_TEAMS, tally }, 'C')).toBe(0)
+  })
+
+  it('잡은 팀 +30 · 그 그룹 전체 +10 · 왕이 잡힌 그룹은 감점 없음 · 생존 보너스 없음 · 1인 팀 2배', () => {
+    // B(주황)가 파랑 왕 A를 잡았다(왕 아웃) · A는 잡히기 전 B를 한 번 잡았다(일반 킬 10)
     const output = kingHuntScoring({
       teams: KH_TEAMS,
       xTeams: KINGS,
@@ -391,23 +402,31 @@ describe('왕잡기 (P07 §4.4)', () => {
     })
 
     expect(output.teamScores).toEqual({
-      A: 0, // 왕의 킬 20 − 왕 아웃 20
-      E: -15, // 동료(A) 킬 1 × 5 − 20 = −15 — 순 원점수가 음수라 1인 팀이어도 2배 안 됨(결정 13)
-      B: 30, // 왕 사냥 30 — 잡혔지만 왕이 아니라 감점 없음
-      F: 10, // 동료(B) 킬 1 × 5, 1인 팀 2배(양수라 그대로 적용)
+      A: 10, // 잡히기 전 킬 10 — 왕이 잡혀도 감점은 없다(그룹 전원 아웃으로 대신한다)
+      E: 0, // 왕이 잡힌 그룹 — 감점 없음
+      B: 40, // 왕 잡기 30 + 그룹 보너스 10
+      F: 20, // 그룹 보너스 10, 1인 팀 2배
       C: 0, // 생존해도 보너스 없음
       D: 0,
     })
-    expect(output.playerScores).toEqual({ 하늘: 0, 민재: 0, 지우: -15, 준호: 30, 유나: 30, 서준: 10, 서연: 0, 도윤: 0, 하준: 0, 수아: 0 })
+    expect(output.playerScores).toEqual({ 하늘: 10, 민재: 10, 지우: 0, 준호: 40, 유나: 40, 서준: 20, 서연: 0, 도윤: 0, 하준: 0, 수아: 0 })
   })
 
-  it('왕 아웃은 라이프를 다 써야 한다 — 1인 팀 왕은 한 번 맞아도 감점이 없다', () => {
-    const output = kingHuntScoring({ teams: KH_TEAMS, xTeams: KINGS, tally: {}, hits: { F: 1 } })
-    expect(output.teamScores.B).toBe(0)
-    expect(output.teamScores.F).toBe(0)
-    const out = kingHuntScoring({ teams: KH_TEAMS, xTeams: KINGS, tally: {}, hits: { F: 2 } })
-    expect(out.teamScores.B).toBe(-20)
-    expect(out.teamScores.F).toBe(-20) // 1인 팀이어도 감점은 2배 안 됨(결정 13, 2026-09-20)
+  it('"우리 왕이 잡히면 그 판은 그룹 전체가 즉시 아웃" — 같은 그룹 왕이 아웃이면 그 그룹 팀도 아웃이다', () => {
+    const input = { teams: KH_TEAMS, xTeams: KINGS, hits: { A: 1 } }
+    expect(isKingDownInGroup(input, 'E')).toBe(true)
+    expect(isKingDownInGroup(input, 'A')).toBe(true)
+    expect(isKingDownInGroup(input, 'B')).toBe(false)
+    expect(isTeamEliminated('king-hunt', input, 'E')).toBe(true)
+    expect(isTeamEliminated('king-hunt', input, 'B')).toBe(false)
+    // 비밀 왕이 없는 모드는 같은 편성이어도 그룹 탈락이 없다
+    expect(isTeamEliminated('group', input, 'E')).toBe(false)
+    expect(isTeamEliminated('normal', input, 'E')).toBe(false)
+  })
+
+  it('왕 아웃은 라이프를 다 써야 한다 — 1인 팀 왕은 한 번 맞아도 그룹이 아웃되지 않는다', () => {
+    expect(isTeamEliminated('king-hunt', { teams: KH_TEAMS, xTeams: KINGS, hits: { F: 1 } }, 'B')).toBe(false)
+    expect(isTeamEliminated('king-hunt', { teams: KH_TEAMS, xTeams: KINGS, hits: { F: 2 } }, 'B')).toBe(true)
   })
 
   it('레지스트리의 왕잡기 정의가 이 규칙을 쓴다', () => {
@@ -415,28 +434,36 @@ describe('왕잡기 (P07 §4.4)', () => {
   })
 })
 
-describe('스태프 추격전 (P07 §4.5)', () => {
-  /** A·B는 2인 팀(라이프 1), C는 1인 팀(라이프 2) */
+describe('스태프 추격전 (노션 ② 스태프 추격전 카드)', () => {
+  /** A·B는 2인 팀(라이프 1), C는 1인 팀(라이프 2) — 참가자 5명 */
   const SC_TEAMS = { A: ['u1', 'u2'], B: ['u3', 'u4'], C: ['u5'] }
 
-  it('생존 팀은 15, 아웃 팀은 5를 팀원 각자에게 — 1인 팀은 2배로 받는다(결정 14, #45 예외 되돌림)', () => {
-    const output = staffChaseScoring({
-      teams: SC_TEAMS,
-      xTeams: [],
-      tally: {},
-      hits: { B: 1, C: 1 },
-    })
-
-    // B는 아웃(hits 1 ≥ 라이프 1) · C는 아직 생존(hits 1 < 라이프 2)이고 1인 팀이라 15 × 2 = 30
-    expect(output.teamScores).toEqual({ A: 15, B: 5, C: 30 })
-    expect(output.playerScores).toEqual({ u1: 15, u2: 15, u3: 5, u4: 5, u5: 30 })
+  it('생존자 = 아웃 아닌 팀의 팀원', () => {
+    expect(staffChaseHeadcount({ teams: SC_TEAMS, hits: {} })).toEqual({ survivors: 5, participants: 5 })
+    expect(staffChaseHeadcount({ teams: SC_TEAMS, hits: { B: 1, C: 1 } })).toEqual({ survivors: 3, participants: 5 })
+    expect(staffChaseHeadcount({ teams: SC_TEAMS, hits: { B: 1, C: 2 } })).toEqual({ survivors: 2, participants: 5 })
   })
 
-  it('1인 팀은 아웃도 2배다 — 라이프를 다 써야 아웃이고 아웃 점수 5 × 2 = 10', () => {
-    const output = staffChaseScoring({ teams: SC_TEAMS, xTeams: [], tally: {}, hits: { C: 2 } })
+  it('"살아남은 사람이 많을수록 모두의 점수가 올라가요" — 생존 비율 × 10을 잡힌 사람까지 모두 같게, 1인 팀 2배', () => {
+    const output = staffChaseScoring({ teams: SC_TEAMS, xTeams: [], tally: {}, hits: { B: 1, C: 1 } })
 
-    expect(output.teamScores.C).toBe(10)
-    expect(output.playerScores.u5).toBe(10)
+    // 5명 중 3명 생존 → round(10 × 3/5) = 6. B는 잡혔지만 같은 6, C는 1인 팀이라 12
+    expect(output.teamScores).toEqual({ A: 6, B: 6, C: 12 })
+    expect(output.playerScores).toEqual({ u1: 6, u2: 6, u3: 6, u4: 6, u5: 12 })
+  })
+
+  it('생존자가 늘면 모두의 점수가 함께 오른다 — 전원 생존이면 모두 10', () => {
+    const fewer = staffChaseScoring({ teams: SC_TEAMS, xTeams: [], tally: {}, hits: { A: 1, B: 1 } })
+    const more = staffChaseScoring({ teams: SC_TEAMS, xTeams: [], tally: {}, hits: { A: 1 } })
+    const all = staffChaseScoring({ teams: SC_TEAMS, xTeams: [], tally: {}, hits: {} })
+    expect(fewer.teamScores.A).toBe(2) // 1/5
+    expect(more.teamScores.A).toBe(6) // 3/5
+    expect(all.teamScores).toEqual({ A: 10, B: 10, C: 20 })
+  })
+
+  it('전원 잡히면 모두 0', () => {
+    const output = staffChaseScoring({ teams: SC_TEAMS, xTeams: [], tally: {}, hits: { A: 1, B: 1, C: 2 } })
+    expect(output.teamScores).toEqual({ A: 0, B: 0, C: 0 })
   })
 
   it('참가자 전원이 동맹이라 킬 집계는 무시한다', () => {
@@ -446,9 +473,7 @@ describe('스태프 추격전 (P07 §4.5)', () => {
       tally: { A: { kills: 5, tripleKills: 2 } },
       hits: {},
     })
-
-    // 킬을 아무리 올려도 생존 15 그대로(1인 팀은 2배 30) — 등급은 hits(스태프 아웃 기록)로만 갈린다
-    expect(output.teamScores).toEqual({ A: 15, B: 15, C: 30 })
+    expect(output.teamScores).toEqual({ A: 10, B: 10, C: 20 })
   })
 
   it('레지스트리의 스태프 추격전 정의가 이 규칙을 쓴다', () => {

@@ -6,8 +6,8 @@ import BaseSectionHeader from '@/shared/components/BaseSectionHeader.vue'
 import { formatRelativeTime, type SubmissionRecord } from '@/features/round-ops'
 import {
   computeStandings,
+  formatRoundScores,
   teamOutStatus,
-  tierLabel,
   type RoundLedger,
 } from '@/features/round-ledger'
 
@@ -86,15 +86,11 @@ const myStanding = computed(() => {
 const myStandingLine = computed(() => {
   const standing = myStanding.value
   if (standing === null) return ''
-  return `순위 ${standing.rank}위 · 누적 ${standing.points}P · 원점수 ${standing.rawScore}`
+  return `순위 ${standing.rank}위 · 누적 ${standing.score}점`
 })
 
-/** 라운드별 내역 한 줄 — "1R 2등급 · 2R 1등급"(StandingsCard.formatRounds와 같은 문구) */
-const myRoundsLine = computed(() =>
-  (myStanding.value?.rounds ?? [])
-    .map((entry) => `${entry.roundNo}R ${tierLabel(entry.tier)}`)
-    .join(' · '),
-)
+/** 라운드별 내역 한 줄 — "1R 40점 · 2R 10점"(StandingsCard와 같은 문구) */
+const myRoundsLine = computed(() => formatRoundScores(myStanding.value?.rounds ?? []))
 </script>
 
 <template>

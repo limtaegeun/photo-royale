@@ -14,7 +14,7 @@ import {
   type RoomInfo,
 } from '@/features/waiting-room'
 import { useAuthStore } from '@/features/auth'
-import { GAME_MODES, livesOf } from '@/features/game-mode'
+import { GAME_MODES, isKingDownInGroup, isSameGroup, isTeamOut, livesOf } from '@/features/game-mode'
 import { groupTextClass } from '@/features/team-assignment'
 import { useFirestoreWatchdog } from '@/shared/composables/useFirestoreWatchdog'
 import { useToast } from '@/shared/composables/useToast'
@@ -185,11 +185,8 @@ const heatRingDash = computed(
 /** 셔터 손잡이 색 — 잠기면 링(BaseButton disabled)과 함께 손잡이도 꺼진다. 동적 클래스는 리터럴 맵(스캐너 대응) */
 const SHUTTER_KNOB_CLASS = { ready: 'bg-brand', locked: 'bg-disabled' } as const
 const shutterKnobClass = computed(() => (isShutterLocked.value ? SHUTTER_KNOB_CLASS.locked : SHUTTER_KNOB_CLASS.ready))
-const objective = computed(
-  () =>
-    currentMode.value.rules.find((rule) => rule.kind === 'static')?.text ??
-    currentMode.value.description,
-)
+/** 맨 위 목표 문구 — 노션 ② "굵은 첫 줄은 카메라 화면 맨 위 목표 문구와 같아요"라 모드 정의가 소유한다 */
+const objective = computed(() => currentMode.value.objective)
 const assignedParticipants = computed(() =>
   participants.value.filter((participant) =>
     isAssignedInRound(participant, room.value?.assignmentRound ?? 0),
@@ -259,6 +256,27 @@ const { mySubmissions } = useJudgmentFeedback({
   toast,
 })
 
+/**
+ * 우리 그룹의 비밀 왕 완장 — 왕잡기에서 내가 왕이 아닐 때만. 원장 편성의 X 겸직 팀 중 같은 그룹이다. 왕이 잡히면
+ * 그룹 전체가 즉시 아웃이라(노션 ②) 탈락 안내가 왕의 피격도 본다
+ */
+const myGroupKing = computed(() => {
+  const armband = me.value?.team
+  if (armband == null || ledger.value === null || currentMode.value.secretKing !== true) return null
+  return (
+    ledger.value.xTeams.find(
+      (king) => king !== armband && king in ledger.value!.teams && isSameGroup(king, armband),
+    ) ?? null
+  )
+})
+/** 우리 팀이 직접 잡히지 않았는데 그룹 왕이 잡혀 아웃인가 — 탈락 카드 문구가 이유를 바꿔 말한다 */
+const isOutByGroupKing = computed(() => {
+  const armband = me.value?.team
+  if (armband == null || ledger.value === null || myGroupKing.value === null) return false
+  const input = { teams: ledger.value.teams, hits: ledger.value.hits ?? {}, xTeams: ledger.value.xTeams }
+  return !isTeamOut(input, armband) && isKingDownInGroup(input, armband)
+})
+
 /** 우리 팀 목숨 — 원장 편성에서 센다(2인 팀 1, 1인 팀 2). 원장이 없으면 탈락 모델도 없어 null */
 const myLives = computed(() => {
   const armband = me.value?.team
@@ -280,6 +298,12 @@ const {
   round: computed(() => room.value?.assignmentRound ?? null),
   lives: myLives,
   enabled: computed(() => currentMode.value.absorbsCaughtTeam !== true && !isRoundEnded.value),
+  kingTeam: myGroupKing,
+  kingLives: computed(() =>
+    myGroupKing.value === null || ledger.value === null
+      ? null
+      : livesOf(ledger.value.teams, myGroupKing.value),
+  ),
 })
 
 /**
@@ -668,9 +692,16 @@ function subscribeToCurrentRoundLedger(roundNumber: number) {
           class="flex items-center gap-2 rounded-lg border border-danger bg-scrim-strong p-3"
         >
           <BaseBadge tone="danger">탈락</BaseBadge>
+          <!-- 노션 ② 기본 규칙 4 "킬샷을 맞으면 DEAD예요. 바로 베이스캠프로 돌아가요." -->
           <p class="min-w-0 flex-1 text-caption text-pretty break-keep text-danger">
-            {{ eliminatedBy === null ? '우리 팀이 잡혔어요.' : `팀 ${eliminatedBy}에게 잡혔어요.` }}
-            이번 라운드는 촬영할 수 없어요. 라운드가 끝나면 대기실로 이동해요.
+            {{
+              isOutByGroupKing
+                ? '우리 그룹 왕이 잡혀 그룹 전체가 아웃됐어요.'
+                : eliminatedBy === null
+                  ? '우리 팀이 잡혔어요.'
+                  : `팀 ${eliminatedBy}에게 잡혔어요.`
+            }}
+            이번 라운드는 촬영할 수 없어요. 바로 베이스캠프로 돌아가요.
           </p>
         </div>
 

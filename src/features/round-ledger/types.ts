@@ -17,7 +17,8 @@ export type ArmbandMap<T> = Record<string, T>
 
 /**
  * 공격 완장 1개의 판정 집계 — 3배(낙오 포착) 킬은 tripleKills에만 센다(M2).
- * kingKills는 그중 X 겸직 팀(왕)을 잡은 건수 — 왕잡기의 왕 사냥 근거(M4-3). 모드와 무관하게
+ * kingKills는 그중 X 겸직 팀(왕)을 아웃시킨 건수 — 왕잡기의 왕 잡기 근거(M4-3, 노션 ② 이전 문서는 왕을 맞힌
+ * 건수 전부다). 모드와 무관하게
  * 사실만 남기고, 읽는 쪽(왕잡기 규칙)만 쓴다. 도입 전 문서는 0으로 읽는다.
  */
 export interface TeamTally {
@@ -42,15 +43,18 @@ export interface RoundSnapshot {
   confirmedAtMs: number | null
 }
 
-/** ③ 라운드 종료 시 — 정산 결과. 등급·포인트 계산은 이 시점에 한 번만 한다 */
+/** ③ 라운드 종료 시 — 정산 결과. 정산은 이 시점에 한 번만 한다 */
 export interface RoundResult {
   /** 완장 → 라운드 원점수 */
   teamScores: ArmbandMap<number>
-  /** uid → 개인 원점수(팀 원점수 동일 지급) */
+  /** uid → 개인 원점수(팀 원점수 동일 지급) — 최종 순위는 이 값의 합(노션 ② "세 판 점수를 더해 우승자를 정해요") */
   playerScores: Record<string, number>
-  /** uid → 등급(1부터). 원점수 0 이하는 0 = 등급 없음 */
+  /** uid → 라운드 안 순위(1부터, 같은 점수 같은 순위). 등급 포인트 시절 문서는 등급(0 = 등급 없음)이다 */
   playerTiers: Record<string, number>
-  /** uid → 등급 포인트 — 최종 순위는 이 값의 합 */
+  /**
+   * uid → 이 라운드가 최종 순위에 더하는 값 = 원점수. 등급 포인트 시절 문서는 등급 포인트다 — 그래서 누적 순위는
+   * 이 값이 아니라 playerScores를 더한다. rules가 키를 요구해서 남긴다
+   */
   playerPoints: Record<string, number>
   /** serverTimestamp가 반영되기 전 스냅샷은 null */
   finishedAtMs: number | null

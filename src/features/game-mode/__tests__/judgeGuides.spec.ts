@@ -71,43 +71,36 @@ describe('꼬리잡기 판정 안내', () => {
   })
 })
 
-describe('왕잡기 판정 안내', () => {
+describe('왕잡기 판정 안내 (노션 ② 왕잡기 카드)', () => {
   const outcome = KING_HUNT_JUDGE_GUIDE.outcome!
   const xTeams = ['A', 'B']
 
-  it('왕을 잡아 아웃시키면 왕 사냥 점수와 그룹 감점을 보인다', () => {
+  it('왕을 잡아 아웃시키면 잡은 팀 +30 · 잡은 팀 그룹 +10 · 왕의 그룹 전원 아웃을 보인다', () => {
     expect(outcome('C', 'B', context({ xTeams }))).toEqual({
-      approveLabel: '팀 B 왕 사냥 확정',
-      note: '왕 사냥 +30 · 주황 그룹 전원 −20',
-      toast: '팀 B 왕 사냥으로 판정했어요. 주황 그룹 전원 −20이에요.',
+      approveLabel: '팀 B 왕 잡기 확정',
+      note: '왕 잡기 +30 · 초록 그룹 +10 · 주황 그룹 전원 아웃',
+      toast: '팀 B 왕 잡기로 판정했어요. 주황 그룹은 전원 아웃이에요.',
     })
   })
 
-  it('1인 왕의 첫 킬은 아웃이 아니라 감점 안내가 없다', () => {
+  it('1인 왕의 첫 킬은 왕이 아직 살아 있어 일반 킬이다 — 한 번 더 맞아야 잡힌다고만 알린다', () => {
     const rosters = { ...context().rosters, B: ['B1'] }
-    expect(outcome('C', 'B', context({ xTeams, rosters }))).toEqual({
-      approveLabel: '팀 B 왕 사냥 확정',
-      note: '왕 사냥 +30',
-      toast: '팀 B 왕 사냥으로 판정했어요.',
-    })
+    expect(outcome('C', 'B', context({ xTeams, rosters }))).toEqual({ note: '왕이 한 번 더 맞아야 잡혀요' })
   })
 
-  it('왕이 왕을 잡으면 왕 사냥이다', () => {
-    expect(outcome('A', 'B', context({ xTeams }))?.approveLabel).toBe('팀 B 왕 사냥 확정')
+  it('왕이 왕을 잡아도 왕 잡기다', () => {
+    expect(outcome('A', 'B', context({ xTeams }))?.approveLabel).toBe('팀 B 왕 잡기 확정')
   })
 
-  it('왕이 일반 팀을 잡으면 왕의 킬이다', () => {
-    expect(outcome('A', 'C', context({ xTeams }))).toEqual({
-      approveLabel: '팀 C 왕의 킬 확정',
-      note: '왕의 킬 +20',
-      toast: '팀 C 왕의 킬로 판정했어요.',
-    })
+  it('왕이 일반 팀을 잡으면 일반 킬이다 — 노션 ② 기본 규칙 5 "킬샷 1번에 +10점"', () => {
+    expect(outcome('A', 'C', context({ xTeams }))).toBeNull()
   })
 
-  it('1인 팀의 킬은 점수가 2배로 보인다', () => {
-    const rosters = { ...context().rosters, A: ['A1'], C: ['C1'] }
-    expect(outcome('A', 'D', context({ xTeams, rosters }))?.note).toBe('왕의 킬 +40')
-    expect(outcome('C', 'B', context({ xTeams, rosters }))?.note).toBe('왕 사냥 +60 · 주황 그룹 전원 −20')
+  it('1인 팀이 왕을 잡으면 잡은 점수가 2배로 보인다', () => {
+    const rosters = { ...context().rosters, C: ['C1'] }
+    expect(outcome('C', 'B', context({ xTeams, rosters }))?.note).toBe(
+      '왕 잡기 +60 · 초록 그룹 +10 · 주황 그룹 전원 아웃',
+    )
   })
 
   it('일반 팀끼리는 특별한 결과가 없다', () => {
