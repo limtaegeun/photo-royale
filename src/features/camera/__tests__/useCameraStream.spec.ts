@@ -8,6 +8,7 @@ function createFakeStream() {
   const tracks = [
     {
       readyState: 'live' as MediaStreamTrackState,
+      enabled: true,
       stop: vi.fn<() => void>(),
       applyConstraints: vi.fn<(constraints: MediaTrackConstraints) => Promise<void>>(() =>
         Promise.resolve(),
@@ -58,7 +59,7 @@ describe('useCameraStream', () => {
     expect(useCameraStreamStore().roomCode).toBe('ABCD')
   })
 
-  it('스코프가 해제돼도(콕핏 언마운트) 끄지 않고 저화질로 쥐어 둔다', async () => {
+  it('스코프가 해제돼도(콕핏 언마운트) 정지하지 않고 최저 화질로 낮춰 트랙을 꺼 둔다', async () => {
     const { stream, tracks } = createFakeStream()
     stubGetUserMedia(() => Promise.resolve(stream))
     const { scope, camera } = setupInScope()
@@ -68,10 +69,11 @@ describe('useCameraStream', () => {
 
     expect(tracks[0]!.stop).not.toHaveBeenCalled()
     expect(tracks[0]!.applyConstraints).toHaveBeenLastCalledWith({
-      width: { ideal: 640 },
-      height: { ideal: 480 },
-      frameRate: { ideal: 5 },
+      width: { ideal: 320 },
+      height: { ideal: 240 },
+      frameRate: { ideal: 1 },
     })
+    expect(tracks[0]!.enabled).toBe(false)
   })
 
   it('같은 방의 콕핏을 다시 열면 권한을 다시 요청하지 않는다', async () => {
