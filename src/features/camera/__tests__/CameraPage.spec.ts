@@ -295,6 +295,7 @@ function playingRoom(overrides: Partial<RoomInfo> = {}): RoomInfo {
     gameMode: 'normal',
     roundModes: {},
     round: RUNNING_ROUND,
+    closedAtMs: null,
     ...overrides,
   }
 }

@@ -194,6 +194,7 @@ const GUEST_ROOM: RoomInfo = {
   gameMode: 'normal',
   roundModes: {},
   round: null,
+  closedAtMs: null,
 }
 const MY_ROOM: RoomInfo = {
   hostUid: 'me',
@@ -203,6 +204,7 @@ const MY_ROOM: RoomInfo = {
   gameMode: 'normal',
   roundModes: {},
   round: null,
+  closedAtMs: null,
 }
 
 const ME_WAITING: Participant = {
@@ -836,6 +838,7 @@ describe('useWaitingRoomStore', () => {
       gameMode: 'normal',
       roundModes: {},
       round: null,
+      closedAtMs: null,
     }
 
     function assigned(id: string, name: string, team: string, round: number): Participant {
@@ -1029,6 +1032,7 @@ describe('useWaitingRoomStore', () => {
         gameMode: 'normal',
         roundModes: {},
         round: null,
+        closedAtMs: null,
         ...room,
       })
       captureSnapshotCallbacks()
@@ -1069,6 +1073,7 @@ describe('useWaitingRoomStore', () => {
       gameMode: 'normal',
       roundModes: {},
       round: null,
+      closedAtMs: null,
     }
 
     it('호스트가 배정 확정 후 호출하면 status를 playing으로 전이한다', async () => {

@@ -31,6 +31,7 @@ import StandingsCard from './components/StandingsCard.vue'
 import VenueMapUploadSheet from './components/VenueMapUploadSheet.vue'
 import { formatClock } from '@/shared/utils/formatClock'
 import { isAssignedInRound, normalizeRoomCode, type Participant } from './api/rooms'
+import { hasShownClosing, markClosingShown } from './closingShownMarker'
 import { hasPlayedRound } from './roundPlayMarker'
 import { isSafetyConsentValid } from './safetyConsent'
 import { serverNow } from './serverClock'
@@ -70,6 +71,9 @@ const {
   isRoundOver,
   settledRoundCount,
   standings,
+  canCloseGame,
+  closedAtMs,
+  isClosingGame,
   isSavingMapImage,
   mapImageError,
 } = storeToRefs(store)
@@ -494,6 +498,37 @@ watch([gameStatus, isRoundLive, myAssignment], ([status, roundLive]) => {
 })
 
 /**
+ * 마무리 페이지 띄우기 — 진행자가 게임을 마무리하면(방의 마무리 시각) 이 기기에서 아직 띄우지 않은
+ * 마무리일 때 한 번 보낸다. 진행자 자신도 같은 길로 간다(누른 기기만 보내지 않고 스냅샷으로 모두 같이 간다).
+ * 보내기 전에 먼저 기록한다 — 마무리 페이지에서 '대기실로 돌아가기'로 돌아와도 다시 보내지 않는다.
+ * 대기실에 들어오기 전에 마무리된 방이면 입장하자마자(phase가 joined가 되는 순간) 보낸다.
+ * push로 보낸다 — 브라우저 뒤로가기가 앱 밖이 아니라 이 대기실로 돌아오게 한다.
+ */
+watch(
+  [closedAtMs, phase],
+  ([closedAt, currentPhase]) => {
+    if (closedAt === null || currentPhase !== 'joined' || roomCode.value === null) return
+    if (myId.value === null || hasShownClosing(roomCode.value, closedAt)) return
+    markClosingShown(roomCode.value, closedAt)
+    router.push({ name: 'closing', params: { roomCode: roomCode.value } })
+  },
+  { immediate: true },
+)
+
+/** 게임 마무리 확인(호스트) — 누르면 참가자 전원의 화면에 마무리 페이지가 뜨므로 한 번 더 묻는다 */
+const isCloseGameDialogOpen = ref(false)
+
+/** 게임 마무리 확정 — 실패하면 다이얼로그를 열어 둔 채 알려 같은 자리에서 다시 누르게 한다 */
+async function confirmCloseGame() {
+  const closed = await store.wrapUpGame()
+  if (!closed) {
+    toast({ title: '게임을 마무리하지 못했어요. 다시 시도해 주세요.', tone: 'danger' })
+    return
+  }
+  isCloseGameDialogOpen.value = false
+}
+
+/**
  * 지난 라운드 기록 보기 — 라운드 종료 후 이번 방의 제출·판정 이력을 확인할 유일한 경로다.
  * 라운드 운영 화면의 기록 탭으로 쿼리(?tab=log)를 붙여 이동한다 — 그 화면은 대기 상태에서도
  * 기록 탭을 열람할 수 있게 바뀐다(round-ops 담당, 이 파일 범위 밖).
@@ -584,6 +619,23 @@ async function copyInviteLink() {
           :rows="standings"
           :settled-round-count="settledRoundCount"
         />
+
+        <!-- 게임 마무리(호스트) — 마지막 라운드 결과(누적 순위)를 발표한 뒤 누르는 자리라 순위 카드
+             바로 아래에 둔다. 누르면 참가자 전원에게 마무리 페이지가 한 번 뜬다. 행이 자체 패딩을 갖는
+             리스트 카드라 padding="none"(행사장 지도 행과 같은 모양) -->
+        <BaseCard v-if="!showAssignmentBoard && canCloseGame" padding="none">
+          <BaseListRow
+            label="게임 마무리"
+            caption="마지막 라운드였다면 전원에게 인사를 띄워요."
+            wrap-caption
+          >
+            <template #control>
+              <BaseButton variant="ghost" size="sm" @click="isCloseGameDialogOpen = true">
+                마무리
+              </BaseButton>
+            </template>
+          </BaseListRow>
+        </BaseCard>
 
         <!-- 호스트: 팀 배정 보드(대기실 콘텐츠·하단 CTA를 대체) -->
         <AssignmentBoard
@@ -926,6 +978,39 @@ async function copyInviteLink() {
           </BaseButton>
           <BaseButton variant="danger" size="lg" class="w-full" @click="confirmKick">
             내보내기
+          </BaseButton>
+        </div>
+      </div>
+    </BaseDialog>
+
+    <!-- 게임 마무리 확인 — 위 = 안전(계속 진행), 아래 = 마무리. 다른 확인 다이얼로그와 같은 순서·같은 size.
+         되돌릴 수 없는 일은 아니어서(순위·기록·배정이 그대로 남는다) 파괴 색이 아니라 강조 색을 쓴다 -->
+    <BaseDialog
+      v-model:open="isCloseGameDialogOpen"
+      title="게임을 마무리할까요?"
+      description="참가자 전원의 화면에 마무리 인사가 떠요."
+    >
+      <div class="flex flex-col gap-5">
+        <p class="text-caption leading-(--pr-line-height-relaxed) break-keep text-content-tertiary">
+          순위와 기록은 그대로 남아요. 마무리한 뒤에도 다음 라운드를 이어 갈 수 있어요.
+        </p>
+        <div class="flex flex-col gap-3">
+          <BaseButton
+            variant="ghost"
+            size="lg"
+            class="w-full"
+            @click="isCloseGameDialogOpen = false"
+          >
+            계속 진행
+          </BaseButton>
+          <BaseButton
+            variant="accent"
+            size="lg"
+            class="w-full"
+            :loading="isClosingGame"
+            @click="confirmCloseGame"
+          >
+            마무리하기
           </BaseButton>
         </div>
       </div>

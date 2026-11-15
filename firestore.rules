@@ -139,7 +139,7 @@ service cloud.firestore {
         && request.resource.data.status == 'waiting'
         && request.resource.data.createdAt == request.time;
 
-      // 호스트 본인만. 네 갈래로 나뉜다. (행사장 지도는 방 문서가 아니라 assets/venueMap 문서에 있다)
+      // 호스트 본인만. 여섯 갈래로 나뉜다. (행사장 지도는 방 문서가 아니라 assets/venueMap 문서에 있다)
       allow update: if request.auth != null
         && request.auth.uid == resource.data.hostUid
         && (
@@ -208,6 +208,12 @@ service cloud.firestore {
             && request.resource.data.deleting == true
             && request.resource.data.status == 'waiting'
             && !('round' in request.resource.data))
+          // 6) 게임 마무리 — 마지막 라운드 결과를 본 뒤 참가자 전원에게 마무리 페이지를 띄운다.
+          //    대기 중인 방에 마무리 시각(closedAt) 하나만 서버 시각으로 쓴다. 다시 마무리하면 시각이
+          //    바뀌어 페이지가 한 번 더 뜬다. 상태·배정 이력은 그대로라 마무리 뒤에도 다음 차수를 이어 갈 수 있다.
+          || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['closedAt'])
+            && resource.data.status == 'waiting'
+            && request.resource.data.closedAt == request.time)
         );
 
       // 방 삭제(P09) — 호스트가 닫은(deleting) 방만. 하위 문서를 먼저 지우고 방 문서를 마지막에
