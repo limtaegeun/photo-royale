@@ -20,6 +20,8 @@ declare module 'vue-router' {
     appHeaderBackTo?: RouteLocationRaw
     /** AppHeader 좌측 이탈 링크의 접근성 라벨 */
     appHeaderBackLabel?: string
+    /** 이 화면으로 오면 같은 방 코드라도 쥐고 있던 카메라를 끈다 — 게임이 끝난 화면(releaseCameraOutsideRoom) */
+    releaseCamera?: boolean
   }
 }
 
@@ -74,11 +76,12 @@ const router = createRouter({
     {
       // 마무리 페이지 — 진행자가 게임을 마무리하면 대기실이 참가자마다 한 번 띄운다. 인사 화면이라
       // 앱 셸 헤더 없이 꽉 채운다. 방 코드는 '대기실로 돌아가기'가 같은 방으로 돌아가는 데 쓴다.
-      // 내용이 정적이라 인증을 요구하지 않는다 — '내 방 열어보기'의 로그인 유도는 입장 화면이 맡는다
+      // 내용이 정적이라 인증을 요구하지 않는다 — '내 방 열어보기'의 로그인 유도는 입장 화면이 맡는다.
+      // 게임이 끝난 화면이라 같은 방 코드여도 카메라를 놓는다(releaseCamera)
       path: '/closing/:roomCode',
       name: 'closing',
       component: ClosingPage,
-      meta: { hideAppHeader: true },
+      meta: { hideAppHeader: true, releaseCamera: true },
     },
     {
       // 방 코드 없는 구 경로 — 매칭되는 라우트가 없어 빈 화면이 되는 대신 입장 화면으로 돌려보낸다

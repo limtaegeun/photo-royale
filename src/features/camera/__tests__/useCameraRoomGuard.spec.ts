@@ -22,8 +22,8 @@ function createFakeStream() {
   return { stream, tracks }
 }
 
-function route(name: string, params: Record<string, string> = {}) {
-  return { name, params } as unknown as RouteLocationNormalized
+function route(name: string, params: Record<string, string> = {}, meta: Record<string, unknown> = {}) {
+  return { name, params, meta } as unknown as RouteLocationNormalized
 }
 
 async function holdCamera(roomCode = 'ABCD') {
@@ -55,6 +55,15 @@ describe('releaseCameraOutsideRoom', () => {
 
     expect(tracks[0]!.stop).not.toHaveBeenCalled()
     expect(store.roomCode).toBe('ABCD')
+  })
+
+  it('같은 방이어도 게임이 끝난 화면(meta.releaseCamera)으로 가면 카메라를 끈다', async () => {
+    const { store, tracks } = await holdCamera('ABCD')
+
+    releaseCameraOutsideRoom(route('closing', { roomCode: 'ABCD' }, { releaseCamera: true }))
+
+    expect(tracks[0]!.stop).toHaveBeenCalledOnce()
+    expect(store.status).toBe('idle')
   })
 
   it('다른 방으로 가면 카메라를 끈다', async () => {
