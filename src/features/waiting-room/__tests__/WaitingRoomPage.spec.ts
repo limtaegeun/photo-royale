@@ -36,6 +36,7 @@ const setReadyMock =
   vi.fn<(code: string, uid: string, options?: { withSafetyConsent: boolean }) => Promise<void>>()
 const startGameMock = vi.fn<(code: string, round: number) => Promise<void>>()
 const kickParticipantMock = vi.fn<(code: string, uid: string) => Promise<void>>()
+const closeGameMock = vi.fn<(code: string) => Promise<void>>()
 const unsubscribeParticipantsMock = vi.fn<() => void>()
 const unsubscribeRoomMock = vi.fn<() => void>()
 const subscribeParticipantsMock =
@@ -66,6 +67,7 @@ vi.mock('../api/rooms', async (importOriginal) => {
       setReadyMock(code, uid, options),
     startGame: (code: string, round: number) => startGameMock(code, round),
     kickParticipant: (code: string, uid: string) => kickParticipantMock(code, uid),
+    closeGame: (code: string) => closeGameMock(code),
     subscribeToParticipants: (code: string, onChange: (participants: Participant[]) => void) =>
       subscribeParticipantsMock(code, onChange),
     subscribeToRoom: (code: string, onChange: (room: RoomInfo | null) => void) =>
@@ -180,6 +182,7 @@ const GUEST_ROOM: RoomInfo = {
   gameMode: 'normal',
   roundModes: {},
   round: null,
+  closedAtMs: null,
 }
 const MY_ROOM: RoomInfo = {
   hostUid: 'me',
@@ -189,6 +192,7 @@ const MY_ROOM: RoomInfo = {
   gameMode: 'normal',
   roundModes: {},
   round: null,
+  closedAtMs: null,
 }
 
 const ROSTER: Participant[] = [
@@ -245,6 +249,7 @@ describe('WaitingRoomPage', () => {
     setReadyMock.mockReset().mockResolvedValue(undefined)
     startGameMock.mockReset().mockResolvedValue(undefined)
     kickParticipantMock.mockReset().mockResolvedValue(undefined)
+    closeGameMock.mockReset().mockResolvedValue(undefined)
     saveVenueMapImageMock.mockReset().mockResolvedValue(undefined)
     encodeVenueMapImageMock.mockReset()
     subscribeParticipantsMock.mockReset().mockReturnValue(unsubscribeParticipantsMock)
@@ -260,10 +265,142 @@ describe('WaitingRoomPage', () => {
     useAppHeader().clearHeader()
     // 라운드 재실행 마커는 세션 스토리지에 쌓이므로 케이스 간 누수를 막기 위해 매번 비운다
     sessionStorage.clear()
+    // 마무리 페이지 노출 기록은 localStorage에 쌓인다 — 케이스 간 누수를 막는다
+    localStorage.clear()
   })
 
   afterEach(() => {
     while (mounted.length > 0) mounted.pop()!.unmount()
+  })
+
+  /**
+   * 게임 마무리 — 마지막 라운드 결과(누적 순위) 뒤에 진행자가 누르면 참가자 전원에게 마무리 페이지가 한 번 뜬다.
+   */
+  describe('게임 마무리', () => {
+    const SETTLED_LEDGER: RoundLedger = {
+      roundNo: 1,
+      mode: 'normal',
+      teams: {},
+      xTeams: [],
+      confirmedAtMs: 0,
+      tally: null,
+      hits: null,
+      tails: null,
+      credits: null,
+      result: {
+        teamScores: {},
+        playerScores: { u2: 40 },
+        playerTiers: { u2: 1 },
+        playerPoints: { u2: 10 },
+        finishedAtMs: 1,
+      },
+    }
+    const HOST_ROOM: RoomInfo = { ...MY_ROOM, assignmentRound: 1, playedRound: 1 }
+
+    async function mountHost(ledgers: RoundLedger[]) {
+      getRoomMock.mockResolvedValue(HOST_ROOM)
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      await flushPromises()
+      deliver.room(HOST_ROOM)
+      deliver.participants(ROSTER.slice(1))
+      deliver.ledgers(ledgers)
+      await flushPromises()
+      return { wrapper, deliver }
+    }
+
+    it('정산한 라운드가 있는 대기 중 방에서만 진행자에게 마무리 행을 보인다', async () => {
+      const before = await mountHost([])
+      expect(before.wrapper.text()).not.toContain('게임 마무리')
+      before.wrapper.unmount()
+      mounted.length = 0
+
+      const after = await mountHost([SETTLED_LEDGER])
+      expect(after.wrapper.text()).toContain('게임 마무리')
+    })
+
+    it('게스트에게는 정산한 라운드가 있어도 마무리 행이 없다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      await flushPromises()
+      deliver.participants(ROSTER)
+      deliver.ledgers([SETTLED_LEDGER])
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('누적 순위')
+      expect(wrapper.text()).not.toContain('게임 마무리')
+    })
+
+    it('진행자가 확인 다이얼로그에서 마무리하면 방에 마무리 시각을 쓰고 다이얼로그를 닫는다', async () => {
+      const { wrapper } = await mountHost([SETTLED_LEDGER])
+
+      await findButton(wrapper, '마무리')!.trigger('click')
+      await flushPromises()
+      expect(document.body.textContent).toContain('게임을 마무리할까요?')
+
+      findBodyButton('마무리하기').click()
+      await flushPromises()
+
+      expect(closeGameMock).toHaveBeenCalledWith('AB2C')
+      expect(document.body.textContent).not.toContain('게임을 마무리할까요?')
+    })
+
+    it('마무리 쓰기가 실패하면 다이얼로그를 열어 둔 채 알린다', async () => {
+      closeGameMock.mockRejectedValue(new Error('offline'))
+      const { wrapper } = await mountHost([SETTLED_LEDGER])
+
+      await findButton(wrapper, '마무리')!.trigger('click')
+      await flushPromises()
+      findBodyButton('마무리하기').click()
+      await flushPromises()
+
+      expect(toastMock).toHaveBeenCalledWith(
+        expect.objectContaining({ title: '게임을 마무리하지 못했어요. 다시 시도해 주세요.' }),
+      )
+      expect(document.body.textContent).toContain('게임을 마무리할까요?')
+    })
+
+    it('마무리 시각이 생기면 마무리 페이지로 한 번만 보낸다 — 돌아와도 다시 보내지 않고, 다시 마무리하면 또 보낸다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const wrapper = mountPage()
+      await flushPromises()
+      deliver.participants(ROSTER)
+      await flushPromises()
+      expect(pushMock).not.toHaveBeenCalled()
+
+      deliver.room({ ...GUEST_ROOM, closedAtMs: 1000 })
+      await flushPromises()
+      expect(pushMock).toHaveBeenCalledTimes(1)
+      expect(pushMock).toHaveBeenCalledWith({ name: 'closing', params: { roomCode: 'AB2C' } })
+
+      // 마무리 페이지에서 '대기실로 돌아가기'로 다시 들어온 상황 — 같은 마무리는 다시 띄우지 않는다
+      wrapper.unmount()
+      mounted.length = 0
+      getRoomMock.mockResolvedValue({ ...GUEST_ROOM, closedAtMs: 1000 })
+      const again = captureSnapshotCallbacks()
+      mountPage()
+      await flushPromises()
+      again.participants(ROSTER)
+      again.room({ ...GUEST_ROOM, closedAtMs: 1000 })
+      await flushPromises()
+      expect(pushMock).toHaveBeenCalledTimes(1)
+
+      // 진행자가 다음 라운드를 더 뛰고 다시 마무리했다 — 새 마무리는 한 번 더 띄운다
+      again.room({ ...GUEST_ROOM, closedAtMs: 2000 })
+      await flushPromises()
+      expect(pushMock).toHaveBeenCalledTimes(2)
+    })
+
+    it('대기실에 들어오기 전에 마무리된 방이면 입장하자마자 마무리 페이지로 보낸다', async () => {
+      getRoomMock.mockResolvedValue({ ...GUEST_ROOM, closedAtMs: 5000 })
+      const deliver = captureSnapshotCallbacks()
+      mountPage()
+      await flushPromises()
+      deliver.participants(ROSTER)
+      await flushPromises()
+
+      expect(pushMock).toHaveBeenCalledWith({ name: 'closing', params: { roomCode: 'AB2C' } })
+    })
   })
 
   /** 11/01 QA 탐색 EX-01 — 누적 순위 시트를 연 채 뒤로가기를 누르면 방을 나갔다 */
@@ -484,6 +621,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'group',
       roundModes: {},
       round: null,
+      closedAtMs: null,
     })
     await flushPromises()
 
@@ -967,6 +1105,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'normal',
       roundModes: {},
       round: null,
+      closedAtMs: null,
     })
     deliver.participants([{ ...ROSTER[0]!, team: 'A', assignedRound: 1, isReady: true }])
     await flushPromises()
@@ -993,6 +1132,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'normal' as const,
       roundModes: {},
       round: null,
+      closedAtMs: null,
     }
     deliver.room(playing)
     // 이번 라운드에 배정된 참가자여야 콕핏으로 넘어간다(D-5) — 그 전까지는 대기실에 머문다
@@ -1022,6 +1162,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'normal',
       roundModes: {},
       round: { status: 'running', startedAtMs: Date.now(), durationMs: 1_200_000, pausedRemainingMs: null },
+      closedAtMs: null,
     })
     // 배정 확정 후 늦게 합류했거나 이번 배정에서 빠진 참가자 — team이 미배정(null)이다
     deliver.participants([ROSTER[0]!])
@@ -1056,6 +1197,7 @@ describe('WaitingRoomPage', () => {
         durationMs: 1_200_000,
         pausedRemainingMs: null,
       },
+      closedAtMs: null,
     })
     deliver.participants([{ ...ROSTER[0]!, team: 'A', assignedRound: 1, isReady: true }])
     await flushPromises()
@@ -1085,6 +1227,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'normal' as const,
       roundModes: {},
       round: { status: 'running' as const, startedAtMs, durationMs: 1_200_000, pausedRemainingMs: null },
+      closedAtMs: null,
     }
     deliver.room(expired)
     deliver.participants([{ ...ROSTER[0]!, team: 'A', assignedRound: 1, isReady: true }])
@@ -1110,7 +1253,7 @@ describe('WaitingRoomPage', () => {
     const deliver = captureSnapshotCallbacks()
     mountPage()
     await flushPromises()
-    deliver.room({ hostUid: 'host9', status: 'waiting', assignmentRound: 0, playedRound: 0, gameMode: 'normal', roundModes: {}, round: null })
+    deliver.room({ hostUid: 'host9', status: 'waiting', assignmentRound: 0, playedRound: 0, gameMode: 'normal', roundModes: {}, round: null, closedAtMs: null })
     await flushPromises()
     replaceMock.mockClear()
 
@@ -1128,7 +1271,7 @@ describe('WaitingRoomPage', () => {
     const deliver = captureSnapshotCallbacks()
     mountPage()
     await flushPromises()
-    deliver.room({ hostUid: 'host9', status: 'waiting', assignmentRound: 0, playedRound: 0, gameMode: 'normal', roundModes: {}, round: null })
+    deliver.room({ hostUid: 'host9', status: 'waiting', assignmentRound: 0, playedRound: 0, gameMode: 'normal', roundModes: {}, round: null, closedAtMs: null })
     deliver.participants([{ id: 'me', name: '나', gender: null, isReady: false, team: null, assignedRound: 0, isXTeam: false, sameGenderStreak: 0, previousPartnerIds: [], carryoverBase: null, hasBeenAssigned: false, safetyConsentAt: null }])
     await flushPromises()
 
@@ -1156,6 +1299,7 @@ describe('WaitingRoomPage', () => {
         durationMs: 1_200_000,
         pausedRemainingMs: 600_000,
       },
+      closedAtMs: null,
     })
     deliver.participants([{ ...ROSTER[0]!, team: 'A', assignedRound: 1, isReady: true }])
     await flushPromises()
@@ -1169,7 +1313,7 @@ describe('WaitingRoomPage', () => {
     mountPage()
     await flushPromises()
 
-    deliver.room({ hostUid: 'me', status: 'playing', assignmentRound: 1, playedRound: 0, gameMode: 'normal', roundModes: {}, round: null })
+    deliver.room({ hostUid: 'me', status: 'playing', assignmentRound: 1, playedRound: 0, gameMode: 'normal', roundModes: {}, round: null, closedAtMs: null })
     await flushPromises()
 
     expect(replaceMock).toHaveBeenCalledWith({
@@ -1448,6 +1592,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'normal',
       roundModes: {},
       round: null,
+      closedAtMs: null,
     })
     const wrapper = mountPage()
     await flushPromises()
@@ -1484,6 +1629,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'normal',
       roundModes: {},
       round: null,
+      closedAtMs: null,
     })
     const wrapper = mountPage()
     await flushPromises()
@@ -1513,6 +1659,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'group',
       roundModes: {},
       round: null,
+      closedAtMs: null,
     })
     // mountPage 대신 명시적 pinia로 마운트해 같은 인스턴스의 팀 배정 스토어를 조회한다
     const pinia = createPinia()
@@ -1531,7 +1678,7 @@ describe('WaitingRoomPage', () => {
     expect(taStore.draftGameMode).toBe('group')
 
     // 다른 탭이 확정해 room 스냅샷의 assignmentRound가 올라가도(3) 드래프트 차수는 그대로 3
-    deliver.room({ hostUid: 'me', status: 'waiting', assignmentRound: 3, playedRound: 2, gameMode: 'group', roundModes: {}, round: null })
+    deliver.room({ hostUid: 'me', status: 'waiting', assignmentRound: 3, playedRound: 2, gameMode: 'group', roundModes: {}, round: null, closedAtMs: null })
     await flushPromises()
     expect(taStore.draftRound).toBe(3)
   })
@@ -1550,6 +1697,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'king-hunt',
       roundModes: { '1': 'king-hunt' },
       round: null,
+      closedAtMs: null,
     }
     getRoomMock.mockResolvedValue(room)
     const pinia = createPinia()
@@ -1606,6 +1754,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'normal',
       roundModes: { '1': 'normal' },
       round: null,
+      closedAtMs: null,
     }
     getRoomMock.mockResolvedValue(room)
     const pinia = createPinia()
@@ -1660,6 +1809,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'normal',
       roundModes: {},
       round: null,
+      closedAtMs: null,
     }
     getRoomMock.mockResolvedValue(room)
     const wrapper = mountPage()
@@ -1690,6 +1840,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'normal',
       roundModes: {},
       round: null,
+      closedAtMs: null,
     }
     getRoomMock.mockResolvedValue(room)
     const wrapper = mountPage()
@@ -1713,6 +1864,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'normal',
       roundModes: {},
       round: null,
+      closedAtMs: null,
     }
     getRoomMock.mockResolvedValue(room)
     const wrapper = mountPage()
@@ -1759,6 +1911,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'normal',
       roundModes: {},
       round: null,
+      closedAtMs: null,
     }
     getRoomMock.mockResolvedValue(hostRound1)
     const wrapper = mountPage()
@@ -1788,6 +1941,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'normal',
       roundModes: {},
       round: null,
+      closedAtMs: null,
     }
     getRoomMock.mockResolvedValue(hostRound1)
     const wrapper = mountPage()
@@ -1820,6 +1974,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'normal',
       roundModes: {},
       round: null,
+      closedAtMs: null,
     }
     getRoomMock.mockResolvedValue(hostRound1)
     const wrapper = mountPage()
@@ -1847,6 +2002,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'normal',
       roundModes: {},
       round: null,
+      closedAtMs: null,
     }
     getRoomMock.mockResolvedValue(hostRound1)
     const wrapper = mountPage()
@@ -1875,6 +2031,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'normal',
       roundModes: {},
       round: null,
+      closedAtMs: null,
     }
     getRoomMock.mockResolvedValue(hostRound1)
     const wrapper = mountPage()
@@ -1904,6 +2061,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'normal',
       roundModes: {},
       round: null,
+      closedAtMs: null,
     }
     getRoomMock.mockResolvedValue(hostRound1)
     const wrapper = mountPage()
@@ -1952,6 +2110,7 @@ describe('WaitingRoomPage', () => {
       gameMode: 'normal',
       roundModes: {},
       round: null,
+      closedAtMs: null,
     })
     const wrapper = mountPage()
     await flushPromises()

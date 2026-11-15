@@ -4,6 +4,7 @@ import { fetchMyGender, useAuthStore } from '@/features/auth'
 import { computeStandings, subscribeToRoundLedgers, type RoundLedger } from '@/features/round-ledger'
 import {
   RoomNotFoundError,
+  closeGame,
   getRoom,
   isAssignedInRound,
   joinRoom,
@@ -79,6 +80,8 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
   const isSavingMapImage = ref(false)
   /** 행사장 지도 저장 실패 안내 — 시트가 버튼 위에 보여준다 */
   const mapImageError = ref<string | null>(null)
+  /** 게임 마무리 쓰기 진행 중 — 확인 다이얼로그의 버튼 로딩·중복 요청 가드 */
+  const isClosingGame = ref(false)
   /**
    * 라운드 원장 목록(P07) — 누적 순위의 재료. 정산이 끝난(result 있는) 라운드만 순위에 들어가고,
    * 원장 도입 전 라운드는 문서가 없어 빠진다. 구독 오류는 빈 목록과 같게 둔다(순위 카드가 안
@@ -227,6 +230,18 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
   const settledRoundCount = computed(
     () => ledgers.value.filter((ledger) => ledger.result !== null).length,
   )
+
+  /**
+   * 게임 마무리 진입점이 열리는 조건 — rules ⑥ 갈래와 같은 기준(방 호스트 + 방이 대기 중)에, 라운드 결과가
+   * 하나라도 나온 뒤여야 한다는 화면 기준을 더한다. 마무리 페이지는 마지막 라운드 결과 뒤에 뜨는 인사라
+   * 한 라운드도 정산하지 않은 방에서는 누를 이유가 없다.
+   */
+  const canCloseGame = computed(
+    () => isHost.value && gameStatus.value === 'waiting' && settledRoundCount.value > 0,
+  )
+
+  /** 진행자가 게임을 마무리한 시각(ms) — 대기실이 이 값으로 마무리 페이지를 한 번 띄운다 */
+  const closedAtMs = computed(() => room.value?.closedAtMs ?? null)
 
   /**
    * 누적 순위 — 원장의 정산 결과를 합산한 파생값(round-ledger computeStandings)에 이름을 붙인다.
@@ -528,6 +543,23 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
     }
   }
 
+  /**
+   * 게임 마무리(호스트 전용) — 방에 마무리 시각을 쓰고 성공 여부를 돌려준다(다이얼로그를 닫고 안내하는
+   * 판단은 화면이 한다). 페이지 이동은 각 기기의 방 스냅샷 구독이 맡는다 — 진행자 자신도 포함이다.
+   */
+  async function wrapUpGame(): Promise<boolean> {
+    if (!roomCode.value || !canCloseGame.value || isClosingGame.value) return false
+    isClosingGame.value = true
+    try {
+      await closeGame(roomCode.value)
+      return true
+    } catch {
+      return false
+    } finally {
+      isClosingGame.value = false
+    }
+  }
+
   return {
     roomCode,
     phase,
@@ -558,6 +590,9 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
     mapImageError,
     settledRoundCount,
     standings,
+    canCloseGame,
+    closedAtMs,
+    isClosingGame,
     enter,
     leave,
     needsSafetyConsent,
@@ -565,5 +600,6 @@ export const useWaitingRoomStore = defineStore('waitingRoom', () => {
     startPlaying,
     kick,
     saveMapImage,
+    wrapUpGame,
   }
 })

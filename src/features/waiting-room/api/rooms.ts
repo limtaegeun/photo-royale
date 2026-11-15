@@ -71,6 +71,12 @@ export interface RoomInfo {
   roundModes: Record<string, GameModeId>
   /** 진행 중인 라운드 타이머. 필드가 없으면(라운드 시작 전) null */
   round: RoundState | null
+  /**
+   * 진행자가 게임을 마무리한 시각(ms) — 이 값이 생기면 참가자 전원의 화면에 마무리 페이지가 한 번
+   * 뜬다. 마무리한 적 없거나, 방금 쓴 serverTimestamp가 아직 서버에 반영되지 않았으면 null이다.
+   * 다시 마무리하면 값이 바뀌어 한 번 더 뜬다(closingShownMarker가 이 값으로 본 것을 가린다).
+   */
+  closedAtMs: number | null
 }
 
 export interface Participant {
@@ -185,6 +191,7 @@ function toRoomInfo(data: Record<string, unknown>): RoomInfo {
       typeof gameMode === 'string' && isGameModeId(gameMode) ? gameMode : DEFAULT_GAME_MODE,
     roundModes: toRoundModes(data.roundModes ?? null),
     round: toRoundState(data.round ?? null),
+    closedAtMs: (data.closedAt as Timestamp | null | undefined)?.toMillis() ?? null,
   }
 }
 
@@ -451,6 +458,15 @@ export async function endGame(code: string, settlement?: RoundLedgerSettlement):
     addRoundResultToBatch(batch, code, settlement.roundNo, settlement.result)
   }
   await batch.commit()
+}
+
+/**
+ * 게임 마무리(호스트 전용) — 마지막 라운드 결과까지 보고 난 뒤 참가자 전원에게 마무리 페이지를 띄운다.
+ * 방 상태·배정 이력·원장은 건드리지 않고 마무리 시각 하나만 쓴다 — 순위와 기록은 그대로 남고, 진행자가
+ * 마음을 바꾸면 대기실에서 다음 차수를 이어 갈 수 있다. rules는 방이 대기 중일 때만 받는다(⑥ 갈래).
+ */
+export async function closeGame(code: string): Promise<void> {
+  await updateDoc(doc(db, 'rooms', code), { closedAt: serverTimestamp() })
 }
 
 /** 종료와 함께 원장에 쓸 이번 라운드 정산 — 호출부(라운드 운영)가 settleRound로 만든다 */

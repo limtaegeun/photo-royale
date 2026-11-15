@@ -76,6 +76,7 @@ import {
   ROOM_CODE_PATTERN,
   ROUND_DURATION_DEFAULT_MS,
   RoomNotFoundError,
+  closeGame,
   createRoom,
   endGame,
   fetchMyRooms,
@@ -184,6 +185,7 @@ describe('getRoom', () => {
       gameMode: 'king-hunt',
       roundModes: {},
       round: null,
+      closedAtMs: null,
     })
     expect(getDocMock).toHaveBeenCalledWith({ path: 'rooms/AB2C' })
 
@@ -606,6 +608,7 @@ describe('subscribeToRoom', () => {
       gameMode: 'staff-chase',
       roundModes: {},
       round: null,
+      closedAtMs: null,
     })
 
     onNext({ exists: () => false, metadata: { fromCache: false, hasPendingWrites: false } })
@@ -657,6 +660,30 @@ describe('subscribeToRoom', () => {
     subscribeToRoom('AB2C', vi.fn(), onError)
 
     expect(onSnapshotMock.mock.calls[0]![2]).toBe(onError)
+  })
+})
+
+describe('게임 마무리', () => {
+  it('closeGame은 방에 마무리 시각 하나만 서버 시각으로 쓴다 — rules ⑥ 갈래가 이 키 하나만 받는다', async () => {
+    updateDocMock.mockResolvedValue(undefined)
+
+    await closeGame('AB2C')
+
+    expect(updateDocMock.mock.calls).toEqual([[{ path: 'rooms/AB2C' }, { closedAt: 'server-timestamp' }]])
+  })
+
+  it('방 문서의 closedAt을 ms로 읽고, 서버 반영 전(null)이면 null로 둔다', async () => {
+    const roomData = (closedAt: unknown) => ({
+      exists: () => true,
+      data: () => ({ hostUid: 'host-1', status: 'waiting', closedAt }),
+    })
+    getDocMock.mockResolvedValueOnce(roomData(fakeTimestamp('2026-11-15T12:00:00Z')))
+    await expect(getRoom('AB2C')).resolves.toMatchObject({
+      closedAtMs: new Date('2026-11-15T12:00:00Z').getTime(),
+    })
+
+    getDocMock.mockResolvedValueOnce(roomData(null))
+    await expect(getRoom('AB2C')).resolves.toMatchObject({ closedAtMs: null })
   })
 })
 

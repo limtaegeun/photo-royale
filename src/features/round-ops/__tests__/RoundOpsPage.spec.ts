@@ -235,6 +235,7 @@ function hostRoom(overrides: Partial<RoomInfo> = {}): RoomInfo {
     gameMode: 'normal',
     roundModes: {},
     round: null,
+    closedAtMs: null,
     ...overrides,
   }
 }
