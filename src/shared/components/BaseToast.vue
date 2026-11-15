@@ -155,8 +155,8 @@ onBeforeUnmount(() => {
       <path fill-rule="evenodd" :d="TONE_ICON_PATH[props.toast.tone]" clip-rule="evenodd" />
     </svg>
     <div class="min-w-0 flex-1">
-      <ToastTitle class="text-label font-semibold text-content">{{ props.toast.title }}</ToastTitle>
-      <ToastDescription v-if="props.toast.description" class="mt-1 text-caption text-content-secondary">
+      <ToastTitle class="text-label font-semibold text-pretty break-keep text-content">{{ props.toast.title }}</ToastTitle>
+      <ToastDescription v-if="props.toast.description" class="mt-1 text-caption text-pretty break-keep text-content-secondary">
         {{ props.toast.description }}
       </ToastDescription>
     </div>
