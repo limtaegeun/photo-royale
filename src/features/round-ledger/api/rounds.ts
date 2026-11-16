@@ -89,6 +89,9 @@ export function addSnapshotRemovalToBatch(
  * (10/9 리허설 문제 6). rules ②가 tally·hits와 함께 두 키를 map으로 허용한다 — 이 키를 쓰려면
  * rules **선배포**가 필요하다(옛 rules는 hasOnly(['tally','hits'])로 배치 전체를 거부한다).
  * credits의 dot-path 키는 uid다 — Firebase Auth uid는 영숫자라 필드 경로 구분자(.)가 들어가지 않는다.
+ *
+ * kingCatcherUid(비밀 왕 모드 — 왕잡기)가 있으면 왕을 잡은 킬샷을 찍은 사람의 credits를 1 올린다. 왕잡기 정산이 이
+ * 값으로 개인 30점을 찍은 사람에게만 준다. 편입 모드와 같은 credits 키를 쓰므로 rules 변경은 없다.
  */
 export function addTallyToBatch(
   batch: WriteBatch,
@@ -99,13 +102,15 @@ export function addTallyToBatch(
   multiplier: 1 | 3 = 1,
   kingTarget = false,
   absorb?: AbsorbKillEffect,
+  kingCatcherUid?: string,
 ): void {
   const killField = multiplier === 3 ? 'tripleKills' : 'kills'
-  const absorbUpdates: Record<string, unknown> = {}
-  for (const uid of absorb?.creditUids ?? []) absorbUpdates[`credits.${uid}`] = increment(1)
+  const extraUpdates: Record<string, unknown> = {}
+  for (const uid of absorb?.creditUids ?? []) extraUpdates[`credits.${uid}`] = increment(1)
+  if (kingCatcherUid !== undefined) extraUpdates[`credits.${kingCatcherUid}`] = increment(1)
   if (absorb !== undefined && absorb.absorbedUids.length > 0) {
     for (const armband of [attackerTeam, ...absorb.absorbedIntoTeams]) {
-      absorbUpdates[`tails.${armband}`] = arrayUnion(...absorb.absorbedUids)
+      extraUpdates[`tails.${armband}`] = arrayUnion(...absorb.absorbedUids)
     }
   }
   batch.update(roundLedgerDoc(code, roundNo), {
@@ -113,7 +118,7 @@ export function addTallyToBatch(
     // 이 킬로 X 겸직 팀(왕)이 아웃되면 왕 잡기 건수도 같이 올린다 — kills·tripleKills의 부분집합
     ...(kingTarget ? { [`tally.${attackerTeam}.kingKills`]: increment(1) } : {}),
     [`hits.${targetTeam}`]: increment(1),
-    ...absorbUpdates,
+    ...extraUpdates,
   })
 }
 

@@ -382,6 +382,11 @@ export interface ApprovalTally {
   /** 이 킬로 이 라운드의 X 겸직 팀(왕)이 아웃되는지 — 원장 kingKills(왕잡기 왕 잡기) 근거. 생략 = false */
   kingTarget?: boolean
   /**
+   * 비밀 왕 모드(왕잡기)에서 왕을 잡은 킬샷을 찍은 사람 — 원장 credits에 1을 올려 개인 30점의 근거가 된다.
+   * 왕잡기가 아니거나 왕을 잡지 않은 킬은 생략한다
+   */
+  kingCatcherUid?: string
+  /**
    * 편입 모드(꼬리잡기, P07 §4.2)의 킬 효과 — 킬 시점의 사냥 팀 소속(credits)과 이 킬로 아웃된 팀의
    * 꼬리 합류(tails)를 원장에 같이 남긴다. 편입이 없는 모드는 생략(원장에 두 키를 쓰지 않는다)
    */
@@ -429,6 +434,7 @@ export async function approveSubmission(
       multiplier,
       tally.kingTarget ?? false,
       tally.absorb,
+      tally.kingCatcherUid,
     )
   }
   await batch.commit()

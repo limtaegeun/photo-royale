@@ -203,29 +203,17 @@ export function tailChaseScoring(input: ModeScoringInput): ModeScoringOutput {
   return { teamScores, playerScores }
 }
 
-/** 왕잡기 — 왕을 잡은 킬. 잡은 팀이 킬 10 대신 받는다(노션 ② 왕잡기 "왕을 잡으면 잡은 사람이 +30점") */
-export const KING_HUNT_POINTS = 30
-/** 왕잡기 — 왕을 잡은 팀의 그룹 전체(잡은 팀 포함)가 받는다(노션 ② 왕잡기 "그룹 전체는 +10점") */
-export const KING_HUNT_GROUP_POINTS = 10
-
 /**
- * 왕잡기 공격 완장 1개의 킬 원점수 — 왕을 잡은 건(kingKills)은 30, 나머지 건은 10(노션 ② 기본 규칙 5 "킬샷 1번에
- * +10점"). 낙오 3배는 일반전 한정이라 tripleKills도 일반 건으로 센다. kingKills는 왕을 아웃시킨 킬만 센다.
+ * 왕잡기 — 왕을 잡은 킬샷을 찍은 사람 한 명이 받는 개인 원점수. 짝꿍은 받지 않는다(2026-11-16 기획 변경 "왕 잡은
+ * 사람한테 개인점수 30점")
  */
-export function kingHuntKillScoreOf(input: Pick<ModeScoringInput, 'tally'>, armband: string): number {
-  const events = killCountOf(input.tally, armband)
-  const hunts = Math.min(input.tally[armband]?.kingKills ?? 0, events)
-  return hunts * KING_HUNT_POINTS + (events - hunts) * KILL_POINTS
-}
+export const KING_HUNT_POINTS = 30
+/** 왕잡기 — 왕을 잡은 팀이 받는 팀 원점수. 팀원 전원에게 같게 준다(2026-11-16 기획 변경 "팀에게 팀점수 10점") */
+export const KING_HUNT_TEAM_POINTS = 10
 
-/** 완장 1개의 왕 사냥 그룹 보너스 — 같은 그룹 모든 팀(이 팀 포함)이 잡은 왕 수 × 10 */
-export function kingHuntGroupBonusOf(input: Pick<ModeScoringInput, 'teams' | 'tally'>, armband: string): number {
-  let hunts = 0
-  for (const other of Object.keys(input.teams)) {
-    if (other !== armband && !isSameGroup(armband, other)) continue
-    hunts += Math.min(input.tally[other]?.kingKills ?? 0, killCountOf(input.tally, other))
-  }
-  return hunts * KING_HUNT_GROUP_POINTS
+/** 공격 완장 1개가 잡은 왕 수 — 왕을 아웃시킨 킬(kingKills)만 센다. 킬 건수를 넘지 못한다(손상 데이터 방어) */
+export function kingHuntsOf(tally: ModeScoringInput['tally'], armband: string): number {
+  return Math.min(tally[armband]?.kingKills ?? 0, killCountOf(tally, armband))
 }
 
 /**
@@ -243,16 +231,29 @@ export function isKingDownInGroup(
 }
 
 /**
- * 왕잡기(노션 ② 왕잡기 카드) — 킬 10 · 왕을 잡은 킬 30 · 왕을 잡은 팀의 그룹 전체(잡은 팀 포함) +10, 팀원 각자에게.
- * 왕이 잡힌 그룹은 감점 없이 그 판에서 전원 아웃된다(isKingDownInGroup). 생존 보너스 없음, 1인 팀 2배.
+ * 왕잡기(2026-11-16 기획 변경) — 왕이 아닌 팀을 잡은 킬샷은 0점이다. 왕을 잡으면 그 킬샷을 찍은 사람이 개인 30점을,
+ * 잡은 팀이 팀 점수 10점(팀원 전원)을 받는다. 그래서 찍은 사람은 40점, 짝꿍은 10점이다. 팀 원점수(teamScores)에는
+ * 팀 점수만 들어간다.
+ * 찍은 사람은 원장 credits(uid → 왕을 잡은 건수)로 안다. credits가 없는데 왕 잡기가 있으면 찍은 사람을 남기기 전
+ * 문서라서, 예전처럼 팀원 전원에게 개인 점수를 준다.
+ * 왕이 잡힌 그룹은 감점 없이 그 판에서 전원 아웃된다(isKingDownInGroup). 생존 보너스 없음. 1인 팀은 개인·팀 점수
+ * 모두 2배다.
  */
 export function kingHuntScoring(input: ModeScoringInput): ModeScoringOutput {
   const raw: Record<string, number> = {}
   for (const armband of Object.keys(input.teams)) {
-    raw[armband] = kingHuntKillScoreOf(input, armband) + kingHuntGroupBonusOf(input, armband)
+    raw[armband] = kingHuntsOf(input.tally, armband) * KING_HUNT_TEAM_POINTS
   }
   const teamScores = applyTeamScale(input.teams, raw)
-  return { teamScores, playerScores: distributeToPlayers(input.teams, teamScores) }
+  const playerScores = distributeToPlayers(input.teams, teamScores)
+  for (const [armband, memberIds] of Object.entries(input.teams)) {
+    const hunts = kingHuntsOf(input.tally, armband)
+    for (const uid of memberIds) {
+      const catches = input.credits === undefined ? hunts : (input.credits[uid] ?? 0)
+      playerScores[uid] = (playerScores[uid] ?? 0) + scaleTeamScore(input.teams, armband, catches * KING_HUNT_POINTS)
+    }
+  }
+  return { teamScores, playerScores }
 }
 
 /**

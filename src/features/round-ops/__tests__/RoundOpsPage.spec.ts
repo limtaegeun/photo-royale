@@ -2107,14 +2107,14 @@ describe('RoundOpsPage', () => {
       return wrapper
     }
 
-    it('왕잡기에서 왕을 고르면 왕 잡기 점수·그룹 보너스·그룹 전원 아웃이 보이고 토스트도 말한다', async () => {
+    it('왕잡기에서 왕을 고르면 찍은 사람 점수·팀 점수·그룹 전원 아웃이 보이고 토스트도 말한다', async () => {
       const wrapper = await openKingHuntRound(pendingSubmission({ id: 's1', uid: 'u5', team: 'C' }))
 
       expect(row(wrapper, 'A').text()).toContain('왕')
       await pick(wrapper, 'A')
 
       expect(approveButton(wrapper).text()).toBe('팀 A 왕 잡기 확정')
-      expect(exclusion(wrapper)).toBe('왕 잡기 +30 · 초록 그룹 +10 · 파랑 그룹 전원 아웃')
+      expect(exclusion(wrapper)).toBe('찍은 사람 +30 · 팀 C +10 · 파랑 그룹 전원 아웃')
 
       await approveButton(wrapper).trigger('click')
       await flushPromises()
@@ -2124,7 +2124,7 @@ describe('RoundOpsPage', () => {
       })
     })
 
-    it('왕잡기에서 왕이 올린 킬샷은 일반 킬로 확정한다 — 노션 ② "킬샷 1번에 +10점"', async () => {
+    it('왕잡기에서 왕이 일반 팀을 잡은 킬샷은 기본 문구로 확정한다 — 점수 없는 킬', async () => {
       const wrapper = await openKingHuntRound(pendingSubmission())
 
       expect(card(wrapper).text()).toContain('왕')

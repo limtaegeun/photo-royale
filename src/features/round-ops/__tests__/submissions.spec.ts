@@ -625,6 +625,26 @@ describe('판정 쓰기', () => {
     )
   })
 
+  /** 왕잡기(2026-11-16 기획 변경) — 왕을 잡은 킬샷의 찍은 사람을 credits에 남긴다(개인 30점 근거) */
+  it('kingCatcherUid가 있으면 원장 집계에 그 사람의 credits increment를 함께 얹는다', async () => {
+    await approveSubmission(
+      'AB2C',
+      's1',
+      { team: 'B', participantUid: 'u3' },
+      { roundNo: 2, attackerTeam: 'A', kingTarget: true, kingCatcherUid: 'u2' },
+    )
+
+    expect(batchUpdateMock).toHaveBeenCalledWith(
+      { path: 'rooms/AB2C/rounds/2' },
+      {
+        'tally.A.kills': { increment: 1 },
+        'tally.A.kingKills': { increment: 1 },
+        'hits.B': { increment: 1 },
+        'credits.u2': { increment: 1 },
+      },
+    )
+  })
+
   /** 꼬리잡기 편입(P07 §4.2, M4-6) — 킬 시점 소속의 크레딧과 아웃된 팀의 꼬리 합류를 같은 배치에 얹는다 */
   it('absorb가 있으면 원장 집계에 credits increment와 tails arrayUnion을 함께 얹는다', async () => {
     await approveSubmission(

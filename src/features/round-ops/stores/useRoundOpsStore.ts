@@ -466,20 +466,26 @@ export const useRoundOpsStore = defineStore('roundOps', () => {
     const ledger = currentLedger.value
     // 이 킬로 편성 스냅샷의 X 겸직 팀(왕)이 아웃되면 왕 잡기(kingKills)로도 센다 — 왕잡기 원점수 근거. 1인 팀
     // 왕의 첫 킬은 왕이 아직 살아 있어 일반 킬이다(노션 ② "왕을 잡으면 +30" — 잡힘 = 아웃)
+    const kingTarget =
+      ledger !== null &&
+      ledger.xTeams.includes(target.team) &&
+      isTeamOut(
+        {
+          teams: ledger.teams,
+          hits: { ...ledger.hits, [target.team]: (ledger.hits?.[target.team] ?? 0) + 1 },
+        },
+        target.team,
+      )
     const tally =
       ledger !== null && submission !== undefined && submission.round === ledger.roundNo
         ? {
             roundNo: ledger.roundNo,
             attackerTeam: submission.team,
-            kingTarget:
-              ledger.xTeams.includes(target.team) &&
-              isTeamOut(
-                {
-                  teams: ledger.teams,
-                  hits: { ...ledger.hits, [target.team]: (ledger.hits?.[target.team] ?? 0) + 1 },
-                },
-                target.team,
-              ),
+            kingTarget,
+            // 비밀 왕 모드(왕잡기)에서 왕을 잡으면 그 킬샷을 찍은 사람을 원장 credits에 남긴다 — 개인 30점 근거
+            ...(kingTarget && GAME_MODES[ledger.mode].secretKing === true
+              ? { kingCatcherUid: submission.uid }
+              : {}),
             // 편입 모드(꼬리잡기)에서만 — 킬 시점 소속(팀원 + 꼬리)을 크레딧으로, 이 킬로 아웃된 팀의
             // 합류를 꼬리로 원장에 남긴다. 판정 시점 원장의 hits·tails가 근거다
             ...(GAME_MODES[ledger.mode].absorbsCaughtTeam === true

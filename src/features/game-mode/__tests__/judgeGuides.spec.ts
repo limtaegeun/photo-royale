@@ -71,19 +71,19 @@ describe('꼬리잡기 판정 안내', () => {
   })
 })
 
-describe('왕잡기 판정 안내 (노션 ② 왕잡기 카드)', () => {
+describe('왕잡기 판정 안내 (2026-11-16 기획 변경)', () => {
   const outcome = KING_HUNT_JUDGE_GUIDE.outcome!
   const xTeams = ['A', 'B']
 
-  it('왕을 잡아 아웃시키면 잡은 팀 +30 · 잡은 팀 그룹 +10 · 왕의 그룹 전원 아웃을 보인다', () => {
+  it('왕을 잡아 아웃시키면 찍은 사람 +30 · 잡은 팀 +10 · 왕의 그룹 전원 아웃을 보인다', () => {
     expect(outcome('C', 'B', context({ xTeams }))).toEqual({
       approveLabel: '팀 B 왕 잡기 확정',
-      note: '왕 잡기 +30 · 초록 그룹 +10 · 주황 그룹 전원 아웃',
+      note: '찍은 사람 +30 · 팀 C +10 · 주황 그룹 전원 아웃',
       toast: '팀 B 왕 잡기로 판정했어요. 주황 그룹은 전원 아웃이에요.',
     })
   })
 
-  it('1인 왕의 첫 킬은 왕이 아직 살아 있어 일반 킬이다 — 한 번 더 맞아야 잡힌다고만 알린다', () => {
+  it('1인 왕의 첫 킬은 왕이 아직 살아 있어 점수 없는 킬이다 — 한 번 더 맞아야 잡힌다고만 알린다', () => {
     const rosters = { ...context().rosters, B: ['B1'] }
     expect(outcome('C', 'B', context({ xTeams, rosters }))).toEqual({ note: '왕이 한 번 더 맞아야 잡혀요' })
   })
@@ -92,14 +92,14 @@ describe('왕잡기 판정 안내 (노션 ② 왕잡기 카드)', () => {
     expect(outcome('A', 'B', context({ xTeams }))?.approveLabel).toBe('팀 B 왕 잡기 확정')
   })
 
-  it('왕이 일반 팀을 잡으면 일반 킬이다 — 노션 ② 기본 규칙 5 "킬샷 1번에 +10점"', () => {
+  it('왕이 일반 팀을 잡으면 특별한 결과가 없다 — 점수 없는 킬이다', () => {
     expect(outcome('A', 'C', context({ xTeams }))).toBeNull()
   })
 
-  it('1인 팀이 왕을 잡으면 잡은 점수가 2배로 보인다', () => {
+  it('1인 팀이 왕을 잡으면 개인·팀 점수가 2배로 보인다', () => {
     const rosters = { ...context().rosters, C: ['C1'] }
     expect(outcome('C', 'B', context({ xTeams, rosters }))?.note).toBe(
-      '왕 잡기 +60 · 초록 그룹 +10 · 주황 그룹 전원 아웃',
+      '찍은 사람 +60 · 팀 C +20 · 주황 그룹 전원 아웃',
     )
   })
 

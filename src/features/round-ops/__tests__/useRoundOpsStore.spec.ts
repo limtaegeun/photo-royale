@@ -987,6 +987,32 @@ describe('useRoundOpsStore', () => {
       )
     })
 
+    /** 왕잡기(2026-11-16 기획 변경) — 왕을 잡은 킬샷은 찍은 사람(제출자 uid)을 넘겨 개인 30점을 그 사람에게만 준다 */
+    it('왕잡기에서 왕을 잡으면 찍은 사람의 uid를 kingCatcherUid로 넘기고, 왕이 아닌 킬에는 넘기지 않는다', async () => {
+      const deliver = captureSnapshotCallbacks()
+      const store = useRoundOpsStore()
+      store.enter('AB2C')
+      deliver.room(room({ round: RUNNING }))
+      deliver.ledger(
+        ledger({ mode: 'king-hunt', teams: { A: ['u1', 'u2'], B: ['u3', 'u4'], C: ['u5', 'u6'] }, xTeams: ['A'], hits: {} }),
+      )
+      deliver.submissions([
+        { id: 's1', uid: 'u5', team: 'C', round: 2, photo: 'data:', status: 'pending', createdAtMs: NOW },
+        { id: 's2', uid: 'u4', team: 'B', round: 2, photo: 'data:', status: 'pending', createdAtMs: NOW },
+      ])
+
+      await store.approveSubmission('s1', { team: 'B', participantUid: 'u3' })
+      expect(approveSubmissionMock.mock.lastCall?.[3]).toEqual({ roundNo: 2, attackerTeam: 'C', kingTarget: false })
+
+      await store.approveSubmission('s2', { team: 'A', participantUid: 'u1' })
+      expect(approveSubmissionMock.mock.lastCall?.[3]).toEqual({
+        roundNo: 2,
+        attackerTeam: 'B',
+        kingTarget: true,
+        kingCatcherUid: 'u4',
+      })
+    })
+
     /** 왕잡기(노션 ② "왕을 잡으면 +30") — 잡힘 = 아웃이라 1인 팀 왕의 첫 킬은 왕 잡기가 아니다 */
     it('1인 팀 왕의 첫 킬은 왕이 아직 살아 있어 kingTarget을 켜지 않고, 두 번째 킬에 켠다', async () => {
       const deliver = captureSnapshotCallbacks()
