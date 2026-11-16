@@ -57,7 +57,7 @@ export function settleRound(ledger: RoundLedger): RoundSettlement {
     xTeams: ledger.xTeams,
     tally: ledger.tally ?? {},
     hits: ledger.hits ?? {},
-    // 편입 모드(꼬리잡기)만 쓰는 키 — 없으면(null) 넘기지 않아 모드 규칙이 팀 킬 수로 정산한다
+    // 꼬리잡기(편입)·왕잡기(왕을 찍은 사람)만 쓰는 키 — 없으면(null) 넘기지 않아 모드 규칙이 팀 킬 수로 정산한다
     credits: ledger.credits ?? undefined,
     tails: ledger.tails ?? undefined,
   })

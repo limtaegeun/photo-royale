@@ -47,7 +47,7 @@ export interface RoundSnapshot {
 export interface RoundResult {
   /** 완장 → 라운드 원점수 */
   teamScores: ArmbandMap<number>
-  /** uid → 개인 원점수(팀 원점수 동일 지급) — 최종 순위는 이 값의 합(노션 ② "세 판 점수를 더해 우승자를 정해요") */
+  /** uid → 개인 원점수(대개 팀 원점수 동일 지급, 모드 규칙이 정한다) — 최종 순위는 이 값의 합(노션 ② "세 판 점수를 더해 우승자를 정해요") */
   playerScores: Record<string, number>
   /** uid → 라운드 안 순위(1부터, 같은 점수 같은 순위). 등급 포인트 시절 문서는 등급(0 = 등급 없음)이다 */
   playerTiers: Record<string, number>
@@ -72,8 +72,9 @@ export interface RoundLedger extends RoundSnapshot {
    */
   tails: ArmbandMap<string[]> | null
   /**
-   * ② 꼬리잡기 편입 — uid → 킬 크레딧. 킬 1건마다 킬 시점의 사냥 팀 소속 전원(팀원 + 꼬리)에게
-   * 1씩 쌓여, 편입자에게 새 팀의 이후 킬을 귀속하는 근거다. 편입 모드가 아니면 null
+   * ② uid → 킬 크레딧. 꼬리잡기는 킬 1건마다 킬 시점의 사냥 팀 소속 전원(팀원 + 꼬리)에게 1씩 쌓여, 편입자에게
+   * 새 팀의 이후 킬을 귀속하는 근거다. 왕잡기는 왕을 잡은 킬샷을 찍은 사람에게 1씩 쌓여 개인 30점의 근거다.
+   * 두 모드가 아니거나 크레딧이 아직 없으면 null
    */
   credits: Record<string, number> | null
   result: RoundResult | null
@@ -82,7 +83,7 @@ export interface RoundLedger extends RoundSnapshot {
 /** rules `rounds` create 갈래의 키 화이트리스트(hasAll·hasOnly 모두 이 목록) */
 export const ROUND_SNAPSHOT_KEYS = ['mode', 'teams', 'xTeams', 'confirmedAt'] as const
 
-/** rules `rounds` update 갈래 ②(판정 집계)가 허용하는 키 — tails·credits는 편입 모드만 쓰는 선택 키 */
+/** rules `rounds` update 갈래 ②(판정 집계)가 허용하는 키 — tails는 편입 모드, credits는 편입 모드·왕잡기만 쓰는 선택 키 */
 export const ROUND_TALLY_KEYS = ['tally', 'hits', 'tails', 'credits'] as const
 
 /** rules `rounds` update 갈래 ③(정산 확정)의 result 키 화이트리스트 */

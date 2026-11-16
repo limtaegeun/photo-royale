@@ -36,8 +36,8 @@ export {
 } from './targeting'
 export {
   KILL_POINTS,
-  KING_HUNT_GROUP_POINTS,
   KING_HUNT_POINTS,
+  KING_HUNT_TEAM_POINTS,
   SOLO_TEAM_SCALE,
   STAFF_CHASE_FULL_SURVIVAL_POINTS,
   SURVIVAL_POINTS,
@@ -50,9 +50,8 @@ export {
   isKingDownInGroup,
   isTeamOut,
   killCountOf,
-  kingHuntGroupBonusOf,
-  kingHuntKillScoreOf,
   kingHuntScoring,
+  kingHuntsOf,
   killScoreOf,
   killScoring,
   livesOf,

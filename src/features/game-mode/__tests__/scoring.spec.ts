@@ -10,9 +10,8 @@ import {
   killCountOf,
   killScoreOf,
   killScoring,
-  kingHuntGroupBonusOf,
-  kingHuntKillScoreOf,
   kingHuntScoring,
+  kingHuntsOf,
   livesOf,
   normalScoring,
   staffChaseHeadcount,
@@ -361,55 +360,85 @@ describe('그룹전 (노션 ② 그룹전 카드)', () => {
   })
 })
 
-describe('왕잡기 (노션 ② 왕잡기 카드)', () => {
+describe('왕잡기 (2026-11-16 기획 변경 — 왕만 점수)', () => {
   /** A·E = 파랑(왕 A), B·F = 주황(왕 F, 1인 팀), C = 초록(왕 C), D = 빨강(왕 D) */
   const KH_TEAMS = { A: ['하늘', '민재'], E: ['지우'], B: ['준호', '유나'], F: ['서준'], C: ['서연', '도윤'], D: ['하준', '수아'] }
   const KINGS = ['A', 'C', 'D', 'F']
 
-  it('킬 원점수: 왕을 잡은 킬 30, 나머지 킬은 왕이 잡아도 10 — 왕 잡기 건수는 킬 건수를 넘지 못한다', () => {
+  it('잡은 왕 수는 왕을 아웃시킨 킬만 세고 킬 건수를 넘지 못한다 — kingKills가 없는 옛 집계는 0', () => {
     const tally = {
-      B: { kills: 2, tripleKills: 0, kingKills: 1 }, // 왕 잡기 1 + 일반 1
-      A: { kills: 1, tripleKills: 0, kingKills: 0 }, // 왕의 일반 킬도 10
-      C: { kills: 1, tripleKills: 0, kingKills: 1 }, // 왕이 왕을 잡음 → 30
+      B: { kills: 2, tripleKills: 0, kingKills: 1 },
+      C: { kills: 0, tripleKills: 1, kingKills: 1 }, // 낙오 킬로 잡아도 왕 잡기다
       D: { kills: 0, tripleKills: 0, kingKills: 3 }, // 손상 데이터 — 건수 상한
     }
-    expect(kingHuntKillScoreOf({ tally }, 'B')).toBe(40)
-    expect(kingHuntKillScoreOf({ tally }, 'A')).toBe(10)
-    expect(kingHuntKillScoreOf({ tally }, 'C')).toBe(30)
-    expect(kingHuntKillScoreOf({ tally }, 'D')).toBe(0)
-    expect(kingHuntKillScoreOf({ tally }, 'E')).toBe(0)
+    expect(kingHuntsOf(tally, 'B')).toBe(1)
+    expect(kingHuntsOf(tally, 'C')).toBe(1)
+    expect(kingHuntsOf(tally, 'D')).toBe(0)
+    expect(kingHuntsOf(tally, 'E')).toBe(0)
+    expect(kingHuntsOf({ B: { kills: 2, tripleKills: 0 } }, 'B')).toBe(0)
   })
 
-  it('kingKills가 없는 옛 집계는 전부 일반 킬로 센다', () => {
-    expect(kingHuntKillScoreOf({ tally: { B: { kills: 2, tripleKills: 0 } } }, 'B')).toBe(20)
+  it('왕이 아닌 팀을 잡은 킬샷은 일반·낙오 킬 모두 0점이다', () => {
+    const output = kingHuntScoring({
+      teams: KH_TEAMS,
+      xTeams: KINGS,
+      tally: { B: { kills: 2, tripleKills: 1, kingKills: 0 } },
+      hits: { C: 1, E: 1 },
+    })
+
+    expect(Object.values(output.teamScores).every((score) => score === 0)).toBe(true)
+    expect(Object.values(output.playerScores).every((score) => score === 0)).toBe(true)
   })
 
-  it('왕을 잡으면 잡은 팀의 그룹 전체(잡은 팀 포함)가 +10 — 다른 그룹은 받지 않는다', () => {
-    const tally = { B: { kills: 1, tripleKills: 0, kingKills: 1 } }
-    expect(kingHuntGroupBonusOf({ teams: KH_TEAMS, tally }, 'B')).toBe(10)
-    expect(kingHuntGroupBonusOf({ teams: KH_TEAMS, tally }, 'F')).toBe(10)
-    expect(kingHuntGroupBonusOf({ teams: KH_TEAMS, tally }, 'A')).toBe(0)
-    expect(kingHuntGroupBonusOf({ teams: KH_TEAMS, tally }, 'C')).toBe(0)
-  })
-
-  it('잡은 팀 +30 · 그 그룹 전체 +10 · 왕이 잡힌 그룹은 감점 없음 · 생존 보너스 없음 · 1인 팀 2배', () => {
-    // B(주황)가 파랑 왕 A를 잡았다(왕 아웃) · A는 잡히기 전 B를 한 번 잡았다(일반 킬 10)
+  it('왕을 잡으면 찍은 사람 개인 +30 · 잡은 팀 +10 — 짝꿍은 10, 같은 그룹 다른 팀은 0, 왕이 잡힌 그룹은 감점 없음', () => {
+    // B(주황)의 유나가 파랑 왕 A를 잡았다(왕 아웃) · A는 잡히기 전 B를 한 번 잡았다(왕이 아닌 킬 0)
     const output = kingHuntScoring({
       teams: KH_TEAMS,
       xTeams: KINGS,
       tally: { B: { kills: 1, tripleKills: 0, kingKills: 1 }, A: { kills: 1, tripleKills: 0, kingKills: 0 } },
       hits: { A: 1, B: 1 },
+      credits: { 유나: 1 },
     })
 
-    expect(output.teamScores).toEqual({
-      A: 10, // 잡히기 전 킬 10 — 왕이 잡혀도 감점은 없다(그룹 전원 아웃으로 대신한다)
-      E: 0, // 왕이 잡힌 그룹 — 감점 없음
-      B: 40, // 왕 잡기 30 + 그룹 보너스 10
-      F: 20, // 그룹 보너스 10, 1인 팀 2배
-      C: 0, // 생존해도 보너스 없음
-      D: 0,
+    // 팀 원점수는 팀 점수만이다
+    expect(output.teamScores).toEqual({ A: 0, E: 0, B: 10, F: 0, C: 0, D: 0 })
+    expect(output.playerScores).toEqual({
+      하늘: 0,
+      민재: 0,
+      지우: 0,
+      준호: 10, // 짝꿍 — 팀 점수만
+      유나: 40, // 찍은 사람 — 개인 30 + 팀 10
+      서준: 0, // 같은 그룹이어도 다른 팀은 받지 않는다
+      서연: 0,
+      도윤: 0,
+      하준: 0,
+      수아: 0,
     })
-    expect(output.playerScores).toEqual({ 하늘: 10, 민재: 10, 지우: 0, 준호: 40, 유나: 40, 서준: 20, 서연: 0, 도윤: 0, 하준: 0, 수아: 0 })
+  })
+
+  it('1인 팀이 왕을 잡으면 개인·팀 점수가 모두 2배다', () => {
+    const output = kingHuntScoring({
+      teams: KH_TEAMS,
+      xTeams: KINGS,
+      tally: { F: { kills: 1, tripleKills: 0, kingKills: 1 } },
+      hits: { C: 1 },
+      credits: { 서준: 1 },
+    })
+
+    expect(output.teamScores.F).toBe(20)
+    expect(output.playerScores.서준).toBe(80)
+  })
+
+  it('찍은 사람을 남기기 전 원장(credits 없음)은 팀원 전원에게 개인 30을 준다', () => {
+    const output = kingHuntScoring({
+      teams: KH_TEAMS,
+      xTeams: KINGS,
+      tally: { B: { kills: 1, tripleKills: 0, kingKills: 1 } },
+      hits: { A: 1 },
+    })
+
+    expect(output.playerScores.준호).toBe(40)
+    expect(output.playerScores.유나).toBe(40)
   })
 
   it('"우리 왕이 잡히면 그 판은 그룹 전체가 즉시 아웃" — 같은 그룹 왕이 아웃이면 그 그룹 팀도 아웃이다', () => {

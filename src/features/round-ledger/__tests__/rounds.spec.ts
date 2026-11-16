@@ -209,6 +209,19 @@ describe('addTallyToBatch (판정 집계)', () => {
       'credits.u1': { increment: 1 },
     })
   })
+
+  it('왕잡기에서 왕을 잡으면 찍은 사람의 credits를 1 올린다 — 개인 30점 근거', () => {
+    const batch = tallyBatch()
+
+    addTallyToBatch(batch as never, 'AB2C', 2, 'A', 'B', 1, true, undefined, 'u2')
+
+    expect(batch.update.mock.calls[0]![1]).toEqual({
+      'tally.A.kills': { increment: 1 },
+      'tally.A.kingKills': { increment: 1 },
+      'hits.B': { increment: 1 },
+      'credits.u2': { increment: 1 },
+    })
+  })
 })
 
 describe('recordStaffOut (스태프 추격전 수동 아웃, P07 §4.5)', () => {
